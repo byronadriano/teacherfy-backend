@@ -27,7 +27,7 @@ def generate_presentation():
     try:
         # Use OpenAI API to generate content
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
         )
         slides_content = response.choices[0].message.content.strip().split("\n\n")
