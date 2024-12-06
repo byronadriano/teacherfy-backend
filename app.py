@@ -7,11 +7,14 @@ from pptx.util import Inches
 import tempfile
 import traceback
 
+from flask_cors import CORS
+
+app = Flask(__name__)  # Initialize Flask app
+CORS(app, resources={r"/*": {"origins": "https://red-mud-08643bc1e.4.azurestaticapps.net"}})
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
 
 def get_env_var(var_name, default=None):
     value = os.environ.get(var_name, default)
