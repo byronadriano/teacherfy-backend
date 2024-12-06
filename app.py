@@ -1,26 +1,33 @@
 import os
+import logging
 from flask import Flask, request, jsonify, send_file
 from openai import OpenAI
 from pptx import Presentation
 from pptx.util import Inches
 import tempfile
+import traceback
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Use environment variables more robustly
 def get_env_var(var_name, default=None):
     value = os.environ.get(var_name, default)
+    logger.debug(f"Checking environment variable {var_name}: {value is not None}")
     if value is None:
+        logger.error(f"Environment variable {var_name} not set")
         raise ValueError(f"Required environment variable {var_name} not set")
     return value
 
-# Initialize OpenAI client
+# Initialize OpenAI client with logging
 try:
     client = OpenAI(
         api_key=get_env_var("OPENAI_API_KEY")
     )
 except ValueError as e:
-    app.logger.error(str(e))
+    logger.error(f"OpenAI client initialization error: {e}")
     client = None
 
 @app.route("/", methods=["GET"])
@@ -29,8 +36,12 @@ def home():
 
 @app.route("/generate", methods=["POST"])
 def generate_presentation():
+    # Log incoming request details
+    logger.debug(f"Received generate request: {request.json}")
+    
     # Validate OpenAI client
     if client is None:
+        logger.error("OpenAI client not initialized")
         return jsonify({"error": "OpenAI client not initialized"}), 500
 
     # Parse request data
@@ -48,18 +59,32 @@ def generate_presentation():
             messages=[{"role": "user", "content": prompt}]
         )
         slides_content = response.choices[0].message.content.strip().split("\n\n")
+        logger.debug(f"Generated slides content: {slides_content}")
     except Exception as e:
+        logger.error(f"Error generating AI content: {e}")
+        logger.error(traceback.format_exc())
         return jsonify({"error": f"Error generating AI content: {str(e)}"}), 500
 
-    # Use a temporary file for the presentation
+    # Verify template file existence
+    template_path = "templates/base_template.pptx"
+    logger.debug(f"Checking template path: {template_path}")
+    logger.debug(f"Current working directory: {os.getcwd()}")
+    logger.debug(f"Template file exists: {os.path.exists(template_path)}")
+
     try:
+        # Use a temporary file for the presentation
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_file:
             temp_filename = temp_file.name
 
-        # Load PowerPoint template
-        presentation = Presentation("templates/base_template.pptx")
+        # Load PowerPoint template with additional logging
+        try:
+            presentation = Presentation(template_path)
+        except Exception as template_error:
+            logger.error(f"Error loading PowerPoint template: {template_error}")
+            logger.error(traceback.format_exc())
+            return jsonify({"error": f"Error loading PowerPoint template: {str(template_error)}"}), 500
 
-        # Create slides
+        # Create slides (rest of the code remains the same as in previous version)
         for slide_content in slides_content:
             slide = presentation.slides.add_slide(presentation.slide_layouts[1])
             parts = slide_content.split("\n")
@@ -94,6 +119,7 @@ def generate_presentation():
 
         # Save the presentation to the temporary file
         presentation.save(temp_filename)
+        logger.debug(f"Presentation saved to: {temp_filename}")
 
         # Send the file
         return send_file(temp_filename, 
@@ -102,6 +128,8 @@ def generate_presentation():
                          download_name=f"{lesson_topic}_lesson.pptx")
 
     except Exception as e:
+        logger.error(f"Error processing PowerPoint: {e}")
+        logger.error(traceback.format_exc())
         return jsonify({"error": f"Error processing PowerPoint: {str(e)}"}), 500
     finally:
         # Clean up temporary file if it exists
