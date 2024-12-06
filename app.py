@@ -58,7 +58,7 @@ def generate_presentation():
     prompt = (
         f"Create a {num_slides}-slide presentation for a lesson on '{lesson_topic}' "
         f"for the '{district}' district. The grade level is '{grade_level}', and the subject focus is '{subject_focus}'. "
-        f"{custom_prompt if custom_prompt else ''}"
+        f"{custom_prompt if custom_prompt else ''}. Use concise bullet points for the content."
     )
 
     try:
@@ -88,8 +88,16 @@ def generate_presentation():
             logger.error(f"Error loading PowerPoint template: {template_error}")
             return jsonify({"error": f"Error loading PowerPoint template: {str(template_error)}"}), 500
 
+        # Skip first informational slide from AI response if it exists
+        slide_start = 0
+        if "Here’s an outline" in slides_content[0]:
+            slide_start = 1
+
         # Create slides
-        for slide_content in slides_content[:num_slides]:
+        for slide_content in slides_content[slide_start:][:num_slides]:
+            if not slide_content.strip():
+                continue  # Skip empty slides
+
             slide = presentation.slides.add_slide(presentation.slide_layouts[1])
             parts = slide_content.split("\n")
             title = parts[0].strip() if parts else "Untitled Slide"
