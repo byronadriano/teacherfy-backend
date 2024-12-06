@@ -39,10 +39,8 @@ def home():
 
 @app.route("/generate", methods=["POST"])
 def generate_presentation():
-    # Log incoming request details
     logger.debug(f"Received generate request: {request.json}")
     
-    # Validate OpenAI client
     if client is None:
         logger.error("OpenAI client not initialized")
         return jsonify({"error": "OpenAI client not initialized"}), 500
@@ -51,9 +49,17 @@ def generate_presentation():
     data = request.json
     lesson_topic = data.get("lesson_topic", "Default Topic")
     district = data.get("district", "Default District")
+    grade_level = data.get("grade_level", "Not Specified")
+    subject_focus = data.get("subject_focus", "General")
+    custom_prompt = data.get("custom_prompt", "")
+    num_slides = min(max(data.get("num_slides", 3), 1), 10)  # Limit slides between 1 and 10
 
     # Create prompt
-    prompt = f"Create 3 slide bullet points for a lesson on {lesson_topic} for {district}."
+    prompt = (
+        f"Create a {num_slides}-slide presentation for a lesson on '{lesson_topic}' "
+        f"for the '{district}' district. The grade level is '{grade_level}', and the subject focus is '{subject_focus}'. "
+        f"{custom_prompt if custom_prompt else ''}"
+    )
 
     try:
         # Generate content with OpenAI
@@ -68,10 +74,7 @@ def generate_presentation():
         logger.error(traceback.format_exc())
         return jsonify({"error": f"Error generating AI content: {str(e)}"}), 500
 
-    # Verify template file existence
     template_path = "templates/base_template.pptx"
-    logger.debug(f"Checking template path: {template_path}")
-    logger.debug(f"Current working directory: {os.getcwd()}")
     logger.debug(f"Template file exists: {os.path.exists(template_path)}")
 
     try:
@@ -79,37 +82,31 @@ def generate_presentation():
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_file:
             temp_filename = temp_file.name
 
-        # Load PowerPoint template with additional logging
         try:
             presentation = Presentation(template_path)
         except Exception as template_error:
             logger.error(f"Error loading PowerPoint template: {template_error}")
-            logger.error(traceback.format_exc())
             return jsonify({"error": f"Error loading PowerPoint template: {str(template_error)}"}), 500
 
-        # Create slides (rest of the code remains the same as in previous version)
-        for slide_content in slides_content:
+        # Create slides
+        for slide_content in slides_content[:num_slides]:
             slide = presentation.slides.add_slide(presentation.slide_layouts[1])
             parts = slide_content.split("\n")
             title = parts[0].strip() if parts else "Untitled Slide"
             bullets = parts[1:] if len(parts) > 1 else []
 
-            # Add title
             if slide.shapes.title:
                 slide.shapes.title.text = title
 
-            # Find the content placeholder
             content_placeholder = None
             for shape in slide.placeholders:
                 if shape.placeholder_format.idx == 1:
                     content_placeholder = shape
                     break
 
-            # Add bullet points
             if content_placeholder:
                 content_placeholder.text = "\n".join([bullet.strip() for bullet in bullets])
             else:
-                # If no placeholder, add a new text box
                 left = Inches(1)
                 top = Inches(2)
                 width = Inches(8)
@@ -120,11 +117,9 @@ def generate_presentation():
                     paragraph = text_frame.add_paragraph()
                     paragraph.text = bullet.strip()
 
-        # Save the presentation to the temporary file
         presentation.save(temp_filename)
         logger.debug(f"Presentation saved to: {temp_filename}")
 
-        # Send the file
         return send_file(temp_filename, 
                          mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation', 
                          as_attachment=True, 
@@ -132,10 +127,8 @@ def generate_presentation():
 
     except Exception as e:
         logger.error(f"Error processing PowerPoint: {e}")
-        logger.error(traceback.format_exc())
         return jsonify({"error": f"Error processing PowerPoint: {str(e)}"}), 500
     finally:
-        # Clean up temporary file if it exists
         if 'temp_filename' in locals() and os.path.exists(temp_filename):
             os.unlink(temp_filename)
 
