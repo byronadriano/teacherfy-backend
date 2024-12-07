@@ -39,8 +39,11 @@ except ValueError as e:
 def home():
     return "Welcome to Teacherfy.ai Backend!"
 
-@app.route("/outline", methods=["POST"])
+@app.route("/outline", methods=["POST", "OPTIONS"])
 def get_outline():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "OK"}), 200
+
     if client is None:
         return jsonify({"error": "OpenAI client not initialized"}), 500
 
@@ -48,13 +51,12 @@ def get_outline():
     grade_level = data.get("grade_level", "Not Specified")
     subject_focus = data.get("subject_focus", "General")
     custom_prompt = data.get("custom_prompt", "")
-    num_slides = min(max(data.get("num_slides", 3), 1), 10)
+    # Convert num_slides to int
+    num_slides_str = data.get("num_slides", 3)
+    num_slides = int(num_slides_str) if isinstance(num_slides_str, str) else num_slides_str
+    num_slides = min(max(num_slides, 1), 10)
 
-    # Construct a prompt for the outline
-    prompt = (
-        f"Create a {num_slides}-slide lesson outline for a {grade_level} {subject_focus} lesson. "
-        f"{custom_prompt if custom_prompt else ''}"
-    )
+    prompt = f"Create a {num_slides}-slide lesson outline for a {grade_level} {subject_focus} lesson. {custom_prompt}"
 
     try:
         response = client.chat.completions.create(
@@ -62,8 +64,6 @@ def get_outline():
             messages=[{"role": "user", "content": prompt}]
         )
         outline_text = response.choices[0].message.content.strip()
-
-        # Return the outline as JSON
         return jsonify({"messages": [outline_text]})
     except Exception as e:
         logging.error(f"Error getting outline: {e}")
