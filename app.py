@@ -8,13 +8,9 @@ import tempfile
 import traceback
 from flask_cors import CORS
 
-app = Flask(__name__)  # Initialize Flask app
+app = Flask(__name__)
+CORS(app)  # For testing, allow all. Once works, narrow to your domain.
 
-# Allow requests from your frontend domain. If you're testing locally,
-# you can temporarily set origins="*" or "http://localhost:3001" if needed.
-CORS(app, resources={r"/*": {"origins": "https://teacherfy.ai"}})
-
-# Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -26,11 +22,8 @@ def get_env_var(var_name, default=None):
         raise ValueError(f"Required environment variable {var_name} not set")
     return value
 
-# Initialize OpenAI client with logging
 try:
-    client = OpenAI(
-        api_key=get_env_var("OPENAI_API_KEY")
-    )
+    client = OpenAI(api_key=get_env_var("OPENAI_API_KEY"))
 except ValueError as e:
     logger.error(f"OpenAI client initialization error: {e}")
     client = None
@@ -51,10 +44,7 @@ def get_outline():
     grade_level = data.get("grade_level", "Not Specified")
     subject_focus = data.get("subject_focus", "General")
     custom_prompt = data.get("custom_prompt", "")
-    # Convert num_slides to int
-    num_slides_str = data.get("num_slides", 3)
-    num_slides = int(num_slides_str) if isinstance(num_slides_str, str) else num_slides_str
-    num_slides = min(max(num_slides, 1), 10)
+    num_slides = min(max(data.get("num_slides", 3), 1), 10)
 
     prompt = f"Create a {num_slides}-slide lesson outline for a {grade_level} {subject_focus} lesson. {custom_prompt}"
 
@@ -69,8 +59,11 @@ def get_outline():
         logging.error(f"Error getting outline: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route("/generate", methods=["POST"])
+@app.route("/generate", methods=["POST", "OPTIONS"])
 def generate_presentation():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "OK"}), 200
+
     logger.debug(f"Received generate request: {request.json}")
 
     data = request.json
@@ -95,21 +88,15 @@ def generate_presentation():
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_file:
             temp_filename = temp_file.name
 
-        try:
-            presentation = Presentation(template_path)
-        except Exception as template_error:
-            logger.error(f"Error loading PowerPoint template: {template_error}")
-            return jsonify({"error": f"Error loading PowerPoint template: {str(template_error)}"}), 500
+        presentation = Presentation(template_path)
 
-        # If the outline text has any initial header or informational slide, you can adjust slide_start if needed
         slide_start = 0
         if slides_content and "Here’s an outline" in slides_content[0]:
             slide_start = 1
 
         for slide_content in slides_content[slide_start:][:num_slides]:
             if not slide_content.strip():
-                continue  # skip empty slides
-
+                continue
             slide = presentation.slides.add_slide(presentation.slide_layouts[1])
             parts = slide_content.split("\n")
             title = parts[0].strip() if parts else "Untitled Slide"
@@ -125,9 +112,8 @@ def generate_presentation():
                     break
 
             if content_placeholder:
-                content_placeholder.text = "\n".join([bullet.strip() for bullet in bullets])
+                content_placeholder.text = "\n".join([b.strip() for b in bullets])
             else:
-                # If no placeholder found, create a textbox
                 left = Inches(1)
                 top = Inches(2)
                 width = Inches(8)
