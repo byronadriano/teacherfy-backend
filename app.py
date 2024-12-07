@@ -10,7 +10,7 @@ import traceback
 from flask_cors import CORS
 
 app = Flask(__name__)  # Initialize Flask app
-CORS(app, resources={r"/*": {"origins": "https://red-mud-08643bc1e.4.azurestaticapps.net"}})
+CORS(app, resources={r"/*": {"origins": "https://teacherfy.ai"}})
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
