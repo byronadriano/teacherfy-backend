@@ -6,10 +6,12 @@ from pptx import Presentation
 from pptx.util import Inches
 import tempfile
 import traceback
-
 from flask_cors import CORS
 
 app = Flask(__name__)  # Initialize Flask app
+
+# Allow requests from your frontend domain. If you're testing locally,
+# you can temporarily set origins="*" or "http://localhost:3001" if needed.
 CORS(app, resources={r"/*": {"origins": "https://teacherfy.ai"}})
 
 # Configure logging
@@ -37,48 +39,59 @@ except ValueError as e:
 def home():
     return "Welcome to Teacherfy.ai Backend!"
 
+@app.route("/outline", methods=["POST"])
+def get_outline():
+    if client is None:
+        return jsonify({"error": "OpenAI client not initialized"}), 500
+
+    data = request.json
+    grade_level = data.get("grade_level", "Not Specified")
+    subject_focus = data.get("subject_focus", "General")
+    custom_prompt = data.get("custom_prompt", "")
+    num_slides = min(max(data.get("num_slides", 3), 1), 10)
+
+    # Construct a prompt for the outline
+    prompt = (
+        f"Create a {num_slides}-slide lesson outline for a {grade_level} {subject_focus} lesson. "
+        f"{custom_prompt if custom_prompt else ''}"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini", 
+            messages=[{"role": "user", "content": prompt}]
+        )
+        outline_text = response.choices[0].message.content.strip()
+
+        # Return the outline as JSON
+        return jsonify({"messages": [outline_text]})
+    except Exception as e:
+        logging.error(f"Error getting outline: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/generate", methods=["POST"])
 def generate_presentation():
     logger.debug(f"Received generate request: {request.json}")
-    
-    if client is None:
-        logger.error("OpenAI client not initialized")
-        return jsonify({"error": "OpenAI client not initialized"}), 500
 
-    # Parse request data
     data = request.json
     lesson_topic = data.get("lesson_topic", "Default Topic")
     district = data.get("district", "Default District")
     grade_level = data.get("grade_level", "Not Specified")
     subject_focus = data.get("subject_focus", "General")
     custom_prompt = data.get("custom_prompt", "")
-    num_slides = min(max(data.get("num_slides", 3), 1), 10)  # Limit slides between 1 and 10
+    num_slides = min(max(data.get("num_slides", 3), 1), 10)
+    final_outline = data.get("lesson_outline", "")
 
-    # Create prompt
-    prompt = (
-        f"Create a {num_slides}-slide presentation for a lesson on '{lesson_topic}' "
-        f"for the '{district}' district. The grade level is '{grade_level}', and the subject focus is '{subject_focus}'. "
-        f"{custom_prompt if custom_prompt else ''}. Use concise bullet points for the content."
-    )
+    if not final_outline.strip():
+        return jsonify({"error": "No outline provided"}), 400
 
-    try:
-        # Generate content with OpenAI
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        slides_content = response.choices[0].message.content.strip().split("\n\n")
-        logger.debug(f"Generated slides content: {slides_content}")
-    except Exception as e:
-        logger.error(f"Error generating AI content: {e}")
-        logger.error(traceback.format_exc())
-        return jsonify({"error": f"Error generating AI content: {str(e)}"}), 500
+    slides_content = final_outline.strip().split("\n\n")
+    logger.debug(f"Using provided outline for slides content: {slides_content}")
 
     template_path = "templates/base_template.pptx"
     logger.debug(f"Template file exists: {os.path.exists(template_path)}")
 
     try:
-        # Use a temporary file for the presentation
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pptx') as temp_file:
             temp_filename = temp_file.name
 
@@ -88,15 +101,14 @@ def generate_presentation():
             logger.error(f"Error loading PowerPoint template: {template_error}")
             return jsonify({"error": f"Error loading PowerPoint template: {str(template_error)}"}), 500
 
-        # Skip first informational slide from AI response if it exists
+        # If the outline text has any initial header or informational slide, you can adjust slide_start if needed
         slide_start = 0
-        if "Here’s an outline" in slides_content[0]:
+        if slides_content and "Here’s an outline" in slides_content[0]:
             slide_start = 1
 
-        # Create slides
         for slide_content in slides_content[slide_start:][:num_slides]:
             if not slide_content.strip():
-                continue  # Skip empty slides
+                continue  # skip empty slides
 
             slide = presentation.slides.add_slide(presentation.slide_layouts[1])
             parts = slide_content.split("\n")
@@ -115,6 +127,7 @@ def generate_presentation():
             if content_placeholder:
                 content_placeholder.text = "\n".join([bullet.strip() for bullet in bullets])
             else:
+                # If no placeholder found, create a textbox
                 left = Inches(1)
                 top = Inches(2)
                 width = Inches(8)
@@ -128,9 +141,9 @@ def generate_presentation():
         presentation.save(temp_filename)
         logger.debug(f"Presentation saved to: {temp_filename}")
 
-        return send_file(temp_filename, 
-                         mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation', 
-                         as_attachment=True, 
+        return send_file(temp_filename,
+                         mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                         as_attachment=True,
                          download_name=f"{lesson_topic}_lesson.pptx")
 
     except Exception as e:
