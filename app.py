@@ -44,36 +44,48 @@ def get_outline():
 
     prompt = f"""Create a detailed {num_slides}-slide lesson outline for a {grade_level} {subject_focus} lesson on {lesson_topic} for {district}. 
 
-Please structure the outline with clear sections:
-1. Introduction/Opening slide (hook and objectives)
-2. Main content slides with key concepts
-3. Interactive activities or examples
-4. Assessment or practice opportunities
-5. Summary/closing slide
+Please structure each slide with:
+1. Title: Clear, descriptive title
+2. Content: Main teaching points
+3. Teacher Notes: Instructions or tips (prefixed with 'TEACHER NOTE:')
+4. Visual Elements: Any diagrams/images needed (prefixed with 'VISUAL:')
 
-For each slide, include:
-- Clear, descriptive title starting with "Slide X: [Title]"
-- Key points and content
-- Any visual elements or diagrams needed
-- Interactive elements or activities
-- Assessment components where appropriate
+Format each slide as:
+
+Slide X: [Title]
+Content:
+- [Main points]
+
+Teacher Notes:
+- [Teaching tips/instructions]
+
+Visual Elements:
+- [Description of visuals needed]
 
 Additional requirements:
 {custom_prompt}
 
-Note: Use two-column layouts for comparisons or parallel concepts, and ensure smooth transitions between slides."""
+Note: Use two-column layouts for comparisons or parallel concepts."""
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4-0125-preview",  # Using latest GPT-4 model
+            model="gpt-4-0125-preview",
             messages=[{"role": "user", "content": prompt}]
         )
         outline_text = response.choices[0].message.content.strip()
-        return jsonify({"messages": [outline_text]})
+        
+        # Parse the outline into structured content
+        from slide_processor import parse_outline_to_structured_content
+        structured_content = parse_outline_to_structured_content(outline_text)
+        
+        return jsonify({
+            "messages": [outline_text],
+            "structured_content": structured_content
+        })
     except Exception as e:
         logging.error(f"Error getting outline: {e}")
         return jsonify({"error": str(e)}), 500
-
+    
 @app.route("/generate", methods=["POST", "OPTIONS"])
 def generate_presentation_endpoint():
     if request.method == "OPTIONS":

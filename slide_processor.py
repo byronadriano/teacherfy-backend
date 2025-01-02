@@ -3,16 +3,12 @@ from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
 
-class SlideLayouts:
-    TITLE_SLIDE = 0  # First slide
-    TITLE_CONTENT = 1  # Standard layout
-    TITLE_TWO_CONTENT = 3  # Two column layout
-    TITLE_ONLY = 5  # Title only for special slides
-
-def parse_outline_to_json(outline_text):
-    """Convert the outline text into a structured JSON format"""
+def parse_outline_to_structured_content(outline_text):
+    """Parse the outline text into structured slide content with notes"""
     slides = []
     current_slide = None
+    current_section = None
+    
     lines = outline_text.strip().split('\n')
     
     for line in lines:
@@ -20,162 +16,111 @@ def parse_outline_to_json(outline_text):
         if not line:
             continue
             
-        if 'Slide' in line and ':' in line:
+        if line.startswith('Slide '):
             if current_slide:
                 slides.append(current_slide)
             
             # Extract slide number and title
-            slide_parts = line.split(':', 1)
-            title = slide_parts[1].strip() if len(slide_parts) > 1 else line
+            title = line.split(':', 1)[1].strip() if ':' in line else line
             
             # Determine layout based on content
-            layout_type = "TITLE_CONTENT"
-            if "vs." in title.lower() or "comparison" in title.lower():
-                layout_type = "TWO_COLUMN"
-            elif any(word in title.lower() for word in ["introduction", "summary", "conclusion"]):
-                layout_type = "TITLE_ONLY"
+            layout = "TWO_COLUMN" if any(word in title.lower() for word in 
+                ["vs", "comparison", "contrast"]) else "TITLE_CONTENT"
             
             current_slide = {
                 'title': title,
-                'layout': layout_type,
-                'main_content': [],
+                'layout': layout,
+                'content': [],
+                'teacher_notes': [],
+                'visual_elements': [],
                 'left_column': [],
-                'right_column': [],
-                'bullets': []
+                'right_column': []
             }
-        elif line.startswith(('*', '-', '•')):
+            current_section = 'content'
+            
+        elif line.lower().startswith('teacher note'):
+            current_section = 'teacher_notes'
+        elif line.lower().startswith('visual'):
+            current_section = 'visual_elements'
+        elif line.lower().startswith('content'):
+            current_section = 'content'
+        elif line.startswith(('-', '*', '•')):
+            content = line.lstrip('-*• ').strip()
             if current_slide:
-                bullet = line.lstrip('*- •').strip()
-                if current_slide['layout'] == "TWO_COLUMN":
+                if current_slide['layout'] == "TWO_COLUMN" and current_section == 'content':
                     if len(current_slide['left_column']) <= len(current_slide['right_column']):
-                        current_slide['left_column'].append(bullet)
+                        current_slide['left_column'].append(content)
                     else:
-                        current_slide['right_column'].append(bullet)
+                        current_slide['right_column'].append(content)
                 else:
-                    current_slide['bullets'].append(bullet)
-        elif current_slide:
-            current_slide['main_content'].append(line)
+                    current_slide[current_section].append(content)
+        else:
+            if current_slide and not line.lower().endswith(':'):
+                current_slide[current_section].append(line)
     
     if current_slide:
         slides.append(current_slide)
     
     return slides
 
-def create_presentation(slides_data):
-    """Create a PowerPoint presentation from structured slide data"""
+def create_presentation(outline_json):
+    """Create a PowerPoint presentation with notes from structured content"""
     prs = Presentation()
     
-    for slide_data in slides_data:
-        layout_type = slide_data['layout']
-        
-        if layout_type == "TWO_COLUMN":
-            slide = create_two_column_slide(prs, slide_data)
-        elif layout_type == "TITLE_ONLY":
-            slide = create_title_only_slide(prs, slide_data)
+    for slide_data in outline_json:
+        # Choose layout
+        if slide_data['layout'] == "TWO_COLUMN":
+            slide = prs.slides.add_slide(prs.slide_layouts[3])  # Two content layout
         else:
-            slide = create_standard_slide(prs, slide_data)
+            slide = prs.slides.add_slide(prs.slide_layouts[1])  # Title and content layout
         
-        apply_slide_styling(slide)
+        # Add title
+        title = slide.shapes.title
+        title.text = slide_data['title']
+        
+        if slide_data['layout'] == "TWO_COLUMN":
+            # Add two columns
+            left = slide.placeholders[1]
+            right = slide.placeholders[2]
+            
+            add_content_with_formatting(left.text_frame, slide_data['left_column'])
+            add_content_with_formatting(right.text_frame, slide_data['right_column'])
+        else:
+            # Add main content
+            content = slide.placeholders[1]
+            add_content_with_formatting(content.text_frame, slide_data['content'])
+        
+        # Add notes
+        notes_slide = slide.notes_slide
+        notes_text = notes_slide.notes_text_frame
+        
+        if slide_data['teacher_notes']:
+            notes_text.text = "TEACHER NOTES:\n" + "\n".join(
+                f"• {note}" for note in slide_data['teacher_notes']
+            )
+        
+        if slide_data['visual_elements']:
+            if notes_text.text:
+                notes_text.text += "\n\nVISUAL ELEMENTS:\n"
+            else:
+                notes_text.text = "VISUAL ELEMENTS:\n"
+            notes_text.text += "\n".join(
+                f"• {visual}" for visual in slide_data['visual_elements']
+            )
     
     return prs
 
-def create_standard_slide(prs, slide_data):
-    """Create a standard title and content slide"""
-    slide = prs.slides.add_slide(prs.slide_layouts[SlideLayouts.TITLE_CONTENT])
+def add_content_with_formatting(text_frame, content):
+    """Add content to a text frame with consistent formatting"""
+    text_frame.clear()
     
-    # Add title
-    title = slide.shapes.title
-    title.text = slide_data['title']
-    
-    # Add content
-    content = slide.placeholders[1]
-    tf = content.text_frame
-    
-    # Add main content if any
-    if slide_data['main_content']:
-        p = tf.add_paragraph()
-        p.text = '\n'.join(slide_data['main_content'])
-    
-    # Add bullets
-    for bullet in slide_data['bullets']:
-        p = tf.add_paragraph()
-        p.text = bullet
-        p.level = 1
-    
-    return slide
-
-def create_two_column_slide(prs, slide_data):
-    """Create a slide with two columns"""
-    slide = prs.slides.add_slide(prs.slide_layouts[SlideLayouts.TITLE_TWO_CONTENT])
-    
-    # Add title
-    title = slide.shapes.title
-    title.text = slide_data['title']
-    
-    # Left column
-    left = slide.placeholders[1]
-    tf_left = left.text_frame
-    for bullet in slide_data['left_column']:
-        p = tf_left.add_paragraph()
-        p.text = bullet
-        p.level = 1
-    
-    # Right column
-    right = slide.placeholders[2]
-    tf_right = right.text_frame
-    for bullet in slide_data['right_column']:
-        p = tf_right.add_paragraph()
-        p.text = bullet
-        p.level = 1
-    
-    return slide
-
-def create_title_only_slide(prs, slide_data):
-    """Create a title-focused slide with centered content"""
-    slide = prs.slides.add_slide(prs.slide_layouts[SlideLayouts.TITLE_ONLY])
-    
-    # Add title
-    title = slide.shapes.title
-    title.text = slide_data['title']
-    
-    # Add content in a text box
-    left = Inches(1)
-    top = Inches(2.5)
-    width = Inches(8)
-    height = Inches(4)
-    
-    textbox = slide.shapes.add_textbox(left, top, width, height)
-    tf = textbox.text_frame
-    tf.word_wrap = True
-    
-    # Add main content and bullets
-    for content in slide_data['main_content']:
-        p = tf.add_paragraph()
-        p.text = content
-        p.alignment = PP_ALIGN.CENTER
-    
-    for bullet in slide_data['bullets']:
-        p = tf.add_paragraph()
-        p.text = bullet
-        p.alignment = PP_ALIGN.CENTER
-    
-    return slide
-
-def apply_slide_styling(slide):
-    """Apply consistent styling to a slide"""
-    # Style the title
-    if slide.shapes.title:
-        title_format = slide.shapes.title.text_frame.paragraphs[0].font
-        title_format.size = Pt(32)
-        title_format.name = 'Calibri'
-        title_format.bold = True
-    
-    # Style all text frames
-    for shape in slide.shapes:
-        if hasattr(shape, "text_frame"):
-            for paragraph in shape.text_frame.paragraphs:
-                font = paragraph.font
-                font.size = Pt(18)
-                font.name = 'Calibri'
-                if paragraph.level == 1:  # Bullet points
-                    font.size = Pt(16)
+    for item in content:
+        p = text_frame.add_paragraph()
+        p.text = item
+        p.font.size = Pt(18)
+        p.font.name = 'Calibri'
+        
+        # Add bullet points for items that look like bullet points
+        if item.startswith(('•', '-', '*')):
+            p.level = 1
+            p.font.size = Pt(16)  # Slightly smaller for bullet points
