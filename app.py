@@ -94,16 +94,19 @@ def generate_presentation_endpoint():
     try:
         data = request.json
         outline_text = data.get('lesson_outline', '')
+        structured_content = data.get('structured_content')
         
         if not outline_text:
             return jsonify({"error": "No outline provided"}), 400
             
-        presentation_path = generate_presentation(outline_text)
-        return send_file(presentation_path, as_attachment=True, download_name="lesson_presentation.pptx")
+        presentation_path = generate_presentation(outline_text, structured_content)
+        return send_file(presentation_path, 
+                        as_attachment=True,
+                        download_name="lesson_presentation.pptx",
+                        mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation')
         
     except Exception as e:
         logging.error(f"Error generating presentation: {e}")
         return jsonify({"error": str(e)}), 500
-
 if __name__ == "__main__":
     app.run(debug=True)
