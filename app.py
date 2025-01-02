@@ -2,16 +2,12 @@ import os
 import logging
 from flask import Flask, request, jsonify, send_file
 from openai import OpenAI
-from pptx import Presentation
-from pptx.util import Inches
 import tempfile
-import traceback
 from flask_cors import CORS
 from presentation_generator import generate_presentation
 
-
 app = Flask(__name__)
-CORS(app)  # For testing, allow all. Once works, narrow to your domain.
+CORS(app)
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -30,10 +26,6 @@ except ValueError as e:
     logger.error(f"OpenAI client initialization error: {e}")
     client = None
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Welcome to Teacherfy.ai Backend!"
-
 @app.route("/outline", methods=["POST", "OPTIONS"])
 def get_outline():
     if request.method == "OPTIONS":
@@ -50,11 +42,30 @@ def get_outline():
     custom_prompt = data.get("custom_prompt", "")
     num_slides = min(max(data.get("num_slides", 3), 1), 10)
 
-    prompt = f"Create a {num_slides}-slide lesson outline for a {grade_level} {subject_focus} lesson on {lesson_topic} for {district}. {custom_prompt}"
+    prompt = f"""Create a detailed {num_slides}-slide lesson outline for a {grade_level} {subject_focus} lesson on {lesson_topic} for {district}. 
+
+Please structure the outline with clear sections:
+1. Introduction/Opening slide (hook and objectives)
+2. Main content slides with key concepts
+3. Interactive activities or examples
+4. Assessment or practice opportunities
+5. Summary/closing slide
+
+For each slide, include:
+- Clear, descriptive title starting with "Slide X: [Title]"
+- Key points and content
+- Any visual elements or diagrams needed
+- Interactive elements or activities
+- Assessment components where appropriate
+
+Additional requirements:
+{custom_prompt}
+
+Note: Use two-column layouts for comparisons or parallel concepts, and ensure smooth transitions between slides."""
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini", 
+            model="gpt-4-0125-preview",  # Using latest GPT-4 model
             messages=[{"role": "user", "content": prompt}]
         )
         outline_text = response.choices[0].message.content.strip()
@@ -67,9 +78,6 @@ def get_outline():
 def generate_presentation_endpoint():
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
-
-    if client is None:
-        return jsonify({"error": "OpenAI client not initialized"}), 500
 
     try:
         data = request.json
@@ -84,7 +92,6 @@ def generate_presentation_endpoint():
     except Exception as e:
         logging.error(f"Error generating presentation: {e}")
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == "__main__":
     app.run(debug=True)
