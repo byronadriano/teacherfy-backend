@@ -1,3 +1,4 @@
+# slide_processor.py
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
@@ -25,7 +26,7 @@ def parse_outline_to_structured_content(outline_text):
             
             # Determine layout based on content
             layout = "TWO_COLUMN" if any(word in title.lower() for word in 
-                ["vs", "comparison", "contrast"]) else "TITLE_CONTENT"
+                ["vs", "comparison", "contrast"]) else "TITLE_AND_CONTENT"
             
             current_slide = {
                 'title': title,
@@ -38,12 +39,12 @@ def parse_outline_to_structured_content(outline_text):
             }
             current_section = 'content'
             
-        elif line.lower().startswith('teacher note'):
-            current_section = 'teacher_notes'
-        elif line.lower().startswith('visual'):
-            current_section = 'visual_elements'
-        elif line.lower().startswith('content'):
+        elif line.lower().startswith('content:'):
             current_section = 'content'
+        elif line.lower().startswith('teacher notes:'):
+            current_section = 'teacher_notes'
+        elif line.lower().startswith('visual elements:'):
+            current_section = 'visual_elements'
         elif line.startswith(('-', '*', '•')):
             content = line.lstrip('-*• ').strip()
             if current_slide:
@@ -55,6 +56,7 @@ def parse_outline_to_structured_content(outline_text):
                 else:
                     current_slide[current_section].append(content)
         else:
+            # Handle non-bullet point content
             if current_slide and not line.lower().endswith(':'):
                 current_slide[current_section].append(line)
     
@@ -67,60 +69,98 @@ def create_presentation(outline_json):
     """Create a PowerPoint presentation with notes from structured content"""
     prs = Presentation()
     
+    # Set slide width and height (standard 4:3 aspect ratio)
+    prs.slide_width = Inches(10)
+    prs.slide_height = Inches(7.5)
+    
     for slide_data in outline_json:
-        # Choose layout
+        # Choose layout based on slide type
+        layout_idx = 1  # Default to title and content (1)
         if slide_data['layout'] == "TWO_COLUMN":
-            slide = prs.slides.add_slide(prs.slide_layouts[3])  # Two content layout
-        else:
-            slide = prs.slides.add_slide(prs.slide_layouts[1])  # Title and content layout
+            layout_idx = 3  # Two content layout (3)
+        
+        slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
         
         # Add title
-        title = slide.shapes.title
-        title.text = slide_data['title']
+        if slide.shapes.title:
+            title = slide.shapes.title
+            title.text = slide_data['title']
+            # Format title
+            for paragraph in title.text_frame.paragraphs:
+                paragraph.font.size = Pt(32)
+                paragraph.font.bold = True
+                paragraph.font.name = 'Calibri'
         
         if slide_data['layout'] == "TWO_COLUMN":
-            # Add two columns
-            left = slide.placeholders[1]
-            right = slide.placeholders[2]
-            
-            add_content_with_formatting(left.text_frame, slide_data['left_column'])
-            add_content_with_formatting(right.text_frame, slide_data['right_column'])
+            # Get placeholders for two-column layout
+            shapes = [shape for shape in slide.placeholders]
+            if len(shapes) >= 3:  # Title + 2 content placeholders
+                left = shapes[1]
+                right = shapes[2]
+                
+                # Add content to left column
+                if slide_data['left_column']:
+                    text_frame = left.text_frame
+                    text_frame.clear()
+                    for item in slide_data['left_column']:
+                        p = text_frame.add_paragraph()
+                        p.text = item
+                        p.font.size = Pt(18)
+                        p.font.name = 'Calibri'
+                        p.level = 1
+                
+                # Add content to right column
+                if slide_data['right_column']:
+                    text_frame = right.text_frame
+                    text_frame.clear()
+                    for item in slide_data['right_column']:
+                        p = text_frame.add_paragraph()
+                        p.text = item
+                        p.font.size = Pt(18)
+                        p.font.name = 'Calibri'
+                        p.level = 1
         else:
-            # Add main content
-            content = slide.placeholders[1]
-            add_content_with_formatting(content.text_frame, slide_data['content'])
+            # Add content to single-column layout
+            shapes = [shape for shape in slide.placeholders]
+            if len(shapes) >= 2:  # Title + content placeholder
+                content_placeholder = shapes[1]
+                text_frame = content_placeholder.text_frame
+                text_frame.clear()
+                
+                for item in slide_data['content']:
+                    p = text_frame.add_paragraph()
+                    p.text = item
+                    p.font.size = Pt(18)
+                    p.font.name = 'Calibri'
+                    # Add bullet points for list items
+                    if item.lstrip().startswith(('-', '•', '*')):
+                        p.level = 1
+                        p.text = item.lstrip('-•* ').strip()
         
         # Add notes
         notes_slide = slide.notes_slide
         notes_text = notes_slide.notes_text_frame
         
-        if slide_data['teacher_notes']:
-            notes_text.text = "TEACHER NOTES:\n" + "\n".join(
-                f"• {note}" for note in slide_data['teacher_notes']
-            )
+        notes_text.clear()
         
+        # Add teacher notes
+        if slide_data['teacher_notes']:
+            notes_text.text = "TEACHER NOTES:\n"
+            for note in slide_data['teacher_notes']:
+                p = notes_text.add_paragraph()
+                p.text = f"• {note}"
+        
+        # Add visual elements
         if slide_data['visual_elements']:
             if notes_text.text:
-                notes_text.text += "\n\nVISUAL ELEMENTS:\n"
+                p = notes_text.add_paragraph()
+                p.text = "\nVISUAL ELEMENTS:"
             else:
                 notes_text.text = "VISUAL ELEMENTS:\n"
-            notes_text.text += "\n".join(
-                f"• {visual}" for visual in slide_data['visual_elements']
-            )
+            
+            for visual in slide_data['visual_elements']:
+                p = notes_text.add_paragraph()
+                p.text = f"• {visual}"
     
     return prs
 
-def add_content_with_formatting(text_frame, content):
-    """Add content to a text frame with consistent formatting"""
-    text_frame.clear()
-    
-    for item in content:
-        p = text_frame.add_paragraph()
-        p.text = item
-        p.font.size = Pt(18)
-        p.font.name = 'Calibri'
-        
-        # Add bullet points for items that look like bullet points
-        if item.startswith(('•', '-', '*')):
-            p.level = 1
-            p.font.size = Pt(16)  # Slightly smaller for bullet points

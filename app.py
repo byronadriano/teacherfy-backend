@@ -108,5 +108,6 @@ def generate_presentation_endpoint():
     except Exception as e:
         logging.error(f"Error generating presentation: {e}")
         return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     app.run(debug=True)
