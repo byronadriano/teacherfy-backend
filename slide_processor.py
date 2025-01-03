@@ -1,8 +1,8 @@
-# slide_processor.py
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
+import os
 
 def parse_outline_to_structured_content(outline_text):
     """Parse the outline text into structured slide content with notes"""
@@ -67,11 +67,11 @@ def parse_outline_to_structured_content(outline_text):
 
 def create_presentation(outline_json):
     """Create a PowerPoint presentation with notes from structured content"""
-    prs = Presentation()
+    # Load the template
+    template_path = os.path.join(os.path.dirname(__file__), 'templates', 'base_template.pptx')
+    prs = Presentation(template_path)
     
-    # Set slide width and height (standard 4:3 aspect ratio)
-    prs.slide_width = Inches(10)
-    prs.slide_height = Inches(7.5)
+    # Title slide is already included in template (at index 0)
     
     for slide_data in outline_json:
         # Choose layout based on slide type
@@ -163,4 +163,3 @@ def create_presentation(outline_json):
                 p.text = f"• {visual}"
     
     return prs
-
