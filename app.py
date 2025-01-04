@@ -47,7 +47,7 @@ def get_outline():
 
 Please structure each slide with:
 1. Title: Clear, descriptive title in {language}
-2. Content: Main teaching points in {language}. Dont use within the content unless necessary.
+2. Content: Main teaching points in {language}. Avoid using quotations within the content unless necessary.
 3. Teacher Notes: Instructions or tips (prefixed with 'TEACHER NOTE:')
 4. Visual Elements: Any diagrams/images needed (prefixed with 'VISUAL:')
 
