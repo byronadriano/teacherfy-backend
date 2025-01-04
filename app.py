@@ -47,7 +47,7 @@ def get_outline():
 
 Please structure each slide with:
 1. Title: Clear, descriptive title in {language}
-2. Content: Main teaching points in {language}. Avoid using quotations within the content unless necessary.
+2. Content: Main teaching points in {language}.
 3. Teacher Notes: Instructions or tips (prefixed with 'TEACHER NOTE:')
 4. Visual Elements: Any diagrams/images needed (prefixed with 'VISUAL:')
 
@@ -69,8 +69,7 @@ Additional requirements:
 Important language considerations:
 - Ensure all content is in {language}
 - Use age-appropriate language for {grade_level} students
-- Include culturally relevant examples for {language}-speaking students
-- If using technical terms, provide clear explanations in {language}
+- If using technical terms, provide clear explanations
 - Consider including key vocabulary terms with explanations if needed
 
 Note: Use two-column layouts for comparisons or parallel concepts."""
