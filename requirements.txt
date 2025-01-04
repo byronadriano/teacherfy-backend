@@ -4,4 +4,3 @@ python-pptx
 flask-cors
 requests
 Pillow
-python-dotenv
