@@ -39,7 +39,7 @@ def get_outline():
     subject_focus = data.get("subject_focus", "General")
     lesson_topic = data.get("lesson_topic", "")
     district = data.get("district", "")
-    language = data.get("language", "English")
+    language = data.get("language", "English")  # Add this line
     custom_prompt = data.get("custom_prompt", "")
     num_slides = min(max(data.get("num_slides", 3), 1), 10)
 
