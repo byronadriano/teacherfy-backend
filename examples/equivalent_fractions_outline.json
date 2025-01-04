@@ -1,43 +1,123 @@
 {
-    "messages": [
-      "Slide 1: Introduction to Equivalent Fractions\nContent:\n• Students will be able to identify and create equivalent fractions using visual models and multiplication\n• Key vocabulary: equivalent fractions, numerator, denominator\n\nTeacher Notes:\n• Begin with a think-pair-share about what students already know about fractions\n• Use pizza or chocolate bar examples to make it relatable\n\nVisual Elements:\n• Pizza diagram showing 1/2 and 2/4 as equivalent\n\nSlide 2: Understanding Equivalent Fractions\nContent:\n• Equivalent fractions are different fractions that show the same amount\n• Think of it like sharing a pizza: cutting it into 2 pieces or 4 pieces still gives you the same amount when you take half\n• Let's explore how 1/2 = 2/4 = 4/8\n\nTeacher Notes:\n• Use manipulatives or virtual fraction strips\n• Have students fold paper strips to demonstrate\n\nVisual Elements:\n• Fraction strips showing multiple equivalents\n• Interactive number line\n\nSlide 3: Finding Equivalent Fractions\nContent:\n• To find equivalent fractions, multiply or divide both the numerator and denominator by the same number\n• Example: 1/2 × 2/2 = 2/4\n• Remember: multiplying by 1 (2/2, 3/3, etc.) doesn't change the value\n\nTeacher Notes:\n• Use think-alouds to model the process\n• Provide multiple examples with visual support\n\nVisual Elements:\n• Step-by-step multiplication examples\n• Visual models showing the process\n\nSlide 4: Practice Together\nContent:\n• Let's practice finding equivalent fractions together\n• Group activity: Create fraction cards and find matches\n• Quick check: Is 2/3 equivalent to 4/6? How do you know?\n\nTeacher Notes:\n• Form small groups for collaborative practice\n• Circulate to provide support and check understanding\n\nVisual Elements:\n• Sample fraction cards\n• Work space for calculations\n\nSlide 5: Show What You Know\nContent:\n• Independent practice time\n• Complete the equivalent fraction matching game\n• Exit ticket: Create three equivalent fractions for 3/4\n\nTeacher Notes:\n• Provide fraction circles or strips as needed\n• Use exit ticket responses to plan follow-up instruction\n\nVisual Elements:\n• Example of completed exit ticket\n• Success criteria checklist"
-    ],
-    "structured_content": [
-      {
-        "title": "Introduction to Equivalent Fractions",
-        "layout": "TITLE_AND_CONTENT",
-        "content": [
-          "Students will be able to identify and create equivalent fractions using visual models and multiplication",
-          "Key vocabulary: equivalent fractions, numerator, denominator"
-        ],
-        "teacher_notes": [
-          "Begin with a think-pair-share about what students already know about fractions",
-          "Use pizza or chocolate bar examples to make it relatable"
-        ],
-        "visual_elements": [
-          "Pizza diagram showing 1/2 and 2/4 as equivalent"
-        ],
-        "left_column": [],
-        "right_column": []
-      },
-      {
-        "title": "Understanding Equivalent Fractions",
-        "layout": "TITLE_AND_CONTENT",
-        "content": [
-          "Equivalent fractions are different fractions that show the same amount",
-          "Think of it like sharing a pizza: cutting it into 2 pieces or 4 pieces still gives you the same amount when you take half",
-          "Let's explore how 1/2 = 2/4 = 4/8"
-        ],
-        "teacher_notes": [
-          "Use manipulatives or virtual fraction strips",
-          "Have students fold paper strips to demonstrate"
-        ],
-        "visual_elements": [
-          "Fraction strips showing multiple equivalents",
-          "Interactive number line"
-        ],
-        "left_column": [],
-        "right_column": []
-      }
-    ]
-  }
+  "messages": [
+    "Slide 1: Let's Explore Equivalent Fractions!\nContent:\n• Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix.\n• Students will be able to explain why different fractions can show the same amount using pictures and numbers.\n\nTeacher Notes:\n• Begin with students sharing their experiences with fractions in their daily lives\n• Use culturally relevant examples from Denver communities\n\nVisual Elements:\n• Interactive display showing local treats divided into equivalent parts\n• Student-friendly vocabulary cards with pictures"
+  ],
+  "structured_content": [
+    {
+      "title": "Let's Explore Equivalent Fractions!",
+      "layout": "TITLE_AND_CONTENT",
+      "content": [
+        "¡Today we're going on a fraction adventure!",
+        "• Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix",
+        "• Students will be able to explain why different fractions can show the same amount using pictures and numbers",
+        "• Let's start by thinking about times when we share things equally!"
+      ],
+      "teacher_notes": [
+        "Begin with students sharing their experiences with fractions in their daily lives",
+        "Use culturally relevant examples from Denver communities",
+        "Encourage bilingual students to share fraction terms in their home language"
+      ],
+      "visual_elements": [
+        "Interactive display showing local treats divided into equivalent parts",
+        "Student-friendly vocabulary cards with pictures"
+      ],
+      "left_column": [],
+      "right_column": []
+    },
+    {
+      "title": "What Are Equivalent Fractions?",
+      "layout": "TITLE_AND_CONTENT",
+      "content": [
+        "Let's learn our fraction vocabulary!",
+        "• Imagine sharing a breakfast burrito with your friend - you can cut it in half (1/2) or into four equal pieces and take two (2/4). You get the same amount!",
+        "• The top number (numerator) tells us how many pieces we have",
+        "• The bottom number (denominator) tells us how many total equal pieces",
+        "• When fractions show the same amount, we call them equivalent"
+      ],
+      "teacher_notes": [
+        "Use local food examples familiar to Denver students",
+        "Connect math vocabulary to real experiences",
+        "Encourage students to create their own examples"
+      ],
+      "visual_elements": [
+        "Animation of a burrito being cut into different equivalent portions",
+        "Interactive fraction wall labeled in English and Spanish",
+        "Hands-on fraction strips for each student"
+      ],
+      "left_column": [],
+      "right_column": []
+    },
+    {
+      "title": "Finding Equivalent Fractions Together",
+      "layout": "TWO_COLUMNS",
+      "content": [],
+      "teacher_notes": [
+        "Use Rocky Mountain National Park trail maps for real-world connections",
+        "Encourage peer discussion in preferred language",
+        "Model think-aloud strategy"
+      ],
+      "visual_elements": [
+        "Trail map showing different fraction representations",
+        "Digital manipulatives for student exploration"
+      ],
+      "left_column": [
+        "Let's practice together!",
+        "• When we multiply 1/2 by 2/2, we get 2/4",
+        "• It's like taking a hiking trail that's 1/2 mile long and marking it every quarter mile - you'll have 2/4 of the trail at the same spot as 1/2!",
+        "• Your turn: Try finding an equivalent fraction for 2/3"
+      ],
+      "right_column": [
+        "Check your understanding:",
+        "• Use your fraction strips to show how 1/2 = 2/4",
+        "• Draw a picture to prove your answer",
+        "• Share your strategy with your partner"
+      ]
+    },
+    {
+      "title": "Your Turn to Create!",
+      "layout": "TITLE_AND_CONTENT",
+      "content": [
+        "Time to become fraction experts!",
+        "• Work with your partner to create equivalent fraction cards",
+        "• Use different colors to show equal parts",
+        "• Challenge: Can you find three different fractions that equal 1/2?",
+        "• Bonus: Create a story problem using equivalent fractions and your favorite Denver activity"
+      ],
+      "teacher_notes": [
+        "Provide bilingual instruction cards",
+        "Allow student choice in examples",
+        "Support native language use in discussions"
+      ],
+      "visual_elements": [
+        "Sample fraction cards with local themes",
+        "Student workspace organization guide",
+        "Visual success criteria"
+      ],
+      "left_column": [],
+      "right_column": []
+    },
+    {
+      "title": "Show What You Know!",
+      "layout": "TITLE_AND_CONTENT",
+      "content": [
+        "Let's celebrate what we learned!",
+        "• Create three equivalent fractions for 3/4",
+        "• Draw a picture showing how you know they're equal",
+        "• Write a story about using equivalent fractions in your neighborhood",
+        "• Share your favorite way to remember equivalent fractions"
+      ],
+      "teacher_notes": [
+        "Provide multiple ways to demonstrate understanding",
+        "Accept explanations in English or home language",
+        "Use exit ticket responses to plan next lesson"
+      ],
+      "visual_elements": [
+        "Culturally responsive exit ticket template",
+        "Digital portfolio upload guide",
+        "Self-assessment checklist in multiple languages"
+      ],
+      "left_column": [],
+      "right_column": []
+    }
+  ]
+}

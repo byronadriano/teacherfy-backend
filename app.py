@@ -63,44 +63,10 @@ def get_outline():
     if client is None:
         return jsonify({"error": "OpenAI client not initialized"}), 500
 
-    grade_level = data.get("grade_level", "Not Specified")
-    subject_focus = data.get("subject_focus", "General")
-    lesson_topic = data.get("lesson_topic", "")
-    district = data.get("district", "")
-    language = data.get("language", "")
-    custom_prompt = data.get("custom_prompt", "")
-    num_slides = min(max(data.get("num_slides", 3), 1), 10)
-
-    prompt = f"""Create a detailed {num_slides}-slide lesson outline in {language} for a {grade_level} {subject_focus} lesson on {lesson_topic} for {district}. 
-
-Please structure each slide with:
-1. Title: Clear, descriptive title in {language}
-2. Content: Main teaching points in {language}.
-3. Teacher Notes: Instructions or tips (prefixed with 'TEACHER NOTE:')
-4. Visual Elements: Any diagrams/images needed (prefixed with 'VISUAL:')
-
-Format each slide as:
-
-Slide X: [Title]
-Content:
-- [Main points]
-
-Teacher Notes:
-- [Teaching tips/instructions]
-
-Visual Elements:
-- [Description of visuals needed]
-
-Additional requirements:
-{custom_prompt}
-
-Important language considerations:
-- Ensure all content is in {language}
-- Use age-appropriate language for {grade_level} students
-- If using technical terms, provide clear explanations
-- Consider including key vocabulary terms with explanations if needed
-
-Note: Use two-column layouts for comparisons or parallel concepts."""
+    # Instead of creating a new prompt here, use the one from frontend
+    prompt = data.get("custom_prompt")
+    if not prompt:
+        return jsonify({"error": "No prompt provided"}), 400
 
     try:
         response = client.chat.completions.create(
