@@ -15,8 +15,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Update examples directory path
-EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), '../examples')
-EXAMPLES_DIR = os.path.abspath(EXAMPLES_DIR)  # Resolve absolute path
+EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'examples')
 EXAMPLE_OUTLINES = {}
 
 def load_example_outlines():
