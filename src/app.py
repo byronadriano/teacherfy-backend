@@ -5,7 +5,8 @@ from flask import Flask, request, jsonify, send_file
 from openai import OpenAI
 import tempfile
 from flask_cors import CORS
-from presentation_generator import generate_presentation
+from presentation import generate_presentation
+from slides import parse_outline_to_structured_content
 
 app = Flask(__name__)
 CORS(app)
@@ -13,8 +14,8 @@ CORS(app)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Load example outlines
-EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), 'examples')
+# Update examples directory path to point to root examples folder
+EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'examples')
 EXAMPLE_OUTLINES = {}
 
 def load_example_outlines():
@@ -63,7 +64,7 @@ def get_outline():
     if client is None:
         return jsonify({"error": "OpenAI client not initialized"}), 500
 
-    # Instead of creating a new prompt here, use the one from frontend
+    # Use prompt from frontend
     prompt = data.get("custom_prompt")
     if not prompt:
         return jsonify({"error": "No prompt provided"}), 400
@@ -74,8 +75,6 @@ def get_outline():
             messages=[{"role": "user", "content": prompt}]
         )
         outline_text = response.choices[0].message.content.strip()
-        
-        from slide_processor import parse_outline_to_structured_content
         structured_content = parse_outline_to_structured_content(outline_text)
         
         return jsonify({
