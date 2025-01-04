@@ -39,7 +39,7 @@ def get_outline():
     subject_focus = data.get("subject_focus", "General")
     lesson_topic = data.get("lesson_topic", "")
     district = data.get("district", "")
-    language = data.get("language", "English")  # Add this line
+    language = data.get("language", "")  # Add this line
     custom_prompt = data.get("custom_prompt", "")
     num_slides = min(max(data.get("num_slides", 3), 1), 10)
 
@@ -47,7 +47,7 @@ def get_outline():
 
 Please structure each slide with:
 1. Title: Clear, descriptive title in {language}
-2. Content: Main teaching points in {language}
+2. Content: Main teaching points in {language}. Dont use within the content unless necessary.
 3. Teacher Notes: Instructions or tips (prefixed with 'TEACHER NOTE:')
 4. Visual Elements: Any diagrams/images needed (prefixed with 'VISUAL:')
 
@@ -102,13 +102,11 @@ def generate_presentation_endpoint():
     try:
         data = request.json
         outline_text = data.get('lesson_outline', '')
-        structured_content = data.get('structured_content')
-        language = data.get('language', 'English')  # Add this line
-        
+        structured_content = data.get('structured_content')        
         if not outline_text:
             return jsonify({"error": "No outline provided"}), 400
             
-        presentation_path = generate_presentation(outline_text, structured_content, language)  # Update this line
+        presentation_path = generate_presentation(outline_text, structured_content)  # Update this line
         return send_file(presentation_path, 
                         as_attachment=True,
                         download_name="lesson_presentation.pptx",

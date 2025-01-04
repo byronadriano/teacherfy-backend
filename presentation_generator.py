@@ -5,7 +5,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def generate_presentation(outline_text, structured_content=None, language="English"):
+def generate_presentation(outline_text, structured_content=None):
     """Generate a PowerPoint presentation from the outline text and structured content"""
     try:
         logger.debug("Starting presentation generation")
