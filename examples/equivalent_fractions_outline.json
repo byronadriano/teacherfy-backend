@@ -1,0 +1,43 @@
+{
+    "messages": [
+      "Slide 1: Introduction to Equivalent Fractions\nContent:\n• Students will be able to identify and create equivalent fractions using visual models and multiplication\n• Key vocabulary: equivalent fractions, numerator, denominator\n\nTeacher Notes:\n• Begin with a think-pair-share about what students already know about fractions\n• Use pizza or chocolate bar examples to make it relatable\n\nVisual Elements:\n• Pizza diagram showing 1/2 and 2/4 as equivalent\n\nSlide 2: Understanding Equivalent Fractions\nContent:\n• Equivalent fractions are different fractions that show the same amount\n• Think of it like sharing a pizza: cutting it into 2 pieces or 4 pieces still gives you the same amount when you take half\n• Let's explore how 1/2 = 2/4 = 4/8\n\nTeacher Notes:\n• Use manipulatives or virtual fraction strips\n• Have students fold paper strips to demonstrate\n\nVisual Elements:\n• Fraction strips showing multiple equivalents\n• Interactive number line\n\nSlide 3: Finding Equivalent Fractions\nContent:\n• To find equivalent fractions, multiply or divide both the numerator and denominator by the same number\n• Example: 1/2 × 2/2 = 2/4\n• Remember: multiplying by 1 (2/2, 3/3, etc.) doesn't change the value\n\nTeacher Notes:\n• Use think-alouds to model the process\n• Provide multiple examples with visual support\n\nVisual Elements:\n• Step-by-step multiplication examples\n• Visual models showing the process\n\nSlide 4: Practice Together\nContent:\n• Let's practice finding equivalent fractions together\n• Group activity: Create fraction cards and find matches\n• Quick check: Is 2/3 equivalent to 4/6? How do you know?\n\nTeacher Notes:\n• Form small groups for collaborative practice\n• Circulate to provide support and check understanding\n\nVisual Elements:\n• Sample fraction cards\n• Work space for calculations\n\nSlide 5: Show What You Know\nContent:\n• Independent practice time\n• Complete the equivalent fraction matching game\n• Exit ticket: Create three equivalent fractions for 3/4\n\nTeacher Notes:\n• Provide fraction circles or strips as needed\n• Use exit ticket responses to plan follow-up instruction\n\nVisual Elements:\n• Example of completed exit ticket\n• Success criteria checklist"
+    ],
+    "structured_content": [
+      {
+        "title": "Introduction to Equivalent Fractions",
+        "layout": "TITLE_AND_CONTENT",
+        "content": [
+          "Students will be able to identify and create equivalent fractions using visual models and multiplication",
+          "Key vocabulary: equivalent fractions, numerator, denominator"
+        ],
+        "teacher_notes": [
+          "Begin with a think-pair-share about what students already know about fractions",
+          "Use pizza or chocolate bar examples to make it relatable"
+        ],
+        "visual_elements": [
+          "Pizza diagram showing 1/2 and 2/4 as equivalent"
+        ],
+        "left_column": [],
+        "right_column": []
+      },
+      {
+        "title": "Understanding Equivalent Fractions",
+        "layout": "TITLE_AND_CONTENT",
+        "content": [
+          "Equivalent fractions are different fractions that show the same amount",
+          "Think of it like sharing a pizza: cutting it into 2 pieces or 4 pieces still gives you the same amount when you take half",
+          "Let's explore how 1/2 = 2/4 = 4/8"
+        ],
+        "teacher_notes": [
+          "Use manipulatives or virtual fraction strips",
+          "Have students fold paper strips to demonstrate"
+        ],
+        "visual_elements": [
+          "Fraction strips showing multiple equivalents",
+          "Interactive number line"
+        ],
+        "left_column": [],
+        "right_column": []
+      }
+    ]
+  }

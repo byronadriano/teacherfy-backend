@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from flask import Flask, request, jsonify, send_file
 from openai import OpenAI
@@ -11,6 +12,24 @@ CORS(app)
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# Load example outlines
+EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), 'examples')
+EXAMPLE_OUTLINES = {}
+
+def load_example_outlines():
+    """Load all example outline JSON files from the examples directory"""
+    try:
+        for filename in os.listdir(EXAMPLES_DIR):
+            if filename.endswith('.json'):
+                with open(os.path.join(EXAMPLES_DIR, filename), 'r') as f:
+                    name = os.path.splitext(filename)[0]
+                    EXAMPLE_OUTLINES[name] = json.load(f)
+        logger.debug(f"Loaded {len(EXAMPLE_OUTLINES)} example outlines")
+    except Exception as e:
+        logger.error(f"Error loading example outlines: {e}")
+
+load_example_outlines()
 
 def get_env_var(var_name, default=None):
     value = os.environ.get(var_name, default)
@@ -31,15 +50,24 @@ def get_outline():
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
+    data = request.json
+    
+    # Check if this is a request for an example
+    if data.get("use_example"):
+        example_name = data.get("example_name", "equivalent_fractions_outline")
+        if example_name in EXAMPLE_OUTLINES:
+            return jsonify(EXAMPLE_OUTLINES[example_name])
+        return jsonify({"error": "Example not found"}), 404
+
+    # Regular outline generation
     if client is None:
         return jsonify({"error": "OpenAI client not initialized"}), 500
 
-    data = request.json
     grade_level = data.get("grade_level", "Not Specified")
     subject_focus = data.get("subject_focus", "General")
     lesson_topic = data.get("lesson_topic", "")
     district = data.get("district", "")
-    language = data.get("language", "")  # Add this line
+    language = data.get("language", "")
     custom_prompt = data.get("custom_prompt", "")
     num_slides = min(max(data.get("num_slides", 3), 1), 10)
 
@@ -81,7 +109,6 @@ Note: Use two-column layouts for comparisons or parallel concepts."""
         )
         outline_text = response.choices[0].message.content.strip()
         
-        # Parse the outline into structured content
         from slide_processor import parse_outline_to_structured_content
         structured_content = parse_outline_to_structured_content(outline_text)
         
@@ -105,7 +132,7 @@ def generate_presentation_endpoint():
         if not outline_text:
             return jsonify({"error": "No outline provided"}), 400
             
-        presentation_path = generate_presentation(outline_text, structured_content)  # Update this line
+        presentation_path = generate_presentation(outline_text, structured_content)
         return send_file(presentation_path, 
                         as_attachment=True,
                         download_name="lesson_presentation.pptx",
@@ -114,5 +141,6 @@ def generate_presentation_endpoint():
     except Exception as e:
         logging.error(f"Error generating presentation: {e}")
         return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
     app.run(debug=True)
