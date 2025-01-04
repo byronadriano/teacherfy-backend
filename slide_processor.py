@@ -5,6 +5,7 @@ from pptx.dml.color import RGBColor
 import os
 
 def parse_outline_to_structured_content(outline_text):
+    
     """Parse the outline text into structured slide content with notes"""
     slides = []
     current_slide = None
