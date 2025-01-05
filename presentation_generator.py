@@ -1,6 +1,6 @@
 import tempfile
 import os
-from slides import parse_outline_to_structured_content, create_presentation
+from slide_processor import parse_outline_to_structured_content, create_presentation
 import logging
 
 logger = logging.getLogger(__name__)

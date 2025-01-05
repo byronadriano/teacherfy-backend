@@ -1,5 +1,4 @@
 flask
-flask-cors
 openai
 python-pptx
-gunicorn
+flask-cors

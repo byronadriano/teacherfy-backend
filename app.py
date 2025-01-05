@@ -5,8 +5,7 @@ from flask import Flask, request, jsonify, send_file
 from openai import OpenAI
 import tempfile
 from flask_cors import CORS
-from presentation import generate_presentation
-from slides import parse_outline_to_structured_content
+from presentation_generator import generate_presentation
 
 app = Flask(__name__)
 CORS(app)
@@ -14,16 +13,13 @@ CORS(app)
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Update examples directory path
-EXAMPLES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'examples')
+# Load example outlines
+EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), 'examples')
 EXAMPLE_OUTLINES = {}
 
 def load_example_outlines():
     """Load all example outline JSON files from the examples directory"""
     try:
-        if not os.path.isdir(EXAMPLES_DIR):
-            raise FileNotFoundError(f"Examples directory not found: {EXAMPLES_DIR}")
-        
         for filename in os.listdir(EXAMPLES_DIR):
             if filename.endswith('.json'):
                 with open(os.path.join(EXAMPLES_DIR, filename), 'r') as f:
@@ -49,10 +45,6 @@ except ValueError as e:
     logger.error(f"OpenAI client initialization error: {e}")
     client = None
 
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"message": "Welcome to the Teacherfy.ai backend!"}), 200
-
 @app.route("/outline", methods=["POST", "OPTIONS"])
 def get_outline():
     if request.method == "OPTIONS":
@@ -60,15 +52,18 @@ def get_outline():
 
     data = request.json
     
+    # Check if this is a request for an example
     if data.get("use_example"):
         example_name = data.get("example_name", "equivalent_fractions_outline")
         if example_name in EXAMPLE_OUTLINES:
             return jsonify(EXAMPLE_OUTLINES[example_name])
         return jsonify({"error": "Example not found"}), 404
 
+    # Regular outline generation
     if client is None:
         return jsonify({"error": "OpenAI client not initialized"}), 500
 
+    # Instead of creating a new prompt here, use the one from frontend
     prompt = data.get("custom_prompt")
     if not prompt:
         return jsonify({"error": "No prompt provided"}), 400
@@ -79,6 +74,8 @@ def get_outline():
             messages=[{"role": "user", "content": prompt}]
         )
         outline_text = response.choices[0].message.content.strip()
+        
+        from slide_processor import parse_outline_to_structured_content
         structured_content = parse_outline_to_structured_content(outline_text)
         
         return jsonify({
