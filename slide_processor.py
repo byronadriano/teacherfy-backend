@@ -5,7 +5,6 @@ from pptx.dml.color import RGBColor
 import os
 
 def parse_outline_to_structured_content(outline_text):
-    
     """Parse the outline text into structured slide content with notes"""
     slides = []
     current_slide = None
@@ -27,7 +26,7 @@ def parse_outline_to_structured_content(outline_text):
             
             # Determine layout based on content
             layout = "TWO_COLUMN" if any(word in title.lower() for word in 
-                ["vs", "comparison", "contrast"]) else "TITLE_AND_CONTENT"
+                ["vs", "comparison", "contrast", "together", "practice"]) else "TITLE_AND_CONTENT"
             
             current_slide = {
                 'title': title,
@@ -38,7 +37,7 @@ def parse_outline_to_structured_content(outline_text):
                 'left_column': [],
                 'right_column': []
             }
-            current_section = 'content'
+            current_section = None  # Reset section until explicitly set
             
         elif line.lower().startswith('content:'):
             current_section = 'content'
@@ -46,24 +45,40 @@ def parse_outline_to_structured_content(outline_text):
             current_section = 'teacher_notes'
         elif line.lower().startswith('visual elements:'):
             current_section = 'visual_elements'
-        elif line.startswith(('-', '*', '•')):
-            content = line.lstrip('-*• ').strip()
-            if current_slide:
-                if current_slide['layout'] == "TWO_COLUMN" and current_section == 'content':
-                    if len(current_slide['left_column']) <= len(current_slide['right_column']):
-                        current_slide['left_column'].append(content)
+        # Only process content if we have a current section and slide
+        elif current_section and current_slide:
+            if line.startswith(('*', '•', '-')) or line.strip().startswith('•'):
+                content = line.lstrip('*•- ').strip()
+                if content:  # Only add non-empty content
+                    if current_slide['layout'] == "TWO_COLUMN" and current_section == 'content':
+                        if len(current_slide['left_column']) <= len(current_slide['right_column']):
+                            current_slide['left_column'].append(content)
+                        else:
+                            current_slide['right_column'].append(content)
                     else:
-                        current_slide['right_column'].append(content)
-                else:
-                    current_slide[current_section].append(content)
-        else:
-            # Handle non-bullet point content
-            if current_slide and not line.lower().endswith(':'):
+                        current_slide[current_section].append(content)
+            # Handle non-bullet point content that isn't a section header
+            elif not line.lower().endswith(':') and content:
                 current_slide[current_section].append(line)
-    
+
+    # Don't forget to add the last slide
     if current_slide:
         slides.append(current_slide)
     
+    # Post-processing: Ensure all slides have required fields
+    for slide in slides:
+        # If it's a two-column layout but no content in columns, try to split existing content
+        if slide['layout'] == "TWO_COLUMN" and not (slide['left_column'] or slide['right_column']):
+            content_length = len(slide['content'])
+            mid_point = content_length // 2
+            slide['left_column'] = slide['content'][:mid_point]
+            slide['right_column'] = slide['content'][mid_point:]
+            slide['content'] = []
+
+        # Ensure teacher notes and visual elements exist even if empty
+        slide['teacher_notes'] = slide.get('teacher_notes', [])
+        slide['visual_elements'] = slide.get('visual_elements', [])
+
     return slides
 
 def create_presentation(outline_json):

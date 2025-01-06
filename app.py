@@ -17,21 +17,19 @@ logger = logging.getLogger(__name__)
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), 'examples')
 EXAMPLE_OUTLINES = {}
 
-# Update load_example_outlines function
-# Add this near the top of app.py with other constants
 EXAMPLE_OUTLINE_DATA = {
   "messages": [
-    "Slide 1: Let's Explore Equivalent Fractions!\nContent:\n• Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix.\n• Students will be able to explain why different fractions can show the same amount using pictures and numbers.\n\nTeacher Notes:\n• Begin with students sharing their experiences with fractions in their daily lives\n• Use culturally relevant examples from Denver communities\n\nVisual Elements:\n• Interactive display showing local treats divided into equivalent parts\n• Student-friendly vocabulary cards with pictures"
+    "Slide 1: Let's Explore Equivalent Fractions!\nContent:\n- Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix.\n- Students will be able to explain why different fractions can show the same amount using pictures and numbers.\n\nTeacher Notes:\n- Begin with students sharing their experiences with fractions in their daily lives\n- Use culturally relevant examples from Denver communities\n\nVisual Elements:\n- Interactive display showing local treats divided into equivalent parts\n- Student-friendly vocabulary cards with pictures"
   ],
   "structured_content": [
     {
       "title": "Let's Explore Equivalent Fractions!",
       "layout": "TITLE_AND_CONTENT",
       "content": [
-        "¡Today we're going on a fraction adventure!",
-        "• Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix",
-        "• Students will be able to explain why different fractions can show the same amount using pictures and numbers",
-        "• Let's start by thinking about times when we share things equally!"
+        "Today we're going on a fraction adventure!",
+        "- Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix",
+        "- Students will be able to explain why different fractions can show the same amount using pictures and numbers",
+        "- Let's start by thinking about times when we share things equally!"
       ],
       "teacher_notes": [
         "Begin with students sharing their experiences with fractions in their daily lives",
@@ -50,10 +48,10 @@ EXAMPLE_OUTLINE_DATA = {
       "layout": "TITLE_AND_CONTENT",
       "content": [
         "Let's learn our fraction vocabulary!",
-        "• Imagine sharing a breakfast burrito with your friend - you can cut it in half (1/2) or into four equal pieces and take two (2/4). You get the same amount!",
-        "• The top number (numerator) tells us how many pieces we have",
-        "• The bottom number (denominator) tells us how many total equal pieces",
-        "• When fractions show the same amount, we call them equivalent"
+        "- Imagine sharing a breakfast burrito with your friend - you can cut it in half (1/2) or into four equal pieces and take two (2/4). You get the same amount!",
+        "- The top number (numerator) tells us how many pieces we have",
+        "- The bottom number (denominator) tells us how many total equal pieces",
+        "- When fractions show the same amount, we call them equivalent"
       ],
       "teacher_notes": [
         "Use local food examples familiar to Denver students",
@@ -83,15 +81,15 @@ EXAMPLE_OUTLINE_DATA = {
       ],
       "left_column": [
         "Let's practice together!",
-        "• When we multiply 1/2 by 2/2, we get 2/4",
-        "• It's like taking a hiking trail that's 1/2 mile long and marking it every quarter mile - you'll have 2/4 of the trail at the same spot as 1/2!",
-        "• Your turn: Try finding an equivalent fraction for 2/3"
+        "- When we multiply 1/2 by 2/2, we get 2/4",
+        "- It's like taking a hiking trail that's 1/2 mile long and marking it every quarter mile - you'll have 2/4 of the trail at the same spot as 1/2!",
+        "- Your turn: Try finding an equivalent fraction for 2/3"
       ],
       "right_column": [
         "Check your understanding:",
-        "• Use your fraction strips to show how 1/2 = 2/4",
-        "• Draw a picture to prove your answer",
-        "• Share your strategy with your partner"
+        "- Use your fraction strips to show how 1/2 = 2/4",
+        "- Draw a picture to prove your answer",
+        "- Share your strategy with your partner"
       ]
     },
     {
@@ -99,10 +97,10 @@ EXAMPLE_OUTLINE_DATA = {
       "layout": "TITLE_AND_CONTENT",
       "content": [
         "Time to become fraction experts!",
-        "• Work with your partner to create equivalent fraction cards",
-        "• Use different colors to show equal parts",
-        "• Challenge: Can you find three different fractions that equal 1/2?",
-        "• Bonus: Create a story problem using equivalent fractions and your favorite Denver activity"
+        "- Work with your partner to create equivalent fraction cards",
+        "- Use different colors to show equal parts",
+        "- Challenge: Can you find three different fractions that equal 1/2?",
+        "- Bonus: Create a story problem using equivalent fractions and your favorite Denver activity"
       ],
       "teacher_notes": [
         "Provide bilingual instruction cards",
@@ -122,10 +120,10 @@ EXAMPLE_OUTLINE_DATA = {
       "layout": "TITLE_AND_CONTENT",
       "content": [
         "Let's celebrate what we learned!",
-        "• Create three equivalent fractions for 3/4",
-        "• Draw a picture showing how you know they're equal",
-        "• Write a story about using equivalent fractions in your neighborhood",
-        "• Share your favorite way to remember equivalent fractions"
+        "- Create three equivalent fractions for 3/4",
+        "- Draw a picture showing how you know they're equal",
+        "- Write a story about using equivalent fractions in your neighborhood",
+        "- Share your favorite way to remember equivalent fractions"
       ],
       "teacher_notes": [
         "Provide multiple ways to demonstrate understanding",
@@ -141,7 +139,7 @@ EXAMPLE_OUTLINE_DATA = {
       "right_column": []
     }
   ]
-}
+};
 
 def load_example_outlines():
     """Load all example outline JSON files from the examples directory"""
