@@ -109,7 +109,7 @@ def parse_outline_to_structured_content(outline_text):
 
 def create_presentation(outline_json):
     """Create a PowerPoint presentation with enhanced formatting"""
-    template_path = os.path.join(os.path.dirname(__file__), 'templates', 'base_template_TEST.pptx')
+    template_path = os.path.join(os.path.dirname(__file__), 'templates', 'base_template_final.pptx')
     prs = Presentation(template_path)
     
     for slide_data in outline_json:
