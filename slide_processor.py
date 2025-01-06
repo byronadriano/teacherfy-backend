@@ -2,54 +2,46 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN, MSO_VERTICAL_ANCHOR
 from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_SHAPE
 import os
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Enhanced presentation constants
+# Enhanced presentation styles
 STYLE = {
     'colors': {
         'title': RGBColor(44, 62, 80),      # Dark blue-gray for titles
-        'subtitle': RGBColor(52, 73, 94),    # Lighter blue-gray for subtitles
         'body': RGBColor(44, 62, 80),        # Dark blue-gray for body text
-        'accent': RGBColor(41, 128, 185),    # Bright blue for emphasis
-        'background': RGBColor(236, 240, 241) # Light gray background
+        'accent': RGBColor(41, 128, 185)     # Bright blue for emphasis
     },
     'fonts': {
         'title': 'Calibri',
         'body': 'Calibri'
     },
     'sizes': {
-        'title': Pt(44),           # Larger, more visible title
-        'subtitle': Pt(32),        # Clear subtitle size
+        'title': Pt(40),           # Readable title
         'body': Pt(28),           # Readable body text
         'bullet': Pt(24),         # Slightly smaller bullet points
         'notes': Pt(12)           # Comfortable notes size
     }
 }
 
-def format_paragraph(paragraph, style='body', level=0, is_title=False):
+def format_paragraph(paragraph, is_title=False, level=0):
     """Apply consistent formatting to a paragraph"""
-    if is_title:
-        paragraph.alignment = PP_ALIGN.CENTER
-        paragraph.font.size = STYLE['sizes']['title']
-        paragraph.font.color.rgb = STYLE['colors']['title']
-    else:
-        paragraph.alignment = PP_ALIGN.LEFT
-        paragraph.font.size = STYLE['sizes']['body'] if level == 0 else STYLE['sizes']['bullet']
-        paragraph.font.color.rgb = STYLE['colors']['body']
-    
     paragraph.font.name = STYLE['fonts']['title' if is_title else 'body']
+    paragraph.font.size = STYLE['sizes']['title' if is_title else ('body' if level == 0 else 'bullet')]
+    paragraph.font.color.rgb = STYLE['colors']['title' if is_title else 'body']
     paragraph.font.bold = is_title or level == 0
     
-    # Add spacing for readability
-    paragraph.space_before = Pt(12 if level > 0 else 20)
-    paragraph.space_after = Pt(6)
+    if is_title:
+        paragraph.alignment = PP_ALIGN.CENTER
+    else:
+        paragraph.alignment = PP_ALIGN.LEFT
+        paragraph.space_before = Pt(12 if level > 0 else 20)
+        paragraph.space_after = Pt(6)
 
 def parse_outline_to_structured_content(outline_text):
-    """Parse the outline text into structured slide content"""
+    """Parse the outline text into structured slide content with notes"""
     slides = []
     current_slide = None
     current_section = None
@@ -65,12 +57,10 @@ def parse_outline_to_structured_content(outline_text):
             if current_slide:
                 slides.append(current_slide)
             
-            # Extract title, handling quotes if present
-            title = line.split(':', 1)[1].strip().strip('"')
+            title = line.split(':', 1)[1].strip() if ':' in line else line
             
-            # Determine layout based on content
-            layout = "TWO_CONTENT" if any(word in title.lower() for word in 
-                ["vs", "comparison", "contrast", "together", "practice"]) else "CONTENT"
+            layout = "TWO_COLUMN" if any(word in title.lower() for word in 
+                ["vs", "comparison", "contrast", "together", "practice"]) else "TITLE_AND_CONTENT"
             
             current_slide = {
                 'title': title,
@@ -83,60 +73,47 @@ def parse_outline_to_structured_content(outline_text):
             }
             current_section = None
             
-        elif line.lower().startswith(('content:', 'teacher notes:', 'visual elements:')):
-            if line.lower().startswith('content:'):
-                current_section = 'content'
-            elif line.lower().startswith('teacher notes:'):
-                current_section = 'teacher_notes'
-            elif line.lower().startswith('visual elements:'):
-                current_section = 'visual_elements'
-                
-        elif current_slide and current_section:
-            # Handle bullet points and regular text
-            if line.startswith(('-', '•', '*')):
-                content = line.lstrip('-•* ').strip()
-                if current_section == 'content':
-                    if current_slide['layout'] == "TWO_CONTENT":
+        elif line.lower().startswith('content:'):
+            current_section = 'content'
+        elif line.lower().startswith('teacher notes:'):
+            current_section = 'teacher_notes'
+        elif line.lower().startswith('visual elements:'):
+            current_section = 'visual_elements'
+        elif current_section and current_slide:
+            if line.startswith(('*', '•', '-')) or line.strip().startswith('•'):
+                content = line.lstrip('*•- ').strip()
+                if content:
+                    if current_slide['layout'] == "TWO_COLUMN" and current_section == 'content':
                         if len(current_slide['left_column']) <= len(current_slide['right_column']):
                             current_slide['left_column'].append(content)
                         else:
                             current_slide['right_column'].append(content)
                     else:
-                        current_slide['content'].append(content)
-                elif current_section == 'teacher_notes':
-                    current_slide['teacher_notes'].append(content)
-                elif current_section == 'visual_elements':
-                    current_slide['visual_elements'].append(content)
-            else:
-                # Handle non-bullet text
-                if current_section == 'content':
-                    if current_slide['layout'] == "TWO_CONTENT":
-                        if len(current_slide['left_column']) <= len(current_slide['right_column']):
-                            current_slide['left_column'].append(line)
-                        else:
-                            current_slide['right_column'].append(line)
-                    else:
-                        current_slide['content'].append(line)
-                elif current_section == 'teacher_notes':
-                    current_slide['teacher_notes'].append(line)
-                elif current_section == 'visual_elements':
-                    current_slide['visual_elements'].append(line)
+                        current_slide[current_section].append(content)
+            elif not line.lower().endswith(':'):
+                current_slide[current_section].append(line)
     
-    # Add the last slide
     if current_slide:
         slides.append(current_slide)
+    
+    # Post-processing
+    for slide in slides:
+        if slide['layout'] == "TWO_COLUMN" and not (slide['left_column'] or slide['right_column']):
+            content_length = len(slide['content'])
+            mid_point = content_length // 2
+            slide['left_column'] = slide['content'][:mid_point]
+            slide['right_column'] = slide['content'][mid_point:]
+            slide['content'] = []
     
     return slides
 
 def create_presentation(outline_json):
     """Create a PowerPoint presentation with enhanced formatting"""
-    # Load template
     template_path = os.path.join(os.path.dirname(__file__), 'templates', 'base_template.pptx')
     prs = Presentation(template_path)
     
     for slide_data in outline_json:
-        # Select appropriate layout
-        layout_idx = 3 if slide_data['layout'] == "TWO_CONTENT" else 1
+        layout_idx = 1 if slide_data['layout'] == "TITLE_AND_CONTENT" else 3
         slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
         
         # Format title
@@ -146,56 +123,62 @@ def create_presentation(outline_json):
             title_para = title_frame.add_paragraph()
             title_para.text = slide_data['title']
             format_paragraph(title_para, is_title=True)
-            
-        # Handle content based on layout
-        if slide_data['layout'] == "TWO_CONTENT":
-            # Two-column layout
+        
+        if slide_data['layout'] == "TWO_COLUMN":
             shapes = [shape for shape in slide.placeholders]
-            if len(shapes) >= 3:  # Title + 2 content placeholders
-                left_content = shapes[1].text_frame
-                right_content = shapes[2].text_frame
+            if len(shapes) >= 3:
+                left = shapes[1]
+                right = shapes[2]
                 
-                # Format left column
-                left_content.clear()
+                # Left column
+                text_frame = left.text_frame
+                text_frame.clear()
                 for item in slide_data['left_column']:
-                    para = left_content.add_paragraph()
-                    para.text = item
-                    format_paragraph(para, level=1 if item.startswith(('•', '-', '*')) else 0)
+                    p = text_frame.add_paragraph()
+                    p.text = item.lstrip('-•* ').strip()
+                    format_paragraph(p, level=1)
                 
-                # Format right column
-                right_content.clear()
+                # Right column
+                text_frame = right.text_frame
+                text_frame.clear()
                 for item in slide_data['right_column']:
-                    para = right_content.add_paragraph()
-                    para.text = item
-                    format_paragraph(para, level=1 if item.startswith(('•', '-', '*')) else 0)
+                    p = text_frame.add_paragraph()
+                    p.text = item.lstrip('-•* ').strip()
+                    format_paragraph(p, level=1)
         else:
-            # Single column layout
-            if len(slide.placeholders) >= 2:
-                content_frame = slide.placeholders[1].text_frame
-                content_frame.clear()
+            shapes = [shape for shape in slide.placeholders]
+            if len(shapes) >= 2:
+                content_placeholder = shapes[1]
+                text_frame = content_placeholder.text_frame
+                text_frame.clear()
                 
                 for item in slide_data['content']:
-                    para = content_frame.add_paragraph()
-                    para.text = item.lstrip('-•* ')
-                    format_paragraph(para, level=1 if item.startswith(('•', '-', '*')) else 0)
+                    p = text_frame.add_paragraph()
+                    is_bullet = item.lstrip().startswith(('-', '•', '*'))
+                    p.text = item.lstrip('-•* ').strip() if is_bullet else item
+                    format_paragraph(p, level=1 if is_bullet else 0)
         
-        # Add notes with enhanced formatting
+        # Add notes
         notes_slide = slide.notes_slide
-        notes_frame = notes_slide.notes_text_frame
-        notes_frame.clear()
+        notes_text = notes_slide.notes_text_frame
+        notes_text.clear()
         
         if slide_data['teacher_notes']:
-            notes_frame.text = "TEACHER NOTES:\n"
+            notes_text.text = "TEACHER NOTES:\n"
             for note in slide_data['teacher_notes']:
-                p = notes_frame.add_paragraph()
+                p = notes_text.add_paragraph()
                 p.text = f"• {note}"
                 p.font.size = STYLE['sizes']['notes']
         
         if slide_data['visual_elements']:
-            p = notes_frame.add_paragraph()
-            p.text = "\nVISUAL ELEMENTS:\n"
+            if notes_text.text:
+                p = notes_text.add_paragraph()
+                p.text = "\nVISUAL ELEMENTS:"
+            else:
+                notes_text.text = "VISUAL ELEMENTS:\n"
+            
             for visual in slide_data['visual_elements']:
-                p = notes_frame.add_paragraph()
+                p = notes_text.add_paragraph()
                 p.text = f"• {visual}"
                 p.font.size = STYLE['sizes']['notes']
     
