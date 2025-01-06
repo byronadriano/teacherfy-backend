@@ -20,8 +20,8 @@ STYLE = {
     },
     'sizes': {
         'title': Pt(50),           # Larger, more prominent title
-        'body': Pt(28),           # Readable body text
-        'bullet': Pt(24),         # Slightly smaller bullet points
+        'body': Pt(24),           # Readable body text
+        'bullet': Pt(22),         # Slightly smaller bullet points
         'notes': Pt(12)           # Comfortable notes size
     }
 }
