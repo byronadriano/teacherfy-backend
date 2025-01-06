@@ -2,6 +2,7 @@ import tempfile
 import os
 from slide_processor import parse_outline_to_structured_content, create_presentation
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,8 @@ def generate_presentation(outline_text, structured_content=None):
                     slide['left_column'] = slide['content'][:mid_point]
                     slide['right_column'] = slide['content'][mid_point:]
                     slide['content'] = []
-        
+                    
+        logger.debug(f"Received structured content: {json.dumps(structured_content, indent=2)}")
         logger.debug(f"Creating presentation with {len(structured_content)} slides")
         prs = create_presentation(structured_content)
         
