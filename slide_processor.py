@@ -164,7 +164,7 @@ def create_presentation(outline_json):
         notes_text.clear()
         
         if slide_data['teacher_notes']:
-            notes_text.text = "TEACHER NOTES:\n"
+            notes_text.text = "Teacher Notes:\n"
             for note in slide_data['teacher_notes']:
                 p = notes_text.add_paragraph()
                 p.text = f"• {note}"
@@ -173,9 +173,9 @@ def create_presentation(outline_json):
         if slide_data['visual_elements']:
             if notes_text.text:
                 p = notes_text.add_paragraph()
-                p.text = "\nVISUAL ELEMENTS:"
+                p.text = "\nVisual Elements:"
             else:
-                notes_text.text = "VISUAL ELEMENTS:\n"
+                notes_text.text = "Visual Elements:\n"
             
             for visual in slide_data['visual_elements']:
                 p = notes_text.add_paragraph()
