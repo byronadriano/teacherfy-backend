@@ -26,8 +26,28 @@ STYLE = {
     }
 }
 
+def clean_markdown_formatting(text):
+    """Remove markdown formatting while preserving the text structure"""
+    # Remove bold markdown indicators
+    text = text.replace('**', '')
+    
+    # Remove any remaining asterisks at the start of lines
+    text = text.lstrip('*')
+    
+    # Clean up any double spaces that might have been created
+    text = ' '.join(text.split())
+    
+    # Handle numbered lists (e.g., "1.", "2.", etc.)
+    import re
+    text = re.sub(r'^\d+\.\s*', '', text)
+    
+    return text.strip()
+
 def format_paragraph(paragraph, is_title=False, level=0):
     """Apply consistent formatting to a paragraph"""
+    # Clean the text before setting it
+    paragraph.text = clean_markdown_formatting(paragraph.text)
+    
     paragraph.font.name = STYLE['fonts']['title' if is_title else 'body']
     paragraph.font.size = STYLE['sizes']['title' if is_title else ('body' if level == 0 else 'bullet')]
     paragraph.font.color.rgb = STYLE['colors']['title' if is_title else 'body']
@@ -121,7 +141,7 @@ def create_presentation(outline_json):
             title_frame = slide.shapes.title.text_frame
             title_frame.clear()
             title_para = title_frame.add_paragraph()
-            title_para.text = slide_data['title']
+            title_para.text = clean_markdown_formatting(slide_data['title'])
             format_paragraph(title_para, is_title=True)
         
         if slide_data['layout'] == "TWO_COLUMN":
@@ -135,7 +155,7 @@ def create_presentation(outline_json):
                 text_frame.clear()
                 for item in slide_data['left_column']:
                     p = text_frame.add_paragraph()
-                    p.text = item.lstrip('-•* ').strip()
+                    p.text = clean_markdown_formatting(item.lstrip('-•* ').strip())
                     format_paragraph(p, level=1)
                 
                 # Right column
@@ -143,7 +163,7 @@ def create_presentation(outline_json):
                 text_frame.clear()
                 for item in slide_data['right_column']:
                     p = text_frame.add_paragraph()
-                    p.text = item.lstrip('-•* ').strip()
+                    p.text = clean_markdown_formatting(item.lstrip('-•* ').strip())
                     format_paragraph(p, level=1)
         else:
             shapes = [shape for shape in slide.placeholders]
@@ -155,7 +175,7 @@ def create_presentation(outline_json):
                 for item in slide_data['content']:
                     p = text_frame.add_paragraph()
                     is_bullet = item.lstrip().startswith(('-', '•', '*'))
-                    p.text = item.lstrip('-•* ').strip() if is_bullet else item
+                    p.text = clean_markdown_formatting(item.lstrip('-•* ').strip() if is_bullet else item)
                     format_paragraph(p, level=1 if is_bullet else 0)
         
         # Add notes
@@ -167,7 +187,7 @@ def create_presentation(outline_json):
             notes_text.text = "Teacher Notes:\n"
             for note in slide_data['teacher_notes']:
                 p = notes_text.add_paragraph()
-                p.text = f"• {note}"
+                p.text = f"• {clean_markdown_formatting(note)}"
                 p.font.size = STYLE['sizes']['notes']
         
         if slide_data['visual_elements']:
@@ -179,7 +199,7 @@ def create_presentation(outline_json):
             
             for visual in slide_data['visual_elements']:
                 p = notes_text.add_paragraph()
-                p.text = f"• {visual}"
+                p.text = f"• {clean_markdown_formatting(visual)}"
                 p.font.size = STYLE['sizes']['notes']
     
     return prs
