@@ -190,11 +190,15 @@ def get_outline():
     
     # Check for example case
     is_example = (
-        data.get("use_example") or
-        (data.get("lesson_topic", "").lower().strip() == "equivalent fractions" and
-         data.get("grade_level", "").lower().strip() == "4th grade" and
-         data.get("subject_focus", "").lower().strip() == "math")
+        data.get("use_example")  # if the frontend explicitly says "use example"
+        or (
+            data.get("lesson_topic", "").lower().strip() == "equivalent fractions"
+            and data.get("grade_level", "").lower().strip() == "4th grade"
+            and data.get("subject_focus", "").lower().strip() == "math"
+            and data.get("language", "").lower().strip() == "english"
+        )
     )
+
     
     logger.debug(f"Is example request: {is_example}")
 
