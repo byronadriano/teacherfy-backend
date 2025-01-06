@@ -7,7 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Enhanced presentation styles
+# Enhanced presentation styles with Comic Sans MS and larger title
 STYLE = {
     'colors': {
         'title': RGBColor(44, 62, 80),      # Dark blue-gray for titles
@@ -15,11 +15,11 @@ STYLE = {
         'accent': RGBColor(41, 128, 185)     # Bright blue for emphasis
     },
     'fonts': {
-        'title': 'Calibri',
-        'body': 'Calibri'
+        'title': 'Comic Sans MS',
+        'body': 'Comic Sans MS'
     },
     'sizes': {
-        'title': Pt(40),           # Readable title
+        'title': Pt(50),           # Larger, more prominent title
         'body': Pt(28),           # Readable body text
         'bullet': Pt(24),         # Slightly smaller bullet points
         'notes': Pt(12)           # Comfortable notes size
@@ -109,7 +109,7 @@ def parse_outline_to_structured_content(outline_text):
 
 def create_presentation(outline_json):
     """Create a PowerPoint presentation with enhanced formatting"""
-    template_path = os.path.join(os.path.dirname(__file__), 'templates', 'base_templateV4.pptx')
+    template_path = os.path.join(os.path.dirname(__file__), 'templates', 'base_template_TEST.pptx')
     prs = Presentation(template_path)
     
     for slide_data in outline_json:
