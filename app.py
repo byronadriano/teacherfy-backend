@@ -45,13 +45,15 @@ flow = Flow.from_client_config(
         "web": {
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
-            "redirect_uris": [REDIRECT_URI],
+            "redirect_uris": [REDIRECT_URI],  # Keep it here, no need to repeat later
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token"
         }
     },
-    scopes=SCOPES
+    scopes=SCOPES,
+    redirect_uri=REDIRECT_URI  # Ensure it's set here once
 )
+
 
 try:
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -225,8 +227,7 @@ def authorize():
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true',
-        prompt='consent',
-        redirect_uri=REDIRECT_URI  # Ensure this matches your Google Cloud Console settings
+        prompt='consent'
     )
 
     session['state'] = state
