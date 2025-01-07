@@ -221,12 +221,53 @@ def get_outline():
         return jsonify({"error": "No prompt provided"}), 400
 
     try:
+        system_instructions = {
+            "role": "system",
+            "content": """
+        You are a lesson-outline assistant. Follow this EXACT structure:
+
+        1. Each slide starts with "Slide X:" (e.g., "Slide 1:", "Slide 2:").
+        2. Next line: "Content:".
+        3. Next line: "Teacher Notes:".
+        4. Next line: "Visual Elements:".
+        5. No extra headings or disclaimers; no "Conclusion", "Introduction", etc.
+
+        Example of EXACT structure:
+
+        Slide 1: Introduction to Fractions
+        Content:
+        - Definition: Fractions are ...
+        Teacher Notes:
+        - ENGAGEMENT: ...
+        - ASSESSMENT: ...
+        - DIFFERENTIATION: ...
+        Visual Elements:
+        - Picture of fractions
+
+        (Repeat for each slide with the same headings.)
+
+        DO NOT DEVIATE. 
+            """
+        }
+
+        messages = [
+            system_instructions,
+            {"role": "user", "content": prompt}
+        ]
+
         response = client.chat.completions.create(
             model="gpt-4-0125-preview",
-            messages=[{"role": "user", "content": prompt}]
+            messages=messages
         )
+
         outline_text = response.choices[0].message.content.strip()
-        
+        # -- Add normalization here --
+        import re
+        outline_text = re.sub(r"(?i)\*\*?\s*slide\s+(\d+)[:\s]*\**", r"Slide \1:", outline_text)
+        outline_text = re.sub(r"(?i)\*\*?\s*content\s*[:\s]*\**", "Content:\n", outline_text)
+        outline_text = re.sub(r"(?i)\*\*?\s*teacher notes\s*[:\s]*\**", "Teacher Notes:\n", outline_text)
+        outline_text = re.sub(r"(?i)\*\*?\s*visual elements\s*[:\s]*\**", "Visual Elements:\n", outline_text)
+        # -- End normalization snippet --
         from slide_processor import parse_outline_to_structured_content
         structured_content = parse_outline_to_structured_content(outline_text)
         
