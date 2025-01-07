@@ -223,20 +223,23 @@ load_example_outlines()
 # -------- GOOGLE SLIDES AUTH FLOW --------
 @app.route('/authorize')
 def authorize():
-    """Initiate Google OAuth with redirect_uri properly included."""
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true',
-        prompt='consent'
-    )
-
-    session['state'] = state
-    return redirect(authorization_url)
+    """Initiate Google OAuth with a properly set redirect_uri."""
+    try:
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent'
+        )  # Removed redirect_uri from here
+        session['state'] = state
+        return redirect(authorization_url)
+    except Exception as e:
+        logger.error(f"Error during OAuth authorization: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/oauth2callback')
 def oauth2callback():
-    """Handle Google OAuth callback with proper error handling."""
+    """Handle Google OAuth callback and verify user."""
     try:
         flow.fetch_token(authorization_response=request.url)
         credentials = flow.credentials
@@ -248,15 +251,17 @@ def oauth2callback():
             'client_secret': credentials.client_secret
         }
         
-        # Fetching user info
-        id_info = id_token.verify_oauth2_token(credentials.id_token, requests.Request(), CLIENT_ID)
+        # Fetch user info
+        id_info = id_token.verify_oauth2_token(
+            credentials.id_token, requests.Request(), CLIENT_ID
+        )
         session['user_info'] = {
             'email': id_info['email'],
             'name': id_info.get('name'),
             'picture': id_info.get('picture')
         }
 
-        # Log the successful sign-in
+        # Track login in Firestore
         db.collection('user_logins').add({
             'email': id_info['email'],
             'name': id_info.get('name'),
@@ -264,10 +269,9 @@ def oauth2callback():
         })
 
         return redirect(url_for('dashboard'))
-
     except Exception as e:
-        logging.error(f"Error during OAuth callback: {e}")
-        return jsonify({"error": "Failed to authenticate"}), 400
+        logger.error(f"Error during OAuth callback: {e}")
+        return jsonify({"error": "OAuth callback failed. Check logs."}), 500
 
 @app.route('/track_activity', methods=['POST'])
 def track_activity():
