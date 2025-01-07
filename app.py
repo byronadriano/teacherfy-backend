@@ -24,7 +24,11 @@ db = firestore.client()
 
 
 
+from flask_cors import CORS
+
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
 # Securely fetching the secret key from Azure environment variables
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
 if not app.secret_key:
@@ -221,7 +225,8 @@ def authorize():
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true',
-        prompt='consent'
+        prompt='consent',
+        redirect_uri=REDIRECT_URI  # Ensure this is set in your environment variables correctly
     )
     session['state'] = state
     return redirect(authorization_url)
