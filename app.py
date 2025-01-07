@@ -221,39 +221,41 @@ load_example_outlines()
 # -------- GOOGLE SLIDES AUTH FLOW --------
 @app.route('/authorize')
 def authorize():
-    """Initiate Google OAuth for Slides."""
+    """Initiate Google OAuth with redirect_uri properly included."""
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true',
         prompt='consent',
-        redirect_uri=REDIRECT_URI  # Ensure this is set in your environment variables correctly
+        redirect_uri=REDIRECT_URI  # Ensure this matches your Google Cloud Console settings
     )
+
     session['state'] = state
     return redirect(authorization_url)
 
+
 @app.route('/oauth2callback')
 def oauth2callback():
-    """Handle the OAuth2 callback and store credentials securely."""
-    flow.fetch_token(authorization_response=request.url)
-    credentials = flow.credentials
-    session['credentials'] = {
-        'token': credentials.token,
-        'refresh_token': credentials.refresh_token,
-        'token_uri': credentials.token_uri,
-        'client_id': credentials.client_id,
-        'client_secret': credentials.client_secret
-    }
-    
-    # Fetch user info using Google ID token
+    """Handle Google OAuth callback with proper error handling."""
     try:
+        flow.fetch_token(authorization_response=request.url)
+        credentials = flow.credentials
+        session['credentials'] = {
+            'token': credentials.token,
+            'refresh_token': credentials.refresh_token,
+            'token_uri': credentials.token_uri,
+            'client_id': credentials.client_id,
+            'client_secret': credentials.client_secret
+        }
+        
+        # Fetching user info
         id_info = id_token.verify_oauth2_token(credentials.id_token, requests.Request(), CLIENT_ID)
         session['user_info'] = {
             'email': id_info['email'],
             'name': id_info.get('name'),
             'picture': id_info.get('picture')
         }
-        
-        # ✅ Track login in Firestore
+
+        # Log the successful sign-in
         db.collection('user_logins').add({
             'email': id_info['email'],
             'name': id_info.get('name'),
@@ -261,8 +263,10 @@ def oauth2callback():
         })
 
         return redirect(url_for('dashboard'))
-    except ValueError:
-        return "Error verifying user information", 400
+
+    except Exception as e:
+        logging.error(f"Error during OAuth callback: {e}")
+        return jsonify({"error": "Failed to authenticate"}), 400
 
 @app.route('/track_activity', methods=['POST'])
 def track_activity():
