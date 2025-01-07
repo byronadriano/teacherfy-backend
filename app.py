@@ -7,6 +7,22 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from presentation_generator import generate_presentation
 from slide_processor import parse_outline_to_structured_content
+from google.auth.transport import requests
+from google.oauth2 import id_token
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+firebase_key_path = os.environ.get("FIREBASE_KEY_PATH", "firebase-adminsdk.json")
+
+if not os.path.exists(firebase_key_path):
+    raise ValueError("Firebase key file not found!")
+
+if not firebase_admin._apps:  # Prevent reinitializing Firebase
+    cred = credentials.Certificate(firebase_key_path)
+    firebase_admin.initialize_app(cred)
+db = firestore.client()
+
+
 
 app = Flask(__name__)
 # Securely fetching the secret key from Azure environment variables
@@ -39,7 +55,14 @@ except ValueError as e:
     logging.error(f"OpenAI initialization error: {e}")
     client = None
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+    level=logging.INFO,  # Change to INFO or ERROR in production
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("app.log"),  # Logs to a file
+        logging.StreamHandler()  # Logs to the console
+    ]
+)
 logger = logging.getLogger(__name__)
 
 # -------- EXAMPLE OUTLINE LOADING --------
@@ -205,7 +228,7 @@ def authorize():
 
 @app.route('/oauth2callback')
 def oauth2callback():
-    """Handle the OAuth2 callback and store credentials."""
+    """Handle the OAuth2 callback and store credentials securely."""
     flow.fetch_token(authorization_response=request.url)
     credentials = flow.credentials
     session['credentials'] = {
@@ -215,7 +238,65 @@ def oauth2callback():
         'client_id': credentials.client_id,
         'client_secret': credentials.client_secret
     }
-    return redirect(url_for('create_presentation'))
+    
+    # Fetch user info using Google ID token
+    try:
+        id_info = id_token.verify_oauth2_token(credentials.id_token, requests.Request(), CLIENT_ID)
+        session['user_info'] = {
+            'email': id_info['email'],
+            'name': id_info.get('name'),
+            'picture': id_info.get('picture')
+        }
+        
+        # ✅ Track login in Firestore
+        db.collection('user_logins').add({
+            'email': id_info['email'],
+            'name': id_info.get('name'),
+            'login_time': firestore.SERVER_TIMESTAMP
+        })
+
+        return redirect(url_for('dashboard'))
+    except ValueError:
+        return "Error verifying user information", 400
+
+@app.route('/track_activity', methods=['POST'])
+def track_activity():
+    """Track user activity like generating a presentation."""
+    if 'user_info' not in session:
+        return jsonify({"error": "User not logged in"}), 401
+
+    user_info = session['user_info']
+    activity = request.json.get('activity', 'Unknown Activity')
+
+    db.collection('user_activities').add({
+        'email': user_info['email'],
+        'activity': activity,
+        'timestamp': firestore.SERVER_TIMESTAMP
+    })
+
+    return jsonify({"message": "Activity logged successfully"})
+
+
+@app.route('/dashboard')
+def dashboard():
+    """Display user information after login."""
+    if 'user_info' in session:
+        user_info = session['user_info']
+        return jsonify({
+            "message": "User successfully logged in",
+            "user_email": user_info['email'],
+            "user_name": user_info['name'],
+            "profile_picture": user_info['picture']
+        })
+    else:
+        return redirect(url_for('login'))
+
+@app.route('/logout')
+def logout():
+    """Log out the user by clearing the session."""
+    session.clear()
+    return redirect(url_for('authorize'))
+
 
 @app.route('/create_presentation')
 def create_presentation():
@@ -343,6 +424,7 @@ def generate_presentation_endpoint():
         return jsonify({"error": str(e)}), 500
 
 # -------- MAIN APP RUN --------
+# Run with debug mode based on FLASK_ENV variable
 if __name__ == "__main__":
-    app.run(debug=(os.environ.get("FLASK_ENV") != "production"))
-
+    debug_mode = os.environ.get("FLASK_ENV", "production") != "production"
+    app.run(host="0.0.0.0", port=5000, debug=debug_mode)
