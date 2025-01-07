@@ -1,22 +1,50 @@
 import os
 import json
 import logging
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, redirect, url_for, session
 from openai import OpenAI
-import tempfile
-from flask_cors import CORS
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
 from presentation_generator import generate_presentation
+from slide_processor import parse_outline_to_structured_content
 
 app = Flask(__name__)
-CORS(app)
+# Securely fetching the secret key from Azure environment variables
+app.secret_key = os.environ.get("FLASK_SECRET_KEY")
+if not app.secret_key:
+    raise ValueError("FLASK_SECRET_KEY environment variable is not set!")
+
+CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI")
+SCOPES = ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/presentations']
+
+# Initialize Google OAuth flow and OpenAI client
+flow = Flow.from_client_config(
+    {
+        "web": {
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "redirect_uris": [REDIRECT_URI],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        }
+    },
+    scopes=SCOPES
+)
+
+try:
+    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+except ValueError as e:
+    logging.error(f"OpenAI initialization error: {e}")
+    client = None
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Load example outlines
+# -------- EXAMPLE OUTLINE LOADING --------
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), 'examples')
 EXAMPLE_OUTLINES = {}
-
 EXAMPLE_OUTLINE_DATA = {
   "messages": [
     "Slide 1: Let's Explore Equivalent Fractions!\nContent:\n- Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix.\n- Students will be able to explain why different fractions can show the same amount using pictures and numbers.\n\nTeacher Notes:\n- Begin with students sharing their experiences with fractions in their daily lives\n- Use culturally relevant examples from Denver communities\n\nVisual Elements:\n- Interactive display showing local treats divided into equivalent parts\n- Student-friendly vocabulary cards with pictures"
@@ -142,19 +170,15 @@ EXAMPLE_OUTLINE_DATA = {
 };
 
 def load_example_outlines():
-    """Load all example outline JSON files from the examples directory"""
+    """Load example outlines from the examples directory."""
     try:
-        # Create examples directory if it doesn't exist
         if not os.path.exists(EXAMPLES_DIR):
             os.makedirs(EXAMPLES_DIR)
-        
-        # Ensure example file exists
         example_path = os.path.join(EXAMPLES_DIR, 'equivalent_fractions_outline.json')
         if not os.path.exists(example_path):
             with open(example_path, 'w', encoding='utf-8') as f:
-                json.dump(EXAMPLE_OUTLINE_DATA, f, indent=2)  # We'll define this constant
+                json.dump(EXAMPLE_OUTLINE_DATA, f, indent=2)
         
-        # Load all examples
         for filename in os.listdir(EXAMPLES_DIR):
             if filename.endswith('.json'):
                 with open(os.path.join(EXAMPLES_DIR, filename), 'r', encoding='utf-8') as f:
@@ -163,34 +187,66 @@ def load_example_outlines():
         logger.debug(f"Loaded {len(EXAMPLE_OUTLINES)} example outlines")
     except Exception as e:
         logger.error(f"Error loading example outlines: {e}")
+        EXAMPLE_OUTLINES["fallback"] = EXAMPLE_OUTLINE_DATA  # Fallback to default
 
 load_example_outlines()
 
-def get_env_var(var_name, default=None):
-    value = os.environ.get(var_name, default)
-    logger.debug(f"Checking environment variable {var_name}: {value is not None}")
-    if value is None:
-        logger.error(f"Environment variable {var_name} not set")
-        raise ValueError(f"Required environment variable {var_name} not set")
-    return value
+# -------- GOOGLE SLIDES AUTH FLOW --------
+@app.route('/authorize')
+def authorize():
+    """Initiate Google OAuth for Slides."""
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'
+    )
+    session['state'] = state
+    return redirect(authorization_url)
 
-try:
-    client = OpenAI(api_key=get_env_var("OPENAI_API_KEY"))
-except ValueError as e:
-    logger.error(f"OpenAI client initialization error: {e}")
-    client = None
+@app.route('/oauth2callback')
+def oauth2callback():
+    """Handle the OAuth2 callback and store credentials."""
+    flow.fetch_token(authorization_response=request.url)
+    credentials = flow.credentials
+    session['credentials'] = {
+        'token': credentials.token,
+        'refresh_token': credentials.refresh_token,
+        'token_uri': credentials.token_uri,
+        'client_id': credentials.client_id,
+        'client_secret': credentials.client_secret
+    }
+    return redirect(url_for('create_presentation'))
 
+@app.route('/create_presentation')
+def create_presentation():
+    """Create a Google Slides presentation and return the URL."""
+    if 'credentials' not in session:
+        return redirect(url_for('authorize'))
+    
+    credentials = session['credentials']
+    try:
+        service = build('slides', 'v1', credentials=credentials)
+        presentation = service.presentations().create(body={'title': 'New Lesson Plan'}).execute()
+        return jsonify({
+            'presentation_url': f"https://docs.google.com/presentation/d/{presentation['presentationId']}"
+        })
+    except Exception as e:
+        logger.error(f"Google Slides error: {e}")
+        return redirect(url_for('authorize'))  # Re-authenticate if issues arise
+
+# -------- LESSON OUTLINE GENERATION --------
 @app.route("/outline", methods=["POST", "OPTIONS"])
 def get_outline():
+    """Generate a lesson outline using OpenAI."""
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
     data = request.json
     logger.debug(f"Received outline request with data: {data}")
-    
-    # Check for example case
+
+    # Check for example outline use
     is_example = (
-        data.get("use_example")  # if the frontend explicitly says "use example"
+        data.get("use_example")
         or (
             data.get("lesson_topic", "").lower().strip() == "equivalent fractions"
             and data.get("grade_level", "").lower().strip() == "4th grade"
@@ -199,23 +255,14 @@ def get_outline():
         )
     )
 
-    
-    logger.debug(f"Is example request: {is_example}")
-
     if is_example:
         example_data = EXAMPLE_OUTLINES.get("equivalent_fractions_outline")
-        logger.debug(f"Found example data: {bool(example_data)}")
-        if example_data:
-            return jsonify(example_data)
-        # If example not found, fall back to default
-        return jsonify(EXAMPLE_OUTLINE_DATA)
+        return jsonify(example_data or EXAMPLE_OUTLINE_DATA)
 
-
-    # Regular outline generation
+    # Generate a new outline using OpenAI
     if client is None:
         return jsonify({"error": "OpenAI client not initialized"}), 500
 
-    # Instead of creating a new prompt here, use the one from frontend
     prompt = data.get("custom_prompt")
     if not prompt:
         return jsonify({"error": "No prompt provided"}), 400
@@ -254,65 +301,48 @@ def get_outline():
             system_instructions,
             {"role": "user", "content": prompt}
         ]
-
         response = client.chat.completions.create(
             model="gpt-4-0125-preview",
             messages=messages
         )
-
         outline_text = response.choices[0].message.content.strip()
-        # -- Add normalization here --
-        import re
-        outline_text = re.sub(r"(?i)\*\*?\s*slide\s+(\d+)[:\s]*\**", r"Slide \1:", outline_text)
-        outline_text = re.sub(r"(?i)\*\*?\s*content\s*[:\s]*\**", "Content:\n", outline_text)
-        outline_text = re.sub(r"(?i)\*\*?\s*teacher notes\s*[:\s]*\**", "Teacher Notes:\n", outline_text)
-        outline_text = re.sub(r"(?i)\*\*?\s*visual elements\s*[:\s]*\**", "Visual Elements:\n", outline_text)
-        # -- End normalization snippet --
-        from slide_processor import parse_outline_to_structured_content
         structured_content = parse_outline_to_structured_content(outline_text)
-        
+
         return jsonify({
             "messages": [outline_text],
             "structured_content": structured_content
         })
     except Exception as e:
-        logging.error(f"Error getting outline: {e}")
+        logging.error(f"Error generating outline: {e}")
         return jsonify({"error": str(e)}), 500
 
+# -------- GENERATE AND DOWNLOAD .PPTX --------
 @app.route("/generate", methods=["POST", "OPTIONS"])
 def generate_presentation_endpoint():
+    """Generate a PowerPoint presentation (.pptx) for download."""
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
+    data = request.json
+    outline_text = data.get('lesson_outline', '')
+    structured_content = data.get('structured_content')
+        
+    if not structured_content:
+        return jsonify({"error": "No structured content provided"}), 400
+
     try:
-        data = request.json
-        logger.debug(f"Received generation request with data keys: {data.keys()}")
-        
-        outline_text = data.get('lesson_outline', '')
-        structured_content = data.get('structured_content')        
-        
-        if not structured_content:
-            logger.error("No structured content provided in request")
-            return jsonify({"error": "No structured content provided"}), 400
-            
-        logger.debug(f"Generating presentation with {len(structured_content)} slides")
         presentation_path = generate_presentation(outline_text, structured_content)
-        
-        if not os.path.exists(presentation_path):
-            logger.error(f"Generated presentation file not found at: {presentation_path}")
-            return jsonify({"error": "Failed to create presentation file"}), 500
-            
-        logger.debug(f"Sending presentation file: {presentation_path}")
         return send_file(
             presentation_path, 
             as_attachment=True,
             download_name="lesson_presentation.pptx",
             mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
         )
-        
     except Exception as e:
-        logger.error(f"Error generating presentation: {e}", exc_info=True)
+        logging.error(f"Error generating presentation: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+# -------- MAIN APP RUN --------
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=(os.environ.get("FLASK_ENV") != "production"))
+
