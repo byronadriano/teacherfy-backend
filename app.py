@@ -74,130 +74,7 @@ logger = logging.getLogger(__name__)
 # -------- EXAMPLE OUTLINE LOADING --------
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), 'examples')
 EXAMPLE_OUTLINES = {}
-EXAMPLE_OUTLINE_DATA = {
-  "messages": [
-    "Slide 1: Let's Explore Equivalent Fractions!\nContent:\n- Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix.\n- Students will be able to explain why different fractions can show the same amount using pictures and numbers.\n\nTeacher Notes:\n- Begin with students sharing their experiences with fractions in their daily lives\n- Use culturally relevant examples from Denver communities\n\nVisual Elements:\n- Interactive display showing local treats divided into equivalent parts\n- Student-friendly vocabulary cards with pictures"
-  ],
-  "structured_content": [
-    {
-      "title": "Let's Explore Equivalent Fractions!",
-      "layout": "TITLE_AND_CONTENT",
-      "content": [
-        "Today we're going on a fraction adventure!",
-        "- Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix",
-        "- Students will be able to explain why different fractions can show the same amount using pictures and numbers",
-        "- Let's start by thinking about times when we share things equally!"
-      ],
-      "teacher_notes": [
-        "Begin with students sharing their experiences with fractions in their daily lives",
-        "Use culturally relevant examples from Denver communities",
-        "Encourage bilingual students to share fraction terms in their home language"
-      ],
-      "visual_elements": [
-        "Interactive display showing local treats divided into equivalent parts",
-        "Student-friendly vocabulary cards with pictures"
-      ],
-      "left_column": [],
-      "right_column": []
-    },
-    {
-      "title": "What Are Equivalent Fractions?",
-      "layout": "TITLE_AND_CONTENT",
-      "content": [
-        "Let's learn our fraction vocabulary!",
-        "- Imagine sharing a breakfast burrito with your friend - you can cut it in half (1/2) or into four equal pieces and take two (2/4). You get the same amount!",
-        "- The top number (numerator) tells us how many pieces we have",
-        "- The bottom number (denominator) tells us how many total equal pieces",
-        "- When fractions show the same amount, we call them equivalent"
-      ],
-      "teacher_notes": [
-        "Use local food examples familiar to Denver students",
-        "Connect math vocabulary to real experiences",
-        "Encourage students to create their own examples"
-      ],
-      "visual_elements": [
-        "Animation of a burrito being cut into different equivalent portions",
-        "Interactive fraction wall labeled in English and Spanish",
-        "Hands-on fraction strips for each student"
-      ],
-      "left_column": [],
-      "right_column": []
-    },
-    {
-      "title": "Finding Equivalent Fractions Together",
-      "layout": "TWO_COLUMNS",
-      "content": [],
-      "teacher_notes": [
-        "Use Rocky Mountain National Park trail maps for real-world connections",
-        "Encourage peer discussion in preferred language",
-        "Model think-aloud strategy"
-      ],
-      "visual_elements": [
-        "Trail map showing different fraction representations",
-        "Digital manipulatives for student exploration"
-      ],
-      "left_column": [
-        "Let's practice together!",
-        "- When we multiply 1/2 by 2/2, we get 2/4",
-        "- It's like taking a hiking trail that's 1/2 mile long and marking it every quarter mile - you'll have 2/4 of the trail at the same spot as 1/2!",
-        "- Your turn: Try finding an equivalent fraction for 2/3"
-      ],
-      "right_column": [
-        "Check your understanding:",
-        "- Use your fraction strips to show how 1/2 = 2/4",
-        "- Draw a picture to prove your answer",
-        "- Share your strategy with your partner"
-      ]
-    },
-    {
-      "title": "Your Turn to Create!",
-      "layout": "TITLE_AND_CONTENT",
-      "content": [
-        "Time to become fraction experts!",
-        "- Work with your partner to create equivalent fraction cards",
-        "- Use different colors to show equal parts",
-        "- Challenge: Can you find three different fractions that equal 1/2?",
-        "- Bonus: Create a story problem using equivalent fractions and your favorite Denver activity"
-      ],
-      "teacher_notes": [
-        "Provide bilingual instruction cards",
-        "Allow student choice in examples",
-        "Support native language use in discussions"
-      ],
-      "visual_elements": [
-        "Sample fraction cards with local themes",
-        "Student workspace organization guide",
-        "Visual success criteria"
-      ],
-      "left_column": [],
-      "right_column": []
-    },
-    {
-      "title": "Show What You Know!",
-      "layout": "TITLE_AND_CONTENT",
-      "content": [
-        "Let's celebrate what we learned!",
-        "- Create three equivalent fractions for 3/4",
-        "- Draw a picture showing how you know they're equal",
-        "- Write a story about using equivalent fractions in your neighborhood",
-        "- Share your favorite way to remember equivalent fractions"
-      ],
-      "teacher_notes": [
-        "Provide multiple ways to demonstrate understanding",
-        "Accept explanations in English or home language",
-        "Use exit ticket responses to plan next lesson"
-      ],
-      "visual_elements": [
-        "Culturally responsive exit ticket template",
-        "Digital portfolio upload guide",
-        "Self-assessment checklist in multiple languages"
-      ],
-      "left_column": [],
-      "right_column": []
-    }
-  ]
-};
-
+EXAMPLE_OUTLINE_DATA = {}
 def load_example_outlines():
     """Load example outlines from the examples directory."""
     try:
@@ -275,21 +152,26 @@ def oauth2callback():
 
 @app.route('/track_activity', methods=['POST'])
 def track_activity():
-    """Track user activity like generating a presentation."""
     if 'user_info' not in session:
         return jsonify({"error": "User not logged in"}), 401
 
-    user_info = session['user_info']
-    activity = request.json.get('activity', 'Unknown Activity')
+    data = request.json
+    activity = data.get('activity', 'Unknown Activity')
+    email = data.get('email')
+    name = data.get('name')
+    given_name = data.get('given_name')
+    family_name = data.get('family_name')
 
     db.collection('user_activities').add({
-        'email': user_info['email'],
+        'email': email,
+        'name': name,
+        'given_name': given_name,
+        'family_name': family_name,
         'activity': activity,
         'timestamp': firestore.SERVER_TIMESTAMP
     })
 
     return jsonify({"message": "Activity logged successfully"})
-
 
 @app.route('/dashboard')
 def dashboard():
