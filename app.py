@@ -181,21 +181,23 @@ def track_activity():
         return jsonify({"error": "Missing required fields"}), 400
 
     try:
-        # Ensure consistent collection usage
         doc_ref = db.collection('user_activities').document()
-        doc_ref.set({
+        activity_data = {
             'email': email,
             'name': name,
             'activity': activity,
             'timestamp': firestore.SERVER_TIMESTAMP
-        })
+        }
+
+        if activity == 'Downloaded Presentation':
+            activity_data['lesson_data'] = data.get('lesson_data', {})
+
+        doc_ref.set(activity_data)
         logger.info(f"Activity logged successfully for: {email}")
         return jsonify({"message": "Activity logged successfully"})
     except Exception as e:
         logger.error(f"Firestore write error: {e}")
         return jsonify({"error": str(e)}), 500
-
-
 
 @app.route('/dashboard')
 def dashboard():

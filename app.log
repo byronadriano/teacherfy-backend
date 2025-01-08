@@ -20,3 +20,9 @@
 2025-01-08 13:27:38,322 - INFO - Received activity data: {'activity': 'Test Log2', 'email': 'testuser@example.com', 'name': 'Test User'}
 2025-01-08 13:27:38,424 - INFO - Activity logged successfully for: testuser@example.com
 2025-01-08 13:27:38,424 - INFO - 127.0.0.1 - - [08/Jan/2025 13:27:38] "POST /track_activity HTTP/1.1" 200 -
+2025-01-08 13:35:00,384 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-01-08 13:35:00,384 - INFO - [33mPress CTRL+C to quit[0m
+2025-01-08 13:35:04,351 - INFO - Received activity data: {'activity': 'Test Log2', 'email': 'testuser@example.com', 'name': 'Test User'}
+2025-01-08 13:35:04,734 - INFO - Activity logged successfully for: testuser@example.com
+2025-01-08 13:35:04,736 - INFO - 127.0.0.1 - - [08/Jan/2025 13:35:04] "POST /track_activity HTTP/1.1" 200 -
