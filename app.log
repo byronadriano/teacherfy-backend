@@ -1,0 +1,22 @@
+2025-01-08 13:14:20,525 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-01-08 13:14:20,525 - INFO - [33mPress CTRL+C to quit[0m
+2025-01-08 13:14:23,654 - INFO - 127.0.0.1 - - [08/Jan/2025 13:14:23] "[33mGET / HTTP/1.1[0m" 404 -
+2025-01-08 13:14:23,717 - INFO - 127.0.0.1 - - [08/Jan/2025 13:14:23] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-01-08 13:14:53,282 - INFO - 127.0.0.1 - - [08/Jan/2025 13:14:53] "[31m[1mPOST /track_activity HTTP/1.1[0m" 401 -
+2025-01-08 13:16:09,752 - INFO - 127.0.0.1 - - [08/Jan/2025 13:16:09] "[31m[1mPOST /track_activity HTTP/1.1[0m" 401 -
+2025-01-08 13:16:22,160 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-01-08 13:16:22,160 - INFO - [33mPress CTRL+C to quit[0m
+2025-01-08 13:16:28,676 - INFO - Received activity data: {'activity': 'Test Log', 'email': 'testuser@example.com', 'name': 'Test User'}
+2025-01-08 13:16:29,122 - INFO - Activity logged for user: testuser@example.com
+2025-01-08 13:16:29,122 - INFO - 127.0.0.1 - - [08/Jan/2025 13:16:29] "POST /track_activity HTTP/1.1" 200 -
+2025-01-08 13:27:06,491 - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:5000
+2025-01-08 13:27:06,491 - INFO - [33mPress CTRL+C to quit[0m
+2025-01-08 13:27:12,756 - INFO - Received activity data: {'activity': 'Test Log', 'email': 'testuser@example.com', 'name': 'Test User'}
+2025-01-08 13:27:13,132 - INFO - Activity logged successfully for: testuser@example.com
+2025-01-08 13:27:13,134 - INFO - 127.0.0.1 - - [08/Jan/2025 13:27:13] "POST /track_activity HTTP/1.1" 200 -
+2025-01-08 13:27:38,322 - INFO - Received activity data: {'activity': 'Test Log2', 'email': 'testuser@example.com', 'name': 'Test User'}
+2025-01-08 13:27:38,424 - INFO - Activity logged successfully for: testuser@example.com
+2025-01-08 13:27:38,424 - INFO - 127.0.0.1 - - [08/Jan/2025 13:27:38] "POST /track_activity HTTP/1.1" 200 -

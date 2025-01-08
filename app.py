@@ -12,7 +12,25 @@ from google.oauth2 import id_token
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-firebase_key_path = os.environ.get("FIREBASE_KEY_PATH", "firebase-adminsdk.json")
+from dotenv import load_dotenv
+import os
+# Load environment variables from a .env file
+load_dotenv()
+
+# Try environment variable first, then file path
+firebase_creds = os.environ.get("FIREBASE_CREDENTIALS")
+firebase_key_path = os.environ.get("FIREBASE_KEY_PATH", "/home/site/wwwroot/firebase-adminsdk.json")
+
+if firebase_creds:
+    cred = credentials.Certificate(json.loads(firebase_creds))
+elif os.path.exists(firebase_key_path):
+    cred = credentials.Certificate(firebase_key_path)
+else:
+    raise ValueError("No Firebase credentials found!")
+
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 if not os.path.exists(firebase_key_path):
     raise ValueError("Firebase key file not found!")
@@ -152,26 +170,32 @@ def oauth2callback():
 
 @app.route('/track_activity', methods=['POST'])
 def track_activity():
-    if 'user_info' not in session:
-        return jsonify({"error": "User not logged in"}), 401
-
     data = request.json
-    activity = data.get('activity', 'Unknown Activity')
+    logger.info(f"Received activity data: {data}")
+
+    activity = data.get('activity')
     email = data.get('email')
     name = data.get('name')
-    given_name = data.get('given_name')
-    family_name = data.get('family_name')
 
-    db.collection('user_activities').add({
-        'email': email,
-        'name': name,
-        'given_name': given_name,
-        'family_name': family_name,
-        'activity': activity,
-        'timestamp': firestore.SERVER_TIMESTAMP
-    })
+    if not activity or not email or not name:
+        return jsonify({"error": "Missing required fields"}), 400
 
-    return jsonify({"message": "Activity logged successfully"})
+    try:
+        # Ensure consistent collection usage
+        doc_ref = db.collection('user_activities').document()
+        doc_ref.set({
+            'email': email,
+            'name': name,
+            'activity': activity,
+            'timestamp': firestore.SERVER_TIMESTAMP
+        })
+        logger.info(f"Activity logged successfully for: {email}")
+        return jsonify({"message": "Activity logged successfully"})
+    except Exception as e:
+        logger.error(f"Firestore write error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 
 @app.route('/dashboard')
 def dashboard():

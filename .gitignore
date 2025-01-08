@@ -1,7 +1,7 @@
 __pycache__/
 *.pyctemplates/base_template.pptx
 *.pyc
-
+*.env
 # Ignore sensitive files
 firebase-adminsdk.json
 .env
