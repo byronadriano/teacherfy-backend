@@ -526,57 +526,20 @@ from google_slides_generator import create_google_slides_presentation
 
 @app.route("/generate_slides", methods=["POST", "OPTIONS"])
 def generate_slides_endpoint():
-    """Generate a Google Slides presentation and return the URL."""
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
     if 'credentials' not in session:
-        return redirect(url_for('authorize'))
-    
-    data = request.json
-    structured_content = data.get('structured_content')
-    
-    if not structured_content:
-        return jsonify({"error": "No structured content provided"}), 400
-
-    credentials_data = session['credentials']
-    credentials = Credentials(
-        token=credentials_data['token'],
-        refresh_token=credentials_data.get('refresh_token'),
-        token_uri=credentials_data['token_uri'],
-        client_id=credentials_data['client_id'],
-        client_secret=credentials_data['client_secret'],
-        scopes=SCOPES
-    )
-    
-    try:
-        # Refresh credentials if expired
-        if credentials.expired and credentials.refresh_token:
-            credentials.refresh(google_requests.Request())
-            # Update session with new token
-            session['credentials']['token'] = credentials.token
-
-        # Use the separate module to create the presentation
-        presentation_url, presentation_id = create_google_slides_presentation(credentials, structured_content)
-        
-        # Log the creation activity in Firestore
-        user_info = session.get('user_info', {})
-        db.collection('user_activities').add({
-            'email': user_info.get('email'),
-            'name': user_info.get('name'),
-            'activity': 'Created Google Slides Presentation',
-            'presentation_id': presentation_id,
-            'presentation_url': presentation_url,
-            'timestamp': firestore.SERVER_TIMESTAMP
-        })
-        
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent'
+        )
+        session['state'] = state
         return jsonify({
-            'presentation_url': presentation_url
-        })
-    except Exception as e:
-        logger.error(f"Error generating Google Slides presentation: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
+            "needsAuth": True,
+            "authUrl": authorization_url
+        }), 401
 # -------- MAIN APP RUN --------
 # Run with debug mode based on FLASK_ENV variable
 if __name__ == "__main__":
