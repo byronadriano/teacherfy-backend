@@ -14,9 +14,45 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 from dotenv import load_dotenv
-from flask_cors import CORS
 import os
 
+from flask_cors import CORS
+
+app = Flask(__name__)
+# CORS(app)  # Enable CORS for all routes?/
+# Update CORS configuration
+# Remove this line
+# CORS(app)  # Enable CORS for all routes?/
+
+# Update CORS configuration
+CORS(app, 
+     resources={
+         r"/*": {
+             "origins": ["https://teacherfy.ai", "http://localhost:3000"],
+             "methods": ["GET", "POST", "OPTIONS"],
+             "allow_headers": ["Content-Type", "Authorization"],
+             "supports_credentials": True,
+             "expose_headers": ["Content-Type", "Authorization"]
+         }
+     })
+
+# Update the after_request function
+@app.after_request
+def after_request(response):
+    origin = request.headers.get('Origin')
+    if origin in ["https://teacherfy.ai", "http://localhost:3000"]:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
+# Add these near the top of app.py with other configurations
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE='None',
+    SESSION_COOKIE_DOMAIN='.teacherfy.ai'  # Adjust based on your domain
+)
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -36,8 +72,6 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
 
 # Securely fetching the secret key from environment variables
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
@@ -280,11 +314,27 @@ def oauth2callback():
             'login_time': firestore.SERVER_TIMESTAMP
         })
 
-        return redirect(url_for('dashboard'))
+        # Return HTML that closes the popup and messages the parent
+        return """
+            <html>
+                <body>
+                    <script>
+                        window.close();
+                    </script>
+                </body>
+            </html>
+        """
     except Exception as e:
         logger.error(f"Error during OAuth callback: {e}")
-        return jsonify({"error": "OAuth callback failed. Check logs."}), 500
-
+        return """
+            <html>
+                <body>
+                    <script>
+                        window.close();
+                    </script>
+                </body>
+            </html>
+        """
 @app.route('/track_activity', methods=['POST'])
 def track_activity():
     data = request.json
