@@ -241,3 +241,14 @@
 2025-01-09 22:17:13,982 - DEBUG - Loaded 1 example outlines
 2025-01-09 22:17:13,998 - WARNING -  * Debugger is active!
 2025-01-09 22:17:14,007 - INFO -  * Debugger PIN: 205-163-531
+2025-01-15 21:47:50,998 - httpx - DEBUG - load_ssl_context verify=True cert=None trust_env=True http2=False
+2025-01-15 21:47:51,002 - httpx - DEBUG - load_verify_locations cafile='/opt/homebrew/lib/python3.10/site-packages/certifi/cacert.pem'
+2025-01-15 21:47:51,085 - __main__ - DEBUG - Loaded 1 example outlines
+2025-01-15 21:47:51,100 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.64:5000
+2025-01-15 21:47:51,100 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-01-15 21:48:04,718 - requests_oauthlib.oauth2_session - DEBUG - Generated new state KMrzxxQJIv6nZsutrxQaq9fpAB14Ov.
+2025-01-15 21:48:04,719 - werkzeug - INFO - 127.0.0.1 - - [15/Jan/2025 21:48:04] "[32mGET /authorize HTTP/1.1[0m" 302 -
+2025-01-15 21:50:41,688 - werkzeug - INFO - 127.0.0.1 - - [15/Jan/2025 21:50:41] "[31m[1mPOST /generate_slides HTTP/1.1[0m" 401 -

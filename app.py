@@ -9,75 +9,67 @@ from presentation_generator import generate_presentation
 from slide_processor import parse_outline_to_structured_content
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
-from google.oauth2.credentials import Credentials  # <-- Added Import
+from google.oauth2.credentials import Credentials
 import firebase_admin
 from firebase_admin import credentials, firestore
-
 from dotenv import load_dotenv
-import os
-
 from flask_cors import CORS
+from functools import wraps
 
+# Initialize Flask app
 app = Flask(__name__)
-# CORS(app)  # Enable CORS for all routes?/
-# Update CORS configuration
-# Remove this line
-# CORS(app)  # Enable CORS for all routes?/
 
-# Update CORS configuration
+# Enhanced logging configuration
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("app.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
+
+# Enhanced CORS configuration
 CORS(app, 
      resources={
          r"/*": {
-             "origins": ["https://teacherfy.ai", "http://localhost:3000"],
-             "methods": ["GET", "POST", "OPTIONS"],
-             "allow_headers": ["Content-Type", "Authorization"],
+             "origins": [
+                 "https://teacherfy.ai",
+                 "http://localhost:3000",
+                 "https://teacherfy.azurewebsites.net"
+             ],
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": [
+                 "Content-Type",
+                 "Authorization",
+                 "X-Requested-With",
+                 "Accept",
+                 "Origin"
+             ],
              "supports_credentials": True,
              "expose_headers": ["Content-Type", "Authorization"]
          }
      })
 
-# Update the after_request function
-@app.after_request
-def after_request(response):
-    origin = request.headers.get('Origin')
-    if origin in ["https://teacherfy.ai", "http://localhost:3000"]:
-        response.headers.add('Access-Control-Allow-Origin', origin)
-        response.headers.add('Access-Control-Allow-Credentials', 'true')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    return response
-
-# Add these near the top of app.py with other configurations
+# Enhanced session configuration
 app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_SAMESITE='None',
-    SESSION_COOKIE_DOMAIN='.teacherfy.ai'  # Adjust based on your domain
+    SESSION_COOKIE_HTTPONLY=True,
+    PERMANENT_SESSION_LIFETIME=3600,  # 1 hour
+    SESSION_COOKIE_DOMAIN=None  # Let Flask set this automatically
 )
 
-# Load environment variables from a .env file
-load_dotenv()
-
-# Try environment variable first, then file path
-firebase_creds = os.environ.get("FIREBASE_CREDENTIALS")
-firebase_key_path = os.environ.get("FIREBASE_KEY_PATH", "/home/site/wwwroot/firebase-adminsdk.json")
-
-if firebase_creds:
-    cred = credentials.Certificate(json.loads(firebase_creds))
-elif os.path.exists(firebase_key_path):
-    cred = credentials.Certificate(firebase_key_path)
-else:
-    raise ValueError("No Firebase credentials found!")
-
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred)
-db = firestore.client()
-
-
-# Securely fetching the secret key from environment variables
+# Secure secret key configuration
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
 if not app.secret_key:
     raise ValueError("FLASK_SECRET_KEY environment variable is not set!")
 
+# Google OAuth configuration
 CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI")
@@ -86,7 +78,7 @@ SCOPES = [
     'https://www.googleapis.com/auth/presentations'
 ]
 
-# Initialize Google OAuth flow and OpenAI client
+# Initialize OAuth flow
 flow = Flow.from_client_config(
     {
         "web": {
@@ -97,29 +89,193 @@ flow = Flow.from_client_config(
             "token_uri": "https://oauth2.googleapis.com/token"
         }
     },
-    scopes=SCOPES,
-    redirect_uri=REDIRECT_URI  # Ensure it's set here once
+    scopes=SCOPES
 )
 
+# Initialize OpenAI client with error handling
 try:
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 except ValueError as e:
-    logging.error(f"OpenAI initialization error: {e}")
+    logger.error(f"OpenAI initialization error: {e}")
     client = None
 
-logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG for detailed logs
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("app.log"),  # Logs to a file
-        logging.StreamHandler()  # Logs to the console
-    ]
-)
-logger = logging.getLogger(__name__)
+# Firebase initialization with error handling
+try:
+    firebase_creds = os.environ.get("FIREBASE_CREDENTIALS")
+    firebase_key_path = os.environ.get("FIREBASE_KEY_PATH", "/home/site/wwwroot/firebase-adminsdk.json")
+    
+    if firebase_creds:
+        cred = credentials.Certificate(json.loads(firebase_creds))
+    elif os.path.exists(firebase_key_path):
+        cred = credentials.Certificate(firebase_key_path)
+    else:
+        raise ValueError("No Firebase credentials found!")
 
-# -------- EXAMPLE OUTLINE LOADING --------
-EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), 'examples')
-EXAMPLE_OUTLINES = {}
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    logger.error(f"Firebase initialization error: {e}")
+    db = None
+
+# Utility decorators
+def require_auth(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'credentials' not in session:
+            return jsonify({"error": "Authentication required", "needsAuth": True}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+def handle_errors(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Error in {f.__name__}: {str(e)}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+    return decorated_function
+
+# Enhanced CORS headers
+@app.after_request
+def after_request(response):
+    origin = request.headers.get('Origin')
+    allowed_origins = ["https://teacherfy.ai", "http://localhost:3000", "https://teacherfy.azurewebsites.net"]
+    
+    if origin in allowed_origins:
+        response.headers.update({
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+        })
+    return response
+
+# Enhanced OAuth callback
+@app.route('/oauth2callback')
+@handle_errors
+def oauth2callback():
+    try:
+        flow.fetch_token(authorization_response=request.url)
+        credentials = flow.credentials
+        
+        # Store credentials securely
+        session['credentials'] = {
+            'token': credentials.token,
+            'refresh_token': credentials.refresh_token,
+            'token_uri': credentials.token_uri,
+            'client_id': credentials.client_id,
+            'client_secret': credentials.client_secret,
+            'scopes': credentials.scopes
+        }
+        
+        # Verify token with additional security
+        id_info = id_token.verify_oauth2_token(
+            credentials.id_token,
+            google_requests.Request(),
+            CLIENT_ID,
+            clock_skew_in_seconds=300
+        )
+        
+        session['user_info'] = {
+            'email': id_info['email'],
+            'name': id_info.get('name'),
+            'picture': id_info.get('picture')
+        }
+        
+        # Log success
+        logger.info(f"Successfully authenticated user: {id_info['email']}")
+        
+        # Track login in Firestore
+        if db:
+            try:
+                db.collection('user_logins').add({
+                    'email': id_info['email'],
+                    'name': id_info.get('name'),
+                    'login_time': firestore.SERVER_TIMESTAMP
+                })
+            except Exception as e:
+                logger.error(f"Firestore login tracking error: {e}")
+        
+        return """
+            <html><body><script>
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'AUTH_SUCCESS',
+                        email: '""" + id_info['email'] + """'
+                    }, '*');
+                    window.close();
+                }
+            </script></body></html>
+        """
+    except Exception as e:
+        logger.error(f"OAuth callback error: {e}")
+        return """
+            <html><body><script>
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'AUTH_ERROR',
+                        error: 'Authentication failed'
+                    }, '*');
+                    window.close();
+                }
+            </script></body></html>
+        """
+
+# Enhanced Google Slides generation endpoint
+@app.route("/generate_slides", methods=["POST", "OPTIONS"])
+@handle_errors
+@require_auth
+def generate_slides_endpoint():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "OK"}), 200
+    
+    try:
+        credentials_data = session.get('credentials')
+        if not credentials_data:
+            return jsonify({
+                "needsAuth": True,
+                "error": "No credentials found in session"
+            }), 401
+        
+        credentials = Credentials(
+            token=credentials_data['token'],
+            refresh_token=credentials_data.get('refresh_token'),
+            token_uri=credentials_data['token_uri'],
+            client_id=credentials_data['client_id'],
+            client_secret=credentials_data['client_secret'],
+            scopes=credentials_data['scopes']
+        )
+        
+        data = request.json
+        structured_content = data.get('structured_content')
+        
+        if not structured_content:
+            return jsonify({"error": "No structured content provided"}), 400
+            
+        from google_slides_generator import create_google_slides_presentation
+        presentation_url, presentation_id = create_google_slides_presentation(
+            credentials,
+            structured_content
+        )
+        
+        return jsonify({
+            "presentation_url": presentation_url,
+            "presentation_id": presentation_id
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating Google Slides: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+# Global error handler
+@app.errorhandler(Exception)
+def handle_error(e):
+    logger.error(f"Unhandled error: {str(e)}", exc_info=True)
+    return jsonify({"error": str(e)}), 500
+
+# Example outline data
 EXAMPLE_OUTLINE_DATA = {
   "messages": [
     "Slide 1: Let's Explore Equivalent Fractions!\nContent:\n- Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix.\n- Students will be able to explain why different fractions can show the same amount using pictures and numbers.\n\nTeacher Notes:\n- Begin with students sharing their experiences with fractions in their daily lives\n- Use culturally relevant examples from Denver communities\n\nVisual Elements:\n- Interactive display showing local treats divided into equivalent parts\n- Student-friendly vocabulary cards with pictures"
@@ -244,6 +400,10 @@ EXAMPLE_OUTLINE_DATA = {
   ]
 };
 
+# Example outline loading
+EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), 'examples')
+EXAMPLE_OUTLINES = {}
+
 def load_example_outlines():
     """Load example outlines from the examples directory."""
     try:
@@ -266,7 +426,6 @@ def load_example_outlines():
 
 load_example_outlines()
 
-# -------- GOOGLE SLIDES AUTH FLOW --------
 @app.route('/authorize')
 def authorize():
     """Initiate Google OAuth with a properly set redirect_uri."""
@@ -282,59 +441,6 @@ def authorize():
         logger.error(f"Error during OAuth authorization: {e}")
         return jsonify({"error": str(e)}), 500
 
-
-@app.route('/oauth2callback')
-def oauth2callback():
-    """Handle Google OAuth callback and verify user."""
-    try:
-        flow.fetch_token(authorization_response=request.url)
-        credentials = flow.credentials
-        session['credentials'] = {
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret
-        }
-        
-        # Fetch user info
-        id_info = id_token.verify_oauth2_token(
-            credentials.id_token, google_requests.Request(), CLIENT_ID
-        )
-        session['user_info'] = {
-            'email': id_info['email'],
-            'name': id_info.get('name'),
-            'picture': id_info.get('picture')
-        }
-
-        # Track login in Firestore
-        db.collection('user_logins').add({
-            'email': id_info['email'],
-            'name': id_info.get('name'),
-            'login_time': firestore.SERVER_TIMESTAMP
-        })
-
-        # Return HTML that closes the popup and messages the parent
-        return """
-            <html>
-                <body>
-                    <script>
-                        window.close();
-                    </script>
-                </body>
-            </html>
-        """
-    except Exception as e:
-        logger.error(f"Error during OAuth callback: {e}")
-        return """
-            <html>
-                <body>
-                    <script>
-                        window.close();
-                    </script>
-                </body>
-            </html>
-        """
 @app.route('/track_activity', methods=['POST'])
 def track_activity():
     data = request.json
@@ -386,7 +492,6 @@ def logout():
     session.clear()
     return redirect(url_for('authorize'))
 
-
 @app.route('/create_presentation')
 def create_presentation_route():
     """Create a Google Slides presentation and return the URL."""
@@ -411,9 +516,8 @@ def create_presentation_route():
         })
     except Exception as e:
         logger.error(f"Google Slides error: {e}")
-        return redirect(url_for('authorize'))  # Re-authenticate if issues arise
+        return redirect(url_for('authorize'))
 
-# -------- LESSON OUTLINE GENERATION --------
 @app.route("/outline", methods=["POST", "OPTIONS"])
 def get_outline():
     """Generate a lesson outline using OpenAI."""
@@ -495,7 +599,6 @@ def get_outline():
         logger.error(f"Error generating outline: {e}")
         return jsonify({"error": str(e)}), 500
 
-# -------- GENERATE AND DOWNLOAD .PPTX --------
 @app.route("/generate", methods=["POST", "OPTIONS"])
 def generate_presentation_endpoint():
     """Generate a PowerPoint presentation (.pptx) for download."""
@@ -521,27 +624,6 @@ def generate_presentation_endpoint():
         logger.error(f"Error generating presentation: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
-# -------- GENERATE GOOGLE SLIDES --------
-from google_slides_generator import create_google_slides_presentation
-
-@app.route("/generate_slides", methods=["POST", "OPTIONS"])
-def generate_slides_endpoint():
-    if request.method == "OPTIONS":
-        return jsonify({"status": "OK"}), 200
-
-    if 'credentials' not in session:
-        authorization_url, state = flow.authorization_url(
-            access_type='offline',
-            include_granted_scopes='true',
-            prompt='consent'
-        )
-        session['state'] = state
-        return jsonify({
-            "needsAuth": True,
-            "authUrl": authorization_url
-        }), 401
-# -------- MAIN APP RUN --------
-# Run with debug mode based on FLASK_ENV variable
 if __name__ == "__main__":
-    debug_mode = os.environ.get("FLASK_ENV", "production") != "production"
-    app.run(host="0.0.0.0", port=5000, debug=debug_mode)
+    debug_mode = os.environ.get("FLASK_ENV") == "development"
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=debug_mode)

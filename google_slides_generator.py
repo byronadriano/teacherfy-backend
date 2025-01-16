@@ -1,12 +1,50 @@
-# google_slides_generator.py
 import logging
+from typing import List, Dict, Tuple, Any
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 logger = logging.getLogger(__name__)
 
-def create_google_slides_presentation(credentials, structured_content):
+def format_content_list(content: List[str]) -> str:
+    """Format a list of content items into a properly formatted string."""
+    if not content:
+        return ""
+    return "\n• " + "\n• ".join(str(item).strip() for item in content if item)
+
+def format_teacher_notes(notes: List[str]) -> str:
+    """Format teacher notes into a properly formatted string."""
+    if not notes:
+        return ""
+    return "Teacher Notes:\n• " + "\n• ".join(str(note).strip() for note in notes if note)
+
+def get_layout_for_content(slide_content: Dict[str, Any]) -> str:
+    """Determine the appropriate slide layout based on content structure."""
+    if slide_content.get('layout') == 'TWO_COLUMNS':
+        return 'TWO_COLUMNS'
+    if any(slide_content.get(key) for key in ['left_column', 'right_column']):
+        return 'TWO_COLUMNS'
+    return 'TITLE_AND_BODY'
+
+def create_text_box_request(slide_id: str, text: str, transform: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a request to add a text box to a slide."""
+    return {
+        'createShape': {
+            'objectId': f"{slide_id}_textbox_{hash(text) % 10000}",
+            'shapeType': 'TEXT_BOX',
+            'elementProperties': {
+                'pageObjectId': slide_id,
+                'size': {
+                    'width': {'magnitude': 4000000, 'unit': 'EMU'},
+                    'height': {'magnitude': 1000000, 'unit': 'EMU'}
+                },
+                'transform': transform
+            }
+        }
+    }
+
+def create_google_slides_presentation(credentials: Credentials, 
+                                    structured_content: List[Dict[str, Any]]) -> Tuple[str, str]:
     """
     Creates a Google Slides presentation based on structured content.
 
@@ -21,112 +59,132 @@ def create_google_slides_presentation(credentials, structured_content):
     try:
         slides_service = build('slides', 'v1', credentials=credentials)
         
-        # Step 1: Create a new Google Slides presentation
-        presentation = slides_service.presentations().create(body={'title': 'New Lesson Plan'}).execute()
+        # Step 1: Create presentation
+        presentation = slides_service.presentations().create(body={
+            'title': 'Lesson Plan'
+        }).execute()
         presentation_id = presentation.get('presentationId')
-        logger.info(f"Created Google Slides presentation with ID: {presentation_id}")
+        logger.info(f"Created presentation: {presentation_id}")
         
-        # Step 2: Prepare batchUpdate requests based on structured_content
+        # Step 2: Create slides with appropriate layouts
         requests = []
-        
         for slide in structured_content:
-            # Create a new slide with a predefined layout
+            layout = get_layout_for_content(slide)
             requests.append({
                 'createSlide': {
                     'slideLayoutReference': {
-                        'predefinedLayout': 'TITLE_AND_BODY'
-                    }
+                        'predefinedLayout': layout
+                    },
+                    'placeholderIdMappings': []
                 }
             })
         
-        # Execute the batchUpdate to create slides
+        # Execute slide creation
         slides_service.presentations().batchUpdate(
             presentationId=presentation_id,
             body={'requests': requests}
         ).execute()
         
-        # Fetch the updated presentation to get slide IDs
-        presentation = slides_service.presentations().get(presentationId=presentation_id).execute()
+        # Get updated presentation
+        presentation = slides_service.presentations().get(
+            presentationId=presentation_id
+        ).execute()
         slides = presentation.get('slides', [])
         
-        # Step 3: Populate each slide with content
-        populate_requests = []
-        
-        for idx, slide_content in enumerate(structured_content):
-            # Adjust slide indexing based on the layout
-            slide_object = slides[idx + 1]  # +1 because the first slide is the title slide
+        # Step 3: Populate slides
+        for idx, (slide_object, slide_content) in enumerate(zip(slides[1:], structured_content)):
             slide_id = slide_object.get('objectId')
+            populate_requests = []
             
-            # Insert Title
+            # Add title
+            title = slide_content.get('title', 'Untitled Slide')
             populate_requests.append({
                 'insertText': {
                     'objectId': slide_id,
-                    'text': f"{slide_content.get('title', 'No Title')}",
+                    'text': title,
                     'insertionIndex': 0
                 }
             })
             
-            # Insert Content
-            content = slide_content.get('content', '')
-            if content:
-                populate_requests.append({
-                    'insertText': {
-                        'objectId': slide_id,
-                        'text': content,
-                        'insertionIndex': 0  # Adjust as needed
+            # Handle different layout types
+            if get_layout_for_content(slide_content) == 'TWO_COLUMNS':
+                # Left column
+                left_content = format_content_list(slide_content.get('left_column', []))
+                if left_content:
+                    left_transform = {
+                        'scaleX': 1, 'scaleY': 1,
+                        'translateX': 1000000, 'translateY': 1500000,
+                        'unit': 'EMU'
                     }
-                })
+                    populate_requests.append(create_text_box_request(slide_id, left_content, left_transform))
+                
+                # Right column
+                right_content = format_content_list(slide_content.get('right_column', []))
+                if right_content:
+                    right_transform = {
+                        'scaleX': 1, 'scaleY': 1,
+                        'translateX': 5000000, 'translateY': 1500000,
+                        'unit': 'EMU'
+                    }
+                    populate_requests.append(create_text_box_request(slide_id, right_content, right_transform))
+            else:
+                # Regular content
+                content = format_content_list(slide_content.get('content', []))
+                if content:
+                    populate_requests.append({
+                        'insertText': {
+                            'objectId': slide_id,
+                            'text': content,
+                            'insertionIndex': 0
+                        }
+                    })
             
-            # Insert Teacher Notes (as speaker notes)
-            teacher_notes = slide_content.get('teacher_notes', '')
+            # Add teacher notes
+            teacher_notes = format_teacher_notes(slide_content.get('teacher_notes', []))
             if teacher_notes:
-                # Google Slides API does not have a direct method to add speaker notes via batchUpdate
-                # As a workaround, you can use the Slides API to add speaker notes via the 'pageProperties'
                 populate_requests.append({
                     'updatePageProperties': {
                         'objectId': slide_id,
                         'pageProperties': {
-                            'speakerNotes': teacher_notes
+                            'notesPage': {
+                                'speakerNotesObjectId': f"{slide_id}_notes"
+                            }
                         },
-                        'fields': 'speakerNotes'
+                        'fields': 'notesPage.speakerNotesObjectId'
+                    }
+                })
+                populate_requests.append({
+                    'insertText': {
+                        'objectId': f"{slide_id}_notes",
+                        'text': teacher_notes
                     }
                 })
             
-            # Insert Visual Elements (assumed to be image URLs)
+            # Add visual elements placeholder text
             visual_elements = slide_content.get('visual_elements', [])
-            for element_url in visual_elements:
-                populate_requests.append({
-                    'createImage': {
-                        'url': element_url,
-                        'elementProperties': {
-                            'pageObjectId': slide_id,
-                            'size': {
-                                'height': {'magnitude': 3000000, 'unit': 'EMU'},
-                                'width': {'magnitude': 3000000, 'unit': 'EMU'}
-                            },
-                            'transform': {
-                                'scaleX': 1,
-                                'scaleY': 1,
-                                'translateX': 1000000,
-                                'translateY': 1000000,
-                                'unit': 'EMU'
-                            }
+            if visual_elements:
+                notes = "\n\nSuggested Visual Elements:\n• " + "\n• ".join(visual_elements)
+                if teacher_notes:
+                    populate_requests.append({
+                        'insertText': {
+                            'objectId': f"{slide_id}_notes",
+                            'text': notes,
+                            'insertionIndex': len(teacher_notes)
                         }
-                    }
-                })
+                    })
+            
+            # Execute updates for this slide
+            if populate_requests:
+                slides_service.presentations().batchUpdate(
+                    presentationId=presentation_id,
+                    body={'requests': populate_requests}
+                ).execute()
         
-        # Execute the batchUpdate to populate slides
-        slides_service.presentations().batchUpdate(
-            presentationId=presentation_id,
-            body={'requests': populate_requests}
-        ).execute()
-        
-        # Step 4: Generate the presentation URL
         presentation_url = f"https://docs.google.com/presentation/d/{presentation_id}/edit"
-        
-        logger.info(f"Generated Google Slides presentation URL: {presentation_url}")
+        logger.info(f"Generated presentation: {presentation_url}")
         
         return presentation_url, presentation_id
+        
     except HttpError as error:
         logger.error(f"Google Slides API error: {error}", exc_info=True)
         raise
