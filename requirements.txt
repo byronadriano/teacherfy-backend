@@ -9,3 +9,6 @@ google-api-python-client
 firebase-admin
 requests
 python-dotenv
+gunicorn
+
+

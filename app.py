@@ -33,14 +33,13 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-# Enhanced CORS configuration
 CORS(app, 
      resources={
          r"/*": {
              "origins": [
                  "https://teacherfy.ai",
                  "http://localhost:3000",
-                 "https://teacherfy.azurewebsites.net"
+                 "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
              ],
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
              "allow_headers": [
@@ -48,10 +47,13 @@ CORS(app,
                  "Authorization",
                  "X-Requested-With",
                  "Accept",
-                 "Origin"
+                 "Origin",
+                 "Access-Control-Request-Method",
+                 "Access-Control-Request-Headers"
              ],
              "supports_credentials": True,
-             "expose_headers": ["Content-Type", "Authorization"]
+             "expose_headers": ["Content-Type", "Authorization"],
+             "max_age": 3600
          }
      })
 
@@ -137,20 +139,67 @@ def handle_errors(f):
             return jsonify({"error": str(e)}), 500
     return decorated_function
 
-# Enhanced CORS headers
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = app.make_default_options_response()
+        response.headers["Access-Control-Max-Age"] = "3600"
+        return response
+
 @app.after_request
-def after_request(response):
+def add_cors_headers(response):
     origin = request.headers.get('Origin')
-    allowed_origins = ["https://teacherfy.ai", "http://localhost:3000", "https://teacherfy.azurewebsites.net"]
+    allowed_origins = [
+        "https://teacherfy.ai",
+        "http://localhost:3000",
+        "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
+    ]
     
     if origin in allowed_origins:
         response.headers.update({
             'Access-Control-Allow-Origin': origin,
             'Access-Control-Allow-Credentials': 'true',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin',
+            'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+            'Cross-Origin-Embedder-Policy': 'require-corp'
         })
     return response
+
+@app.route('/auth/check', methods=['GET'])
+def check_auth():
+    """Check if the user is authenticated and session is valid."""
+    try:
+        if 'credentials' not in session:
+            return jsonify({
+                "authenticated": False,
+                "needsAuth": True
+            }), 401
+
+        credentials_data = session.get('credentials')
+        if not credentials_data:
+            return jsonify({
+                "authenticated": False,
+                "needsAuth": True
+            }), 401
+
+        # Get user info if available
+        user_info = session.get('user_info', {})
+        
+        return jsonify({
+            "authenticated": True,
+            "user": {
+                "email": user_info.get('email'),
+                "name": user_info.get('name'),
+                "picture": user_info.get('picture')
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error checking auth status: {e}")
+        return jsonify({
+            "authenticated": False,
+            "error": str(e)
+        }), 500
 
 # Enhanced OAuth callback
 @app.route('/oauth2callback')

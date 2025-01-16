@@ -252,3 +252,16 @@
 2025-01-15 21:48:04,718 - requests_oauthlib.oauth2_session - DEBUG - Generated new state KMrzxxQJIv6nZsutrxQaq9fpAB14Ov.
 2025-01-15 21:48:04,719 - werkzeug - INFO - 127.0.0.1 - - [15/Jan/2025 21:48:04] "[32mGET /authorize HTTP/1.1[0m" 302 -
 2025-01-15 21:50:41,688 - werkzeug - INFO - 127.0.0.1 - - [15/Jan/2025 21:50:41] "[31m[1mPOST /generate_slides HTTP/1.1[0m" 401 -
+2025-01-15 22:35:19,240 - httpx - DEBUG - load_ssl_context verify=True cert=None trust_env=True http2=False
+2025-01-15 22:35:19,242 - httpx - DEBUG - load_verify_locations cafile='/opt/homebrew/lib/python3.10/site-packages/certifi/cacert.pem'
+2025-01-15 22:35:19,319 - __main__ - DEBUG - Loaded 1 example outlines
+2025-01-15 22:35:19,326 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.19:5000
+2025-01-15 22:35:19,326 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-01-15 22:35:31,563 - werkzeug - INFO - 127.0.0.1 - - [15/Jan/2025 22:35:31] "[31m[1mGET /auth/check HTTP/1.1[0m" 401 -
+2025-01-15 22:35:38,954 - requests_oauthlib.oauth2_session - DEBUG - Generated new state rMn5Y5aaGt6p5o8q1hOuHrPBHCZMNL.
+2025-01-15 22:35:38,955 - werkzeug - INFO - 127.0.0.1 - - [15/Jan/2025 22:35:38] "[32mGET /authorize HTTP/1.1[0m" 302 -
+2025-01-15 22:35:53,892 - werkzeug - INFO - 127.0.0.1 - - [15/Jan/2025 22:35:53] "OPTIONS /generate_slides HTTP/1.1" 200 -
+2025-01-15 22:36:29,919 - werkzeug - INFO - 127.0.0.1 - - [15/Jan/2025 22:36:29] "[31m[1mPOST /generate_slides HTTP/1.1[0m" 401 -
