@@ -12,18 +12,29 @@ from src.presentation_routes import presentation_blueprint, load_example_outline
 app = Flask(__name__)
 
 # Configure CORS with the same settings as before
-CORS(app, resources={r"/*": {
-    "origins": [
-        "https://teacherfy.ai",
-        "http://localhost:3000",
-        "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
-    ],
-    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
-    "supports_credentials": True,
-    "expose_headers": ["Content-Type", "Authorization"],
-    "max_age": 3600
-}})
+CORS(app, 
+     resources={
+         r"/*": {
+             "origins": [
+                 "https://teacherfy.ai",
+                 "http://localhost:3000",
+                 "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
+             ],
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+             "allow_headers": [
+                 "Content-Type",
+                 "Authorization",
+                 "X-Requested-With",
+                 "Accept",
+                 "Origin",
+                 "Access-Control-Request-Method",
+                 "Access-Control-Request-Headers"
+             ],
+             "supports_credentials": True,
+             "expose_headers": ["Content-Type", "Authorization"],
+             "max_age": 3600
+         }
+     })
 
 # Session configuration (same as before)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY")
