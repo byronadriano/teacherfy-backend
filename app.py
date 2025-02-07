@@ -8,10 +8,26 @@ from src.auth_routes import auth_blueprint
 from src.slides_routes import slides_blueprint
 from src.presentation_routes import presentation_blueprint, load_example_outlines
 
-# Create the Flask app
+import logging
+from dotenv import load_dotenv
+from flask_cors import CORS
+# Initialize Flask app
 app = Flask(__name__)
 
-# Configure CORS with the same settings as before
+# Enhanced logging configuration
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("app.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
+
 CORS(app, 
      resources={
          r"/*": {
@@ -36,18 +52,19 @@ CORS(app,
          }
      })
 
-# Session configuration (same as before)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY")
-if not app.secret_key:
-    raise ValueError("FLASK_SECRET_KEY environment variable is not set!")
-
+# Enhanced session configuration
 app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_SAMESITE='None',
     SESSION_COOKIE_HTTPONLY=True,
     PERMANENT_SESSION_LIFETIME=3600,  # 1 hour
-    SESSION_COOKIE_DOMAIN=None
+    SESSION_COOKIE_DOMAIN=None  # Let Flask set this automatically
 )
+
+# Session configuration (same as before)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY")
+if not app.secret_key:
+    raise ValueError("FLASK_SECRET_KEY environment variable is not set!")
 
 # Initialize example outlines on startup
 @app.before_request
