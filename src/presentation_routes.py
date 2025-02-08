@@ -5,6 +5,7 @@ from src.slide_processor import parse_outline_to_structured_content
 from src.presentation_generator import generate_presentation
 from src.utils.decorators import check_usage_limits
 import json
+
 presentation_blueprint = Blueprint("presentation_blueprint", __name__)
 
 # Example outline data
@@ -34,7 +35,6 @@ EXAMPLE_OUTLINE_DATA = {
     ]
 }
 
-
 # Directory for storing example outlines
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), '..', 'examples')
 EXAMPLE_OUTLINES = {}
@@ -60,7 +60,7 @@ def load_example_outlines():
         EXAMPLE_OUTLINES["fallback"] = EXAMPLE_OUTLINE_DATA
 
 @presentation_blueprint.route("/outline", methods=["POST", "OPTIONS"])
-@check_usage_limits(action_type='generation')  # Add usage tracking
+@check_usage_limits(action_type='generation')
 def get_outline():
     """Generate (or load) a lesson outline via OpenAI."""
     if request.method == "OPTIONS":
@@ -141,27 +141,67 @@ def get_outline():
         return jsonify({"error": str(e)}), 500
 
 @presentation_blueprint.route("/generate", methods=["POST", "OPTIONS"])
-@check_usage_limits(action_type='download')  # Add usage tracking
+@check_usage_limits(action_type='download')
 def generate_presentation_endpoint():
     """Generate a PowerPoint (.pptx) for download."""
     if request.method == "OPTIONS":
-        return jsonify({"status": "OK"}), 200
-
-    data = request.json
-    outline_text = data.get('lesson_outline', '')
-    structured_content = data.get('structured_content')
-        
-    if not structured_content:
-        return jsonify({"error": "No structured content provided"}), 400
+        # Handle CORS preflight request
+        headers = {
+            'Access-Control-Allow-Origin': request.headers.get('Origin', '*'),
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Max-Age': '3600'
+        }
+        return ('', 204, headers)
 
     try:
+        data = request.json
+        outline_text = data.get('lesson_outline', '')
+        structured_content = data.get('structured_content')
+            
+        if not structured_content:
+            return jsonify({"error": "No structured content provided"}), 400
+
         presentation_path = generate_presentation(outline_text, structured_content)
+        
+        # Set headers for file download
+        headers = {
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'Content-Disposition': 'attachment; filename=lesson_presentation.pptx',
+            'Access-Control-Expose-Headers': 'Content-Disposition'
+        }
+        
         return send_file(
             presentation_path, 
             as_attachment=True,
             download_name="lesson_presentation.pptx",
             mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
-        )
+        ), 200, headers
     except Exception as e:
         logger.error(f"Error generating PPTX presentation: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+# Helper route to handle CORS preflight for all endpoints
+@presentation_blueprint.after_request
+def after_request(response):
+    # Get the origin from the request
+    origin = request.headers.get('Origin')
+    allowed_origins = [
+        'http://localhost:3000',
+        'https://teacherfy.ai',
+        'https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net'
+    ]
+    
+    # If the origin is in our allowed list, set CORS headers
+    if origin in allowed_origins:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        
+        # If this is a file download, add additional headers
+        if response.mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+            response.headers.add('Access-Control-Expose-Headers', 'Content-Disposition')
+    
+    return response

@@ -12,3 +12,4 @@ __pycache__/
 *.pyo
 *.log
 *teacherfy-backend/
+.env.development
