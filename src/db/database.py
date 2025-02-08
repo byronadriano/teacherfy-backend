@@ -12,12 +12,13 @@ logger = logging.getLogger(__name__)
 
 # Database configuration (with defaults)
 DB_CONFIG = {
-    'dbname': os.getenv('POSTGRES_DB', 'teacherfy_db'),
-    'user': os.getenv('POSTGRES_USER', 'teacherfy_user'),
-    'password': os.getenv('POSTGRES_PASSWORD', '132392'),
-    'host': os.getenv('POSTGRES_HOST', 'localhost'),
-    'port': os.getenv('POSTGRES_PORT', '5432')
+    'dbname': 'teacherfy_db',
+    'user': 'bpulluta',
+    'password': 'P!p!to031323!',
+    'host': 'teacherfydb.postgres.database.azure.com',
+    'port': '5432'
 }
+
 
 @contextmanager
 def get_db_connection():
