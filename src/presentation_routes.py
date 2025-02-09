@@ -70,6 +70,9 @@ def get_outline():
         data = request.get_json()
         logger.debug(f"Received outline request with data: {data}")
 
+        # Log headers for debugging
+        logger.debug(f"Request headers: {dict(request.headers)}")
+
         # Check for example request
         if data.get('use_example', False):
             return jsonify(EXAMPLE_OUTLINE_DATA)

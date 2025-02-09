@@ -34,7 +34,8 @@ def create_app():
                 "origins": [
                     "http://localhost:3000",
                     "https://teacherfy.ai",
-                    "https://www.teacherfy.ai"
+                    "https://www.teacherfy.ai",
+                    "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
                 ],
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                 "allow_headers": [
@@ -54,7 +55,6 @@ def create_app():
             }
         },
         supports_credentials=True)
-    
     # Session configuration
     app.config.update(
         SESSION_COOKIE_SECURE=True,
