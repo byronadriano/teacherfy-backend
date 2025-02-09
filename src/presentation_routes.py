@@ -62,94 +62,111 @@ def load_example_outlines():
 @presentation_blueprint.route("/outline", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='generation')
 def get_outline():
-    """Generate (or load) a lesson outline via OpenAI."""
+    """Generate (or load) a comprehensive lesson outline via OpenAI."""
     if request.method == "OPTIONS":
-        return "", 204
+        return jsonify({"status": "OK"}), 200
+
+    data = request.get_json()
+    logger.debug(f"Received outline request with data: {data}")
+    logger.debug(f"Request headers: {dict(request.headers)}")
+
+    # Check for an example outline using your existing criteria.
+    is_example = (
+        data.get("use_example")
+        or (
+            data.get("lesson_topic", "").lower().strip() == "equivalent fractions"
+            and data.get("gradeç_level", "").lower().strip() == "4th grade"
+            and data.get("subject_focus", "").lower().strip() == "math"
+            and data.get("language", "").lower().strip() == "english"
+        )
+    )
+    if is_example:
+        example_data = EXAMPLE_OUTLINES.get("equivalent_fractions_outline")
+        return jsonify(example_data or EXAMPLE_OUTLINE_DATA)
+
+    if not client:
+        return jsonify({"error": "OpenAI client not initialized"}), 500
+
+    # Retrieve input fields and build a fallback custom prompt if needed.
+    custom_prompt = data.get("custom_prompt", "").strip()
+    selected_standards = data.get("selected_standards", [])
+    standards = ", ".join(selected_standards) if selected_standards else "Not specified"
+
+    if not custom_prompt:
+        custom_prompt = (
+            f"CRITICAL REQUIREMENTS:\n"
+            f"THIS MUST BE A: {data.get('resource_type', 'Presentation')}\n"
+            f"THIS LESSON MUST BE ABOUT: {data.get('subject_focus', 'Not specified')}\n"
+            f"STANDARDS ALIGNMENT: {standards}\n"
+            f"Additional Requirements: None\n"
+        )
+
+    # Build the full user prompt.
+    # Note: The output must strictly follow the structure below so that our parser can detect it.
+    prompt = f"""
+{custom_prompt}
+
+Create a comprehensive and engaging lesson outline in {data.get('language', 'English')} for a {data.get('grade_level', 'Not specified')} {data.get('subject_focus', 'Not specified')} lesson.
+The lesson should fully cover the topic in a natural, flowing manner while ensuring that a teacher can implement it with minimal additional preparation.
+
+**IMPORTANT:** Your output MUST follow this EXACT structure for each slide and nothing else:
+
+Slide [number]: [Title]
+Content:
+- [Detailed teaching points, explanations, examples, and definitions]
+Teacher Notes:
+- [Detailed strategies for engagement, assessment, and differentiation]
+Visual Elements:
+- [Detailed suggestions for visuals, diagrams, or other resources]
+
+Do not include any text before the first slide or after the final slide.
+Ensure each slide’s sections are thorough and cover all key aspects of the topic.
+    """
+    logger.debug(f"Sending prompt to OpenAI: {prompt}")
+
+    # Use system instructions that emphasize both comprehensiveness and the exact required format.
+    system_instructions = {
+        "role": "system",
+        "content": """
+You are a lesson-outline assistant. Create a comprehensive lesson outline that fully covers the topic in a logical and engaging way.
+The output must be divided into slides. For each slide, use the EXACT following format:
+
+Slide [number]: [Title]
+Content:
+- [Detailed teaching points, explanations, and examples]
+Teacher Notes:
+- [Detailed instructions for engagement, assessment, and differentiation]
+Visual Elements:
+- [Detailed suggestions for visuals or resources]
+
+Do not include any extra headings, text, or commentary outside this structure.
+The lesson should be complete and thorough without leaving any gaps.
+        """
+    }
+
+    messages = [
+        system_instructions,
+        {"role": "user", "content": prompt}
+    ]
 
     try:
-        data = request.get_json()
-        logger.debug(f"Received outline request with data: {data}")
+        response = client.chat.completions.create(
+            model="gpt-4-0125-preview",
+            messages=messages
+        )
+        outline_text = response.choices[0].message.content.strip()
+        logger.debug(f"Received response from OpenAI: {outline_text}")
 
-        # Log headers for debugging
-        logger.debug(f"Request headers: {dict(request.headers)}")
+        structured_content = parse_outline_to_structured_content(outline_text)
+        logger.debug(f"Parsed structured content: {structured_content}")
 
-        # Check for example request
-        if data.get('use_example', False):
-            return jsonify(EXAMPLE_OUTLINE_DATA)
-
-        if not client:
-            return jsonify({"error": "OpenAI client not initialized"}), 500
-
-        # Format the prompt
-        prompt = f"""
-            Create a {data.get('num_slides', 3)}-slide lesson outline in {data.get('language', 'English')} for a {data.get('grade_level', '')} {data.get('subject_focus', '')} presentation.
-
-            Additional requirements:
-            {data.get('custom_prompt', '')}
-
-            Format each slide exactly as follows:
-
-            Slide [number]: [Title]
-            Content:
-            - [Teaching points]
-            - [Examples]
-            - [Activities]
-
-            Teacher Notes:
-            - ENGAGEMENT: [Specific activities]
-            - ASSESSMENT: [Specific methods]
-            - DIFFERENTIATION: [Specific strategies]
-
-            Visual Elements:
-            - [Specific visuals or resources]
-
-            Remember:
-            1. Each slide must include all sections
-            2. Content should be grade-appropriate
-            3. Include specific examples and activities
-            4. Provide clear teacher instructions
-        """
-        if not client:
-            return jsonify({"error": "OpenAI client not initialized"}), 500
-        
-        try:
-            logger.debug(f"Sending prompt to OpenAI: {prompt}")
-            
-            messages = [
-                {
-                    "role": "system",
-                    "content": "You are a lesson-outline assistant. Create detailed, structured lesson outlines following the exact format provided."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-            
-            response = client.chat.completions.create(
-                model="gpt-4-0125-preview",
-                messages=messages,
-                temperature=0.7
-            )
-            
-            outline_text = response.choices[0].message.content.strip()
-            logger.debug(f"Received response from OpenAI: {outline_text}")
-
-            structured_content = parse_outline_to_structured_content(outline_text)
-            logger.debug(f"Parsed structured content: {structured_content}")
-
-            return jsonify({
-                "messages": [outline_text],
-                "structured_content": structured_content
-            })
-            
-        except Exception as e:
-            logger.error(f"Error generating outline: {e}", exc_info=True)
-            return jsonify({"error": str(e)}), 500
-            
+        return jsonify({
+            "messages": [outline_text],
+            "structured_content": structured_content
+        })
     except Exception as e:
-        logger.error(f"Error processing request: {e}", exc_info=True)
-        return jsonify({"error": "Invalid request data"}), 400
+        logger.error(f"Error generating outline: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 @presentation_blueprint.route("/generate", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='download')
