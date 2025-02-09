@@ -60,6 +60,10 @@ def format_paragraph(paragraph, is_title=False, level=0):
         paragraph.space_before = Pt(12 if level > 0 else 20)
         paragraph.space_after = Pt(6)
 
+def clean_title(title):
+    """Clean markdown formatting from title"""
+    return title.replace('*', '').strip()
+
 def parse_outline_to_structured_content(outline_text):
     """Parse the outline text into structured slide content with notes"""
     slides = []
@@ -67,18 +71,24 @@ def parse_outline_to_structured_content(outline_text):
     current_section = None
     
     lines = outline_text.strip().split('\n')
+    logger.debug(f"Processing {len(lines)} lines of outline text")
     
     for line in lines:
         line = line.strip()
         if not line:
             continue
             
+        # Check for slide header
         if line.startswith('Slide '):
             if current_slide:
                 slides.append(current_slide)
+                logger.debug(f"Added slide: {current_slide}")
             
+            # Extract title after "Slide X:" format and clean it
             title = line.split(':', 1)[1].strip() if ':' in line else line
+            title = clean_title(title)  # Remove ** and other markdown
             
+            # Determine layout based on content
             layout = "TWO_COLUMN" if any(word in title.lower() for word in 
                 ["vs", "comparison", "contrast", "together", "practice"]) else "TITLE_AND_CONTENT"
             
@@ -92,31 +102,45 @@ def parse_outline_to_structured_content(outline_text):
                 'right_column': []
             }
             current_section = None
+            logger.debug(f"Started new slide with title: {title}")
+            continue
             
-        elif line.lower().startswith('content:'):
+        # Check for section headers
+        if line.lower().startswith('content:'):
             current_section = 'content'
+            logger.debug("Switched to content section")
+            continue
         elif line.lower().startswith('teacher notes:'):
             current_section = 'teacher_notes'
+            logger.debug("Switched to teacher notes section")
+            continue
         elif line.lower().startswith('visual elements:'):
             current_section = 'visual_elements'
-        elif current_section and current_slide:
-            if line.startswith(('*', '•', '-')) or line.strip().startswith('•'):
-                content = line.lstrip('*•- ').strip()
-                if content:
-                    if current_slide['layout'] == "TWO_COLUMN" and current_section == 'content':
-                        if len(current_slide['left_column']) <= len(current_slide['right_column']):
-                            current_slide['left_column'].append(content)
-                        else:
-                            current_slide['right_column'].append(content)
+            logger.debug("Switched to visual elements section")
+            continue
+            
+        # Process content if we're in a section and have a slide
+        if current_section and current_slide:
+            # Clean line and handle bullet points
+            cleaned_line = line.lstrip('•-* ').strip()
+            if cleaned_line and not cleaned_line.lower().endswith(':'):
+                if current_slide['layout'] == "TWO_COLUMN" and current_section == 'content':
+                    if len(current_slide['left_column']) <= len(current_slide['right_column']):
+                        current_slide['left_column'].append(cleaned_line)
+                        logger.debug(f"Added to left column: {cleaned_line}")
                     else:
-                        current_slide[current_section].append(content)
-            elif not line.lower().endswith(':'):
-                current_slide[current_section].append(line)
+                        current_slide['right_column'].append(cleaned_line)
+                        logger.debug(f"Added to right column: {cleaned_line}")
+                else:
+                    current_slide[current_section].append(cleaned_line)
+                    logger.debug(f"Added to {current_section}: {cleaned_line}")
     
+    # Don't forget to add the last slide
     if current_slide:
         slides.append(current_slide)
+        logger.debug(f"Added final slide: {current_slide}")
     
-    # Post-processing
+    # Post-processing for two-column layout
     for slide in slides:
         if slide['layout'] == "TWO_COLUMN" and not (slide['left_column'] or slide['right_column']):
             content_length = len(slide['content'])
@@ -124,7 +148,9 @@ def parse_outline_to_structured_content(outline_text):
             slide['left_column'] = slide['content'][:mid_point]
             slide['right_column'] = slide['content'][mid_point:]
             slide['content'] = []
+            logger.debug(f"Post-processed two-column layout for slide: {slide['title']}")
     
+    logger.debug(f"Final structured content has {len(slides)} slides")
     return slides
 
 def create_presentation(outline_json):

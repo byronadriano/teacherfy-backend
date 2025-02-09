@@ -32,47 +32,38 @@ def create_app():
         resources={
             r"/*": {
                 "origins": [
-                    "https://teacherfy.ai",
                     "http://localhost:3000",
+                    "https://teacherfy.ai",
                     "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
                 ],
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": [
-                    "Content-Type",
-                    "Authorization",
-                    "X-Requested-With",
-                    "Accept",
-                    "Origin",
-                    "Access-Control-Request-Method",
-                    "Access-Control-Request-Headers"
-                ],
+                "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
                 "supports_credentials": True,
-                "expose_headers": [
-                    "Content-Type", 
-                    "Content-Disposition",
-                    "Content-Length"
-                ],
                 "max_age": 3600
             }
         },
         supports_credentials=True)
 
-    # Enhanced session configuration
+    # Session configuration
     app.config.update(
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_SAMESITE='None',
         SESSION_COOKIE_HTTPONLY=True,
-        PERMANENT_SESSION_LIFETIME=3600,  # 1 hour
+        PERMANENT_SESSION_LIFETIME=3600,
         SESSION_COOKIE_DOMAIN=None,
-        MAX_CONTENT_LENGTH=16 * 1024 * 1024  # 16MB max-limit
+        MAX_CONTENT_LENGTH=16 * 1024 * 1024
     )
 
-    # Session configuration
+    # Secret key configuration
     app.secret_key = os.environ.get("FLASK_SECRET_KEY")
     if not app.secret_key:
         raise ValueError("FLASK_SECRET_KEY environment variable is not set!")
 
-    # Database connection test before each request
+    # Register blueprints
+    app.register_blueprint(auth_blueprint)
+    app.register_blueprint(slides_blueprint)
+    app.register_blueprint(presentation_blueprint)
+
     @app.before_request
     def check_db_connection():
         if request.method == 'OPTIONS':
@@ -82,6 +73,31 @@ def create_app():
             logger.error("Database connection failed")
             return {"error": "Database connection failed"}, 500
 
+    @app.after_request
+    def after_request(response):
+        origin = request.headers.get('Origin')
+        allowed_origins = [
+            'http://localhost:3000',
+            'https://teacherfy.ai',
+            'https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net'
+        ]
+        
+        if origin in allowed_origins:
+            # Remove any existing CORS headers to prevent duplicates
+            response.headers.pop('Access-Control-Allow-Origin', None)
+            response.headers.pop('Access-Control-Allow-Credentials', None)
+            
+            # Set new CORS headers
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            
+            if request.method == 'OPTIONS':
+                response.headers['Access-Control-Max-Age'] = '3600'
+        
+        return response
+
     # Initialize example outlines
     with app.app_context():
         try:
@@ -90,58 +106,7 @@ def create_app():
         except Exception as e:
             logger.error(f"Error initializing example outlines: {e}")
 
-    # Register blueprints
-    app.register_blueprint(auth_blueprint)
-    app.register_blueprint(slides_blueprint)
-    app.register_blueprint(presentation_blueprint)
-
-    # Add OPTIONS method handlers for common routes
-    @app.route('/outline', methods=['OPTIONS'])
-    @app.route('/generate', methods=['OPTIONS'])
-    @app.route('/generate_slides', methods=['OPTIONS'])
-    def handle_options():
-        return '', 204
-
-    @app.after_request
-    def after_request(response):
-        # Get origin from request
-        origin = request.headers.get('Origin')
-        allowed_origins = [
-            'http://localhost:3000',
-            'https://teacherfy.ai',
-            'https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net'
-        ]
-        
-        # Set CORS headers if origin is allowed
-        if origin in allowed_origins:
-            response.headers.add('Access-Control-Allow-Origin', origin)
-            response.headers.add('Access-Control-Allow-Credentials', 'true')
-            
-            # Handle PowerPoint downloads specifically
-            if response.mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-                response.headers.update({
-                    'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                    'Content-Disposition': 'attachment; filename=lesson_presentation.pptx',
-                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Length'
-                })
-            
-            # Set standard CORS headers
-            response.headers.update({
-                'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin',
-                'Access-Control-Max-Age': '3600'
-            })
-            
-            # For preflight requests
-            if request.method == 'OPTIONS':
-                response.headers.update({
-                    'Access-Control-Max-Age': '3600',
-                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
-                })
-
-        return response
-
-    return app
+    return app  # Added the return statement
 
 # Create the application instance
 app = create_app()

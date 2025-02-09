@@ -7,7 +7,6 @@ import json
 logger = logging.getLogger(__name__)
 
 def generate_presentation(outline_text, structured_content=None):
-    """Generate a PowerPoint presentation from the outline text and structured content"""
     try:
         logger.debug("Starting presentation generation")
         if structured_content is None:
@@ -26,16 +25,7 @@ def generate_presentation(outline_text, structured_content=None):
                 }
                 for slide in structured_content
             ]
-            
-            # Post-process to ensure content is properly distributed
-            for slide in structured_content:
-                if slide['layout'] == "TWO_COLUMN" and not (slide['left_column'] or slide['right_column']):
-                    content_length = len(slide['content'])
-                    mid_point = content_length // 2
-                    slide['left_column'] = slide['content'][:mid_point]
-                    slide['right_column'] = slide['content'][mid_point:]
-                    slide['content'] = []
-                    
+        
         logger.debug(f"Received structured content: {json.dumps(structured_content, indent=2)}")
         logger.debug(f"Creating presentation with {len(structured_content)} slides")
         prs = create_presentation(structured_content)

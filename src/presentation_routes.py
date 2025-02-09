@@ -64,97 +64,88 @@ def load_example_outlines():
 def get_outline():
     """Generate (or load) a lesson outline via OpenAI."""
     if request.method == "OPTIONS":
-        return jsonify({"status": "OK"}), 200
-
-    data = request.json
-    logger.debug(f"Received outline request with data: {data}")
-
-    # Check for example outline use
-    is_example = (
-        data.get("use_example")
-        or (
-            data.get("lesson_topic", "").lower().strip() == "equivalent fractions"
-            and data.get("grade_level", "").lower().strip() == "4th grade"
-            and data.get("subject_focus", "").lower().strip() == "math"
-            and data.get("language", "").lower().strip() == "english"
-        )
-    )
-
-    if is_example:
-        example_data = EXAMPLE_OUTLINES.get("equivalent_fractions_outline")
-        return jsonify(example_data or EXAMPLE_OUTLINE_DATA)
-
-    if client is None:
-        return jsonify({"error": "OpenAI client not initialized"}), 500
-
-    prompt = data.get("custom_prompt")
-    if not prompt:
-        return jsonify({"error": "No prompt provided"}), 400
+        return "", 204
 
     try:
-        system_instructions = {
-            "role": "system",
-            "content": """
-        You are a lesson-outline assistant. Follow this EXACT structure:
+        data = request.get_json()
+        logger.debug(f"Received outline request with data: {data}")
 
-        1. Each slide starts with "Slide X:" (e.g., "Slide 1:", "Slide 2:").
-        2. Next line: "Content:".
-        3. Next line: "Teacher Notes:".
-        4. Next line: "Visual Elements:".
-        5. No extra headings or disclaimers; no "Conclusion", "Introduction", etc.
+        # Format the prompt properly using the data
+        prompt = f"""
+Create a {data.get('num_slides', 3)}-slide lesson outline in {data.get('language', 'English')} for a {data.get('grade_level', '')} {data.get('subject_focus', '')} presentation.
 
-        Example of EXACT structure:
+Additional requirements:
+{data.get('custom_prompt', '')}
 
-        Slide 1: Introduction to Fractions
-        Content:
-        - Definition: Fractions are ...
-        Teacher Notes:
-        - ENGAGEMENT: ...
-        - ASSESSMENT: ...
-        - DIFFERENTIATION: ...
-        Visual Elements:
-        - Picture of fractions
+Format each slide exactly as follows:
 
-        (Repeat for each slide with the same headings.)
+Slide [number]: [Title]
+Content:
+- [Teaching points]
+- [Examples]
+- [Activities]
 
-        DO NOT DEVIATE. 
-            """
-        }
+Teacher Notes:
+- ENGAGEMENT: [Specific activities]
+- ASSESSMENT: [Specific methods]
+- DIFFERENTIATION: [Specific strategies]
 
-        messages = [
-            system_instructions,
-            {"role": "user", "content": prompt}
-        ]
-        response = client.chat.completions.create(
-            model="gpt-4-0125-preview",
-            messages=messages
-        )
-        outline_text = response.choices[0].message.content.strip()
-        structured_content = parse_outline_to_structured_content(outline_text)
+Visual Elements:
+- [Specific visuals or resources]
 
-        return jsonify({
-            "messages": [outline_text],
-            "structured_content": structured_content
-        })
+Remember:
+1. Each slide must include all sections
+2. Content should be grade-appropriate
+3. Include specific examples and activities
+4. Provide clear teacher instructions
+"""
+
+        if not client:
+            return jsonify({"error": "OpenAI client not initialized"}), 500
+
+        try:
+            logger.debug(f"Sending prompt to OpenAI: {prompt}")
+            
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a lesson-outline assistant. Create detailed, structured lesson outlines following the exact format provided."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+            
+            response = client.chat.completions.create(
+                model="gpt-4-0125-preview",
+                messages=messages,
+                temperature=0.7
+            )
+            
+            outline_text = response.choices[0].message.content.strip()
+            logger.debug(f"Received response from OpenAI: {outline_text}")
+
+            # Parse the outline into structured content
+            structured_content = parse_outline_to_structured_content(outline_text)
+            logger.debug(f"Parsed structured content: {structured_content}")
+
+            return jsonify({
+                "messages": [outline_text],
+                "structured_content": structured_content
+            })
+            
+        except Exception as e:
+            logger.error(f"Error generating outline: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+            
     except Exception as e:
-        logger.error(f"Error generating outline: {e}")
-        return jsonify({"error": str(e)}), 500
-
+        logger.error(f"Error processing request: {e}", exc_info=True)
+        return jsonify({"error": "Invalid request data"}), 400
+    
 @presentation_blueprint.route("/generate", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='download')
 def generate_presentation_endpoint():
-    """Generate a PowerPoint (.pptx) for download."""
-    if request.method == "OPTIONS":
-        # Handle CORS preflight request
-        headers = {
-            'Access-Control-Allow-Origin': request.headers.get('Origin', '*'),
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-            'Access-Control-Allow-Credentials': 'true',
-            'Access-Control-Max-Age': '3600'
-        }
-        return ('', 204, headers)
-
     try:
         data = request.json
         outline_text = data.get('lesson_outline', '')
@@ -181,7 +172,7 @@ def generate_presentation_endpoint():
     except Exception as e:
         logger.error(f"Error generating PPTX presentation: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
-
+    
 # Helper route to handle CORS preflight for all endpoints
 @presentation_blueprint.after_request
 def after_request(response):
