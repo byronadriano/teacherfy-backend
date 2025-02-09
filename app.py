@@ -34,16 +34,27 @@ def create_app():
                 "origins": [
                     "http://localhost:3000",
                     "https://teacherfy.ai",
-                    "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
+                    "https://www.teacherfy.ai"
                 ],
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+                "allow_headers": [
+                    "Content-Type", 
+                    "Authorization", 
+                    "X-Requested-With", 
+                    "Accept", 
+                    "Origin"
+                ],
+                "expose_headers": [
+                    "Content-Disposition",
+                    "Content-Type",
+                    "Authorization"
+                ],
                 "supports_credentials": True,
                 "max_age": 3600
             }
         },
         supports_credentials=True)
-
+    
     # Session configuration
     app.config.update(
         SESSION_COOKIE_SECURE=True,
@@ -72,31 +83,42 @@ def create_app():
         if not test_connection():
             logger.error("Database connection failed")
             return {"error": "Database connection failed"}, 500
+        return None  # Added proper return for successful case
 
     @app.after_request
     def after_request(response):
-        origin = request.headers.get('Origin')
-        allowed_origins = [
-            'http://localhost:3000',
-            'https://teacherfy.ai',
-            'https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net'
-        ]
-        
-        if origin in allowed_origins:
-            # Remove any existing CORS headers to prevent duplicates
-            response.headers.pop('Access-Control-Allow-Origin', None)
-            response.headers.pop('Access-Control-Allow-Credentials', None)
+        try:
+            origin = request.headers.get('Origin')
+            allowed_origins = [
+                'http://localhost:3000',
+                'https://teacherfy.ai',
+                'https://www.teacherfy.ai'
+            ]
             
-            # Set new CORS headers
-            response.headers['Access-Control-Allow-Origin'] = origin
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            if origin in allowed_origins:
+                # Remove existing CORS headers
+                response.headers.pop('Access-Control-Allow-Origin', None)
+                response.headers.pop('Access-Control-Allow-Credentials', None)
+                
+                # Set new CORS headers
+                response.headers.update({
+                    'Access-Control-Allow-Origin': origin,
+                    'Access-Control-Allow-Credentials': 'true',
+                    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin',
+                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Authorization'
+                })
+                
+                # Special handling for file downloads
+                if (response.mimetype == 
+                    'application/vnd.openxmlformats-officedocument.presentationml.presentation'):
+                    response.headers.add('Access-Control-Expose-Headers', 'Content-Disposition')
             
-            if request.method == 'OPTIONS':
-                response.headers['Access-Control-Max-Age'] = '3600'
-        
-        return response
+            logger.debug(f"Response headers set: {dict(response.headers)}")
+            return response
+        except Exception as e:
+            logger.error(f"Error in after_request: {e}", exc_info=True)
+            return response
 
     # Initialize example outlines
     with app.app_context():
@@ -106,7 +128,7 @@ def create_app():
         except Exception as e:
             logger.error(f"Error initializing example outlines: {e}")
 
-    return app  # Added the return statement
+    return app
 
 # Create the application instance
 app = create_app()

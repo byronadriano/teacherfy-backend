@@ -70,39 +70,45 @@ def get_outline():
         data = request.get_json()
         logger.debug(f"Received outline request with data: {data}")
 
-        # Format the prompt properly using the data
-        prompt = f"""
-Create a {data.get('num_slides', 3)}-slide lesson outline in {data.get('language', 'English')} for a {data.get('grade_level', '')} {data.get('subject_focus', '')} presentation.
-
-Additional requirements:
-{data.get('custom_prompt', '')}
-
-Format each slide exactly as follows:
-
-Slide [number]: [Title]
-Content:
-- [Teaching points]
-- [Examples]
-- [Activities]
-
-Teacher Notes:
-- ENGAGEMENT: [Specific activities]
-- ASSESSMENT: [Specific methods]
-- DIFFERENTIATION: [Specific strategies]
-
-Visual Elements:
-- [Specific visuals or resources]
-
-Remember:
-1. Each slide must include all sections
-2. Content should be grade-appropriate
-3. Include specific examples and activities
-4. Provide clear teacher instructions
-"""
+        # Check for example request
+        if data.get('use_example', False):
+            return jsonify(EXAMPLE_OUTLINE_DATA)
 
         if not client:
             return jsonify({"error": "OpenAI client not initialized"}), 500
 
+        # Format the prompt
+        prompt = f"""
+            Create a {data.get('num_slides', 3)}-slide lesson outline in {data.get('language', 'English')} for a {data.get('grade_level', '')} {data.get('subject_focus', '')} presentation.
+
+            Additional requirements:
+            {data.get('custom_prompt', '')}
+
+            Format each slide exactly as follows:
+
+            Slide [number]: [Title]
+            Content:
+            - [Teaching points]
+            - [Examples]
+            - [Activities]
+
+            Teacher Notes:
+            - ENGAGEMENT: [Specific activities]
+            - ASSESSMENT: [Specific methods]
+            - DIFFERENTIATION: [Specific strategies]
+
+            Visual Elements:
+            - [Specific visuals or resources]
+
+            Remember:
+            1. Each slide must include all sections
+            2. Content should be grade-appropriate
+            3. Include specific examples and activities
+            4. Provide clear teacher instructions
+        """
+        if not client:
+            return jsonify({"error": "OpenAI client not initialized"}), 500
+        
         try:
             logger.debug(f"Sending prompt to OpenAI: {prompt}")
             
@@ -126,7 +132,6 @@ Remember:
             outline_text = response.choices[0].message.content.strip()
             logger.debug(f"Received response from OpenAI: {outline_text}")
 
-            # Parse the outline into structured content
             structured_content = parse_outline_to_structured_content(outline_text)
             logger.debug(f"Parsed structured content: {structured_content}")
 
@@ -142,19 +147,27 @@ Remember:
     except Exception as e:
         logger.error(f"Error processing request: {e}", exc_info=True)
         return jsonify({"error": "Invalid request data"}), 400
-    
+
 @presentation_blueprint.route("/generate", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='download')
 def generate_presentation_endpoint():
+    if request.method == "OPTIONS":
+        return "", 204
+
     try:
+        logger.debug(f"Generate request headers: {dict(request.headers)}")
         data = request.json
-        outline_text = data.get('lesson_outline', '')
-        structured_content = data.get('structured_content')
-            
-        if not structured_content:
+        logger.debug(f"Generate request data: {data}")
+
+        if not data or 'structured_content' not in data:
             return jsonify({"error": "No structured content provided"}), 400
 
-        presentation_path = generate_presentation(outline_text, structured_content)
+        presentation_path = generate_presentation(
+            data.get('lesson_outline', ''),
+            data.get('structured_content')
+        )
+        
+        logger.debug(f"Generated presentation at: {presentation_path}")
         
         # Set headers for file download
         headers = {
@@ -164,15 +177,15 @@ def generate_presentation_endpoint():
         }
         
         return send_file(
-            presentation_path, 
+            presentation_path,
             as_attachment=True,
             download_name="lesson_presentation.pptx",
             mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
         ), 200, headers
     except Exception as e:
-        logger.error(f"Error generating PPTX presentation: {e}", exc_info=True)
+        logger.error(f"Error generating PPTX: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 500
-    
+
 # Helper route to handle CORS preflight for all endpoints
 @presentation_blueprint.after_request
 def after_request(response):
