@@ -34,18 +34,24 @@ def create_app():
                 "origins": [
                     "http://localhost:3000",
                     "https://teacherfy.ai",
-                    "https://www.teacherfy.ai",
-                    "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
+                    "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net",
+                    "https://teacherfy.azurewebsites.net"
                 ],
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                "allow_headers": "*",  # Allow all headers
+                "allow_headers": [
+                    "Content-Type",
+                    "Authorization",
+                    "X-Requested-With",
+                    "Accept",
+                    "Origin"
+                ],
+                "supports_credentials": True,
                 "expose_headers": [
                     "Content-Disposition",
                     "Content-Type",
-                    "Authorization"
-                ],
-                "supports_credentials": True,
-                "max_age": 3600
+                    "Content-Length",
+                     "Authorization"
+                ]
             }
         },
         supports_credentials=True)
@@ -71,14 +77,13 @@ def create_app():
     app.register_blueprint(presentation_blueprint)
 
     @app.before_request
-    def check_db_connection():
-        if request.method == 'OPTIONS':
+    def handle_preflight():
+        if request.method == "OPTIONS":
             response = make_response()
             origin = request.headers.get('Origin')
             allowed_origins = [
                 'http://localhost:3000',
                 'https://teacherfy.ai',
-                'https://www.teacherfy.ai',
                 'https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net'
             ]
             
@@ -86,12 +91,17 @@ def create_app():
                 response.headers.update({
                     'Access-Control-Allow-Origin': origin,
                     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                    'Access-Control-Allow-Headers': '*',
-                    'Access-Control-Max-Age': '3600',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin',
                     'Access-Control-Allow-Credentials': 'true',
-                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Authorization'
+                    'Access-Control-Max-Age': '3600',
+                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type'
                 })
             return response, 204
+
+    @app.before_request
+    def check_db_connection():
+        if request.method == 'OPTIONS':
+            return None
             
         if not test_connection():
             logger.error("Database connection failed")
@@ -100,41 +110,41 @@ def create_app():
 
     @app.after_request
     def after_request(response):
-        try:
-            origin = request.headers.get('Origin')
-            allowed_origins = [
-                'http://localhost:3000',
-                'https://teacherfy.ai',
-                'https://www.teacherfy.ai',
-                'https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net'
-            ]
-            
-            if origin in allowed_origins:
-                # Remove existing CORS headers
-                response.headers.pop('Access-Control-Allow-Origin', None)
-                response.headers.pop('Access-Control-Allow-Credentials', None)
+        """Add necessary headers after each request"""
+        origin = request.headers.get('Origin')
+        allowed_origins = [
+            'http://localhost:3000',
+            'https://teacherfy.ai',
+            'https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net',
+            "https://teacherfy.azurewebsites.net"
+        ]
+        
+        if origin in allowed_origins:
+            # First clear any existing CORS headers
+            for key in ['Access-Control-Allow-Origin', 
+                    'Access-Control-Allow-Credentials',
+                    'Access-Control-Allow-Methods',
+                    'Access-Control-Allow-Headers',
+                    'Access-Control-Expose-Headers']:
+                response.headers.pop(key, None)
                 
-                # Set CORS headers
+            # Then set new ones
+            response.headers.update({
+                'Access-Control-Allow-Origin': origin,
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+            })
+            
+            # Special handling for PPTX files
+            if response.mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
                 response.headers.update({
-                    'Access-Control-Allow-Origin': origin,
-                    'Access-Control-Allow-Credentials': 'true',
-                    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                    'Access-Control-Allow-Headers': '*',
-                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Authorization'
+                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type',
+                    'Content-Disposition': f'attachment; filename=lesson_presentation.pptx',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate'
                 })
-                
-                # Special handling for file downloads and OPTIONS requests
-                if request.method == 'OPTIONS':
-                    response.headers['Access-Control-Max-Age'] = '3600'
-                    response.status_code = 204
-                elif response.mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-                    response.headers['Access-Control-Expose-Headers'] = 'Content-Disposition'
-            
-            logger.debug(f"Response headers set: {dict(response.headers)}")
-            return response
-        except Exception as e:
-            logger.error(f"Error in after_request: {e}", exc_info=True)
-            return response
+        
+        return response
 
     # Initialize example outlines
     with app.app_context():

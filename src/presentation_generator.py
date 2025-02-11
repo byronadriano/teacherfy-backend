@@ -3,39 +3,35 @@ import os
 from src.slide_processor import parse_outline_to_structured_content, create_presentation
 import logging
 import json
+import time
 
 logger = logging.getLogger(__name__)
 
 def generate_presentation(outline_text, structured_content=None):
     try:
         logger.debug("Starting presentation generation")
-        if structured_content is None:
-            structured_content = parse_outline_to_structured_content(outline_text)
-        else:
-            # Normalize the incoming structured content
-            structured_content = [
-                {
-                    'title': slide.get('title', ''),
-                    'layout': slide.get('layout', 'TITLE_AND_CONTENT'),
-                    'content': slide.get('content', []),
-                    'teacher_notes': slide.get('teacher_notes', []),
-                    'visual_elements': slide.get('visual_elements', []),
-                    'left_column': slide.get('left_column', []),
-                    'right_column': slide.get('right_column', [])
-                }
-                for slide in structured_content
-            ]
         
-        logger.debug(f"Received structured content: {json.dumps(structured_content, indent=2)}")
+        if structured_content is None:
+            logger.debug("Parsing outline text to structured content")
+            structured_content = parse_outline_to_structured_content(outline_text)
+        
+        # Create temp file with unique name
+        temp_dir = tempfile.gettempdir()
+        temp_file = os.path.join(temp_dir, f"presentation_{os.getpid()}_{int(time.time())}.pptx")
+        
         logger.debug(f"Creating presentation with {len(structured_content)} slides")
         prs = create_presentation(structured_content)
         
-        # Save to temporary file
-        temp_dir = tempfile.gettempdir()
-        temp_file = os.path.join(temp_dir, f"presentation_{os.getpid()}.pptx")
         logger.debug(f"Saving presentation to {temp_file}")
-        
         prs.save(temp_file)
+        
+        # Verify file was created and is not empty
+        if not os.path.exists(temp_file):
+            raise FileNotFoundError("Failed to create presentation file")
+            
+        if os.path.getsize(temp_file) == 0:
+            raise ValueError("Generated presentation file is empty")
+            
         return temp_file
             
     except Exception as e:

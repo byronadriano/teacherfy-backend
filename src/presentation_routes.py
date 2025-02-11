@@ -62,20 +62,20 @@ def load_example_outlines():
 @presentation_blueprint.route("/outline", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='generation')
 def get_outline():
-    """Generate (or load) a comprehensive lesson outline via OpenAI."""
+    """Generate a comprehensive lesson outline using OpenAI."""
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
-    data = request.get_json()
+    data = request.json
     logger.debug(f"Received outline request with data: {data}")
     logger.debug(f"Request headers: {dict(request.headers)}")
 
-    # Check for an example outline using your existing criteria.
+    # Check for an example outline (for equivalent fractions in 4th grade math, etc.)
     is_example = (
         data.get("use_example")
         or (
             data.get("lesson_topic", "").lower().strip() == "equivalent fractions"
-            and data.get("gradeç_level", "").lower().strip() == "4th grade"
+            and data.get("grade_level", "").lower().strip() == "4th grade"
             and data.get("subject_focus", "").lower().strip() == "math"
             and data.get("language", "").lower().strip() == "english"
         )
@@ -87,66 +87,64 @@ def get_outline():
     if not client:
         return jsonify({"error": "OpenAI client not initialized"}), 500
 
-    # Retrieve input fields and build a fallback custom prompt if needed.
+    # Use the custom prompt provided by the frontend if available.
     custom_prompt = data.get("custom_prompt", "").strip()
-    selected_standards = data.get("selected_standards", [])
-    standards = ", ".join(selected_standards) if selected_standards else "Not specified"
+    if custom_prompt:
+        # Use the detailed custom prompt directly from the frontend.
+        full_prompt = custom_prompt
+    else:
+        # If no custom prompt is provided, build a fallback prompt using other input fields.
+        num_slides = int(data.get('num_slides', 5))
+        logger.debug(f"Requested number of slides: {num_slides}")
+        selected_standards = data.get("selected_standards", [])
+        standards = ", ".join(selected_standards) if selected_standards else "Not specified"
 
-    if not custom_prompt:
-        custom_prompt = (
+        full_prompt = (
             f"CRITICAL REQUIREMENTS:\n"
+            f"NUMBER OF SLIDES: EXACTLY {num_slides}\n"
             f"THIS MUST BE A: {data.get('resource_type', 'Presentation')}\n"
             f"THIS LESSON MUST BE ABOUT: {data.get('subject_focus', 'Not specified')}\n"
             f"STANDARDS ALIGNMENT: {standards}\n"
-            f"Additional Requirements: None\n"
+            f"Additional Requirements: {data.get('custom_prompt', 'None')}\n"
+            "\n"
+            "Follow the structure below for each slide:\n"
+            "Slide [number]: [Title]\n"
+            "Content:\n"
+            "- [Detailed teaching points, explanations, examples, and definitions]\n"
+            "Teacher Notes:\n"
+            "- [Detailed strategies for engagement, assessment, and differentiation]\n"
+            "Visual Elements:\n"
+            "- [Detailed suggestions for visuals, diagrams, or other resources]\n"
         )
 
-    # Build the full user prompt.
-    # Note: The output must strictly follow the structure below so that our parser can detect it.
-    prompt = f"""
-{custom_prompt}
+    # Append additional context to ensure that the content is actual teaching material.
+    full_prompt += f"""
 
 Create a comprehensive and engaging lesson outline in {data.get('language', 'English')} for a {data.get('grade_level', 'Not specified')} {data.get('subject_focus', 'Not specified')} lesson.
-The lesson should fully cover the topic in a natural, flowing manner while ensuring that a teacher can implement it with minimal additional preparation.
+The Content section must contain actual teaching material – clear definitions, detailed explanations, and concrete examples or problems – rather than meta–instructions.
+The Teacher Notes and Visual Elements sections (in English) must include specific, ready-to-use instructions.
+Do not include any extra commentary or meta–instructions before the first slide or after the final slide.
+"""
 
-**IMPORTANT:** Your output MUST follow this EXACT structure for each slide and nothing else:
+    logger.debug(f"Final prompt for OpenAI: {full_prompt}")
 
-Slide [number]: [Title]
-Content:
-- [Detailed teaching points, explanations, examples, and definitions]
-Teacher Notes:
-- [Detailed strategies for engagement, assessment, and differentiation]
-Visual Elements:
-- [Detailed suggestions for visuals, diagrams, or other resources]
-
-Do not include any text before the first slide or after the final slide.
-Ensure each slide’s sections are thorough and cover all key aspects of the topic.
-    """
-    logger.debug(f"Sending prompt to OpenAI: {prompt}")
-
-    # Use system instructions that emphasize both comprehensiveness and the exact required format.
+    # Update the system instructions so they reinforce the detailed instructions provided by the frontend.
     system_instructions = {
         "role": "system",
         "content": """
-You are a lesson-outline assistant. Create a comprehensive lesson outline that fully covers the topic in a logical and engaging way.
-The output must be divided into slides. For each slide, use the EXACT following format:
-
-Slide [number]: [Title]
-Content:
-- [Detailed teaching points, explanations, and examples]
-Teacher Notes:
-- [Detailed instructions for engagement, assessment, and differentiation]
-Visual Elements:
-- [Detailed suggestions for visuals or resources]
-
-Do not include any extra headings, text, or commentary outside this structure.
-The lesson should be complete and thorough without leaving any gaps.
-        """
+You are a lesson-outline assistant. Your task is to generate a complete, ready-to-use lesson outline using the exact detailed instructions provided by the user.
+For each slide, include:
+  - A Title.
+  - A Content section that contains actual teaching material (definitions, explanations, concrete examples or problems) in the lesson language.
+  - A Teacher Notes section in English with specific, actionable instructions for engagement, assessment, and differentiation.
+  - A Visual Elements section in English with explicit suggestions for visuals, diagrams, or other resources.
+Do not add any extraneous text or commentary outside the provided slide structure.
+"""
     }
 
     messages = [
         system_instructions,
-        {"role": "user", "content": prompt}
+        {"role": "user", "content": full_prompt}
     ]
 
     try:
@@ -168,28 +166,29 @@ The lesson should be complete and thorough without leaving any gaps.
         logger.error(f"Error generating outline: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+
 @presentation_blueprint.route("/generate", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='download')
 def generate_presentation_endpoint():
+    """Generate a PowerPoint presentation (.pptx) for download."""
     if request.method == "OPTIONS":
-        return "", 204
+        return jsonify({"status": "OK"}), 200
+
+    data = request.json
+    logger.debug(f"Generate request headers: {dict(request.headers)}")
+    logger.debug(f"Generate request data: {data}")
+
+    outline_text = data.get('lesson_outline', '')
+    structured_content = data.get('structured_content')
+        
+    if not structured_content:
+        return jsonify({"error": "No structured content provided"}), 400
 
     try:
-        logger.debug(f"Generate request headers: {dict(request.headers)}")
-        data = request.json
-        logger.debug(f"Generate request data: {data}")
-
-        if not data or 'structured_content' not in data:
-            return jsonify({"error": "No structured content provided"}), 400
-
-        presentation_path = generate_presentation(
-            data.get('lesson_outline', ''),
-            data.get('structured_content')
-        )
-        
+        presentation_path = generate_presentation(outline_text, structured_content)
         logger.debug(f"Generated presentation at: {presentation_path}")
-        
-        # Set headers for file download
+
+        # Prepare headers for file download
         headers = {
             'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
             'Content-Disposition': 'attachment; filename=lesson_presentation.pptx',
@@ -203,7 +202,7 @@ def generate_presentation_endpoint():
             mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
         ), 200, headers
     except Exception as e:
-        logger.error(f"Error generating PPTX: {str(e)}", exc_info=True)
+        logger.error(f"Error generating presentation: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 # Helper route to handle CORS preflight for all endpoints
