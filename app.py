@@ -1,42 +1,37 @@
+# app.py
 import os
-from flask import Flask, request, make_response
+import tempfile
+from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
-from src.config import logger
+from src.config import config, logger
 from src.auth_routes import auth_blueprint
 from src.slides_routes import slides_blueprint
 from src.presentation_routes import presentation_blueprint, load_example_outlines
 from src.db.database import test_connection
-import logging
-from dotenv import load_dotenv
 
 def create_app():
     # Initialize Flask app
     app = Flask(__name__)
 
-    # Enhanced logging configuration
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler("app.log"),
-            logging.StreamHandler()
-        ]
+    # Apply configuration from config object
+    app.config.update(
+        # Session security
+        SESSION_COOKIE_SECURE=config.SESSION_COOKIE_SECURE,
+        SESSION_COOKIE_SAMESITE=config.SESSION_COOKIE_SAMESITE,
+        SESSION_COOKIE_HTTPONLY=config.SESSION_COOKIE_HTTPONLY,
+        PERMANENT_SESSION_LIFETIME=config.PERMANENT_SESSION_LIFETIME,
+        SESSION_COOKIE_DOMAIN=config.SESSION_COOKIE_DOMAIN,
+        MAX_CONTENT_LENGTH=config.MAX_CONTENT_LENGTH,
+        
+        # Secret key
+        SECRET_KEY=config.SECRET_KEY
     )
-    logger = logging.getLogger(__name__)
-
-    # Load environment variables
-    load_dotenv()
 
     # CORS configuration
     CORS(app, 
         resources={
             r"/*": {
-                "origins": [
-                    "http://localhost:3000",
-                    "https://teacherfy.ai",
-                    "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net",
-                    "https://teacherfy.azurewebsites.net"
-                ],
+                "origins": config.CORS_ORIGINS,
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                 "allow_headers": [
                     "Content-Type",
@@ -50,51 +45,57 @@ def create_app():
                     "Content-Disposition",
                     "Content-Type",
                     "Content-Length",
-                     "Authorization"
+                    "Authorization"
                 ]
             }
         },
         supports_credentials=True)
 
-    # Session configuration
-    app.config.update(
-        SESSION_COOKIE_SECURE=True,
-        SESSION_COOKIE_SAMESITE='None',
-        SESSION_COOKIE_HTTPONLY=True,
-        PERMANENT_SESSION_LIFETIME=3600,
-        SESSION_COOKIE_DOMAIN=None,
-        MAX_CONTENT_LENGTH=16 * 1024 * 1024
-    )
-
-    # Secret key configuration
-    app.secret_key = os.environ.get("FLASK_SECRET_KEY")
-    if not app.secret_key:
-        raise ValueError("FLASK_SECRET_KEY environment variable is not set!")
-
     # Register blueprints
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(slides_blueprint)
     app.register_blueprint(presentation_blueprint)
-
+    
+    @app.route("/health")
+    def health_check():
+        try:
+            # Test database connection
+            db_status = test_connection()
+            
+            # Test file system
+            temp_dir = tempfile.gettempdir()
+            fs_writable = os.access(temp_dir, os.W_OK)
+            
+            return jsonify({
+                "status": "healthy" if all([db_status, fs_writable]) else "unhealthy",
+                "checks": {
+                    "database": db_status,
+                    "filesystem": fs_writable,
+                },
+                "version": "1.0.0",
+                "environment": os.environ.get("FLASK_ENV", "production")
+            })
+        except Exception as e:
+            logger.error(f"Health check failed: {e}", exc_info=True)
+            return jsonify({
+                "status": "unhealthy",
+                "error": str(e)
+            }), 500
+            
     @app.before_request
     def handle_preflight():
         if request.method == "OPTIONS":
             response = make_response()
             origin = request.headers.get('Origin')
-            allowed_origins = [
-                'http://localhost:3000',
-                'https://teacherfy.ai',
-                'https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net'
-            ]
             
-            if origin in allowed_origins:
+            if origin in config.CORS_ORIGINS:
                 response.headers.update({
                     'Access-Control-Allow-Origin': origin,
                     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin',
+                    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control',
                     'Access-Control-Allow-Credentials': 'true',
                     'Access-Control-Max-Age': '3600',
-                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type'
+                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Content-Length'
                 })
             return response, 204
 
@@ -110,38 +111,23 @@ def create_app():
 
     @app.after_request
     def after_request(response):
-        """Add necessary headers after each request"""
         origin = request.headers.get('Origin')
-        allowed_origins = [
-            'http://localhost:3000',
-            'https://teacherfy.ai',
-            'https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net',
-            "https://teacherfy.azurewebsites.net"
-        ]
         
-        if origin in allowed_origins:
-            # First clear any existing CORS headers
-            for key in ['Access-Control-Allow-Origin', 
-                    'Access-Control-Allow-Credentials',
-                    'Access-Control-Allow-Methods',
-                    'Access-Control-Allow-Headers',
-                    'Access-Control-Expose-Headers']:
-                response.headers.pop(key, None)
-                
-            # Then set new ones
+        if origin in config.CORS_ORIGINS:
             response.headers.update({
                 'Access-Control-Allow-Origin': origin,
                 'Access-Control-Allow-Credentials': 'true',
                 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control'
             })
             
-            # Special handling for PPTX files
             if response.mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
                 response.headers.update({
-                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type',
-                    'Content-Disposition': f'attachment; filename=lesson_presentation.pptx',
-                    'Cache-Control': 'no-cache, no-store, must-revalidate'
+                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Content-Length',
+                    'Content-Disposition': 'attachment; filename=lesson_presentation.pptx',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
                 })
         
         return response
@@ -161,5 +147,5 @@ app = create_app()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    debug_mode = os.environ.get("FLASK_ENV") == "development"
+    debug_mode = config.DEVELOPMENT_MODE
     app.run(host="0.0.0.0", port=port, debug=debug_mode)

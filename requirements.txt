@@ -2,6 +2,8 @@ flask
 openai
 python-pptx
 flask-cors
+flask-talisman
+flask-limiter
 google-auth
 google-auth-oauthlib
 google-auth-httplib2

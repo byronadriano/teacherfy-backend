@@ -3,7 +3,7 @@ from flask import Blueprint, request, jsonify, redirect, url_for, session
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-from src.config import logger, flow, CLIENT_ID
+from src.config import logger, flow, CLIENT_ID, config
 from src.db import get_user_by_email, create_user, log_user_login, log_user_activity
 
 auth_blueprint = Blueprint("auth_blueprint", __name__)
@@ -13,11 +13,17 @@ def check_auth():
     """Check if the user is authenticated and session is valid."""
     try:
         if 'credentials' not in session:
-            return jsonify({"authenticated": False, "needsAuth": True}), 401
+            return jsonify({
+                "authenticated": False,
+                "needsAuth": True
+            }), 401
 
         credentials_data = session.get('credentials')
         if not credentials_data:
-            return jsonify({"authenticated": False, "needsAuth": True}), 401
+            return jsonify({
+                "authenticated": False,
+                "needsAuth": True
+            }), 401
 
         user_info = session.get('user_info', {})
         return jsonify({
@@ -30,11 +36,14 @@ def check_auth():
         })
     except Exception as e:
         logger.error(f"Error checking auth status: {e}")
-        return jsonify({"authenticated": False, "error": str(e)}), 500
+        return jsonify({
+            "authenticated": False,
+            "error": str(e)
+        }), 500
 
 @auth_blueprint.route('/oauth2callback')
 def oauth2callback():
-    """Handle Google's OAuth2 callback."""
+    """Handle Google OAuth callback."""
     try:
         flow.fetch_token(authorization_response=request.url)
         credentials = flow.credentials
@@ -49,7 +58,7 @@ def oauth2callback():
             'scopes': credentials.scopes
         }
 
-        # Verify token more securely
+        # Verify token
         id_info = id_token.verify_oauth2_token(
             credentials.id_token,
             google_requests.Request(),
@@ -57,30 +66,26 @@ def oauth2callback():
             clock_skew_in_seconds=300
         )
 
-        email = id_info['email']
-        name = id_info.get('name')
-        picture = id_info.get('picture')
-
         # Store user info in session
-        session['user_info'] = {
-            'email': email,
-            'name': name,
-            'picture': picture
+        user_info = {
+            'email': id_info['email'],
+            'name': id_info.get('name'),
+            'picture': id_info.get('picture')
         }
+        session['user_info'] = user_info
 
-        # Create or update user in database
-        user_id = create_user(email, name, picture)
+        # Create/update user in database and log login
+        user_id = create_user(user_info['email'], user_info['name'], user_info['picture'])
         log_user_login(user_id)
         
-        logger.info(f"Successfully authenticated user: {email}")
-
-        # Return a small HTML snippet that closes the popup window
+        logger.info(f"Successfully authenticated user: {user_info['email']}")
+        
         return """
             <html><body><script>
                 if (window.opener) {
                     window.opener.postMessage({
                         type: 'AUTH_SUCCESS',
-                        email: '""" + email + """'
+                        email: '""" + user_info['email'] + """'
                     }, '*');
                     window.close();
                 }
@@ -99,7 +104,7 @@ def oauth2callback():
                 }
             </script></body></html>
         """
-
+        
 @auth_blueprint.route('/authorize')
 def authorize():
     """Initiate Google OAuth with the proper redirect URI."""
