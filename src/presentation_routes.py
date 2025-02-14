@@ -78,20 +78,27 @@ def get_outline():
         resource_type = data.get('resourceType', 'Presentation')
         subject_focus = data.get('subjectFocus', 'General Learning')
         grade_level = data.get('gradeLevel', 'Not Specified')
-        language = data.get('language', 'Spanish')
+        language = data.get('language', 'English')
         lesson_topic = data.get('lessonTopic', 'Exploratory Lesson')
         num_slides = int(data.get('numSlides', 3))
         selected_standards = data.get('selectedStandards', [])
         custom_prompt = data.get('custom_prompt', '').strip()
 
-        # Check for an example outline
+        # Validate required fields
+        if not all([subject_focus, grade_level, language, lesson_topic]):
+            return jsonify({
+                "error": "Missing required fields",
+                "details": "Subject, grade level, language, and lesson topic are required."
+            }), 400
+
+        # Check for example outline
         is_example = (
-            data.get("use_example")
-            or (
-                lesson_topic.lower().strip() == "equivalent fractions"
-                and grade_level.lower().strip() == "4th grade"
-                and subject_focus.lower().strip() == "math"
-                and language.lower().strip() == "english"
+            data.get("use_example") or
+            (
+                lesson_topic.lower().strip() == "equivalent fractions" and
+                grade_level.lower().strip() == "4th grade" and
+                subject_focus.lower().strip() == "math" and
+                language.lower().strip() == "english"
             )
         )
         if is_example:
@@ -102,100 +109,111 @@ def get_outline():
         if not client:
             return jsonify({"error": "OpenAI client not initialized"}), 500
 
-        # Prepare system instructions
+        # Build requirements list
+        requirements = [
+            f"Resource Type: {resource_type}",
+            f"Grade Level: {grade_level}",
+            f"Subject: {subject_focus}",
+            f"Topic: {lesson_topic}",
+            f"Language: {language}",
+            f"Standards: {', '.join(selected_standards) if selected_standards else 'General Learning Objectives'}"
+        ]
+
+        # Add resource-specific requirements
+        if resource_type == "Presentation":
+            requirements.extend([
+                f"Number of Slides: EXACTLY {num_slides}",
+                "Visual Requirements: Include clear, engaging visuals and diagrams for each slide"
+            ])
+
+        # Build the final requirements string
+        requirements_str = "\n".join(f"- {req}" for req in requirements if req)
+
+        # System instructions remain constant
         system_instructions = {
             "role": "system",
             "content": """
-        YOU ARE A MASTER CLASSROOM CONTENT CREATOR. Your task is to produce lesson outlines that have two distinct parts:
+            YOU ARE A MASTER CLASSROOM CONTENT CREATOR. Your task is to produce lesson outlines that have two distinct parts:
 
-        1. The student-facing "Content" section, which provides the actual lesson material that will be presented to the students. This section must use clear, engaging, and age-appropriate language and include explanations, interactive questions, or narratives that students will see. DO NOT include meta-instructions or teaching guidance in this section.
+            1. The student-facing "Content" section, which provides the actual lesson material that will be presented to the students. This section must use clear, engaging, and age-appropriate language and include explanations, interactive questions, or narratives that students will see. DO NOT include meta-instructions or teaching guidance in this section.
 
-        2. The teacher-facing "Teacher Notes" section, which gives explicit, step-by-step instructions and strategies for the teacher to effectively deliver the lesson. This section may include prompts, activity instructions, assessment methods, and differentiation strategies.
+            2. The teacher-facing "Teacher Notes" section, which gives explicit, step-by-step instructions and strategies for the teacher to effectively deliver the lesson. This section may include prompts, activity instructions, assessment methods, and differentiation strategies.
 
-        For each slide, use the exact format below:
+            For each slide, use the exact format below:
 
-        Slide X: [Engaging and Descriptive Slide Title]
-        Content:
-        - [Bullet 1: Present a key piece of lesson content directly for the students. Use language that is clear, engaging, and suitable for their age. For example, “Hoy vamos a aprender a sumar usando imágenes de manzanas.”]
-        - [Bullet 2: Continue with additional student-facing content such as examples, explanations, or interactive questions that the students will see.]
-        - [Bullet 3: Add more student-directed content to clearly convey the lesson material.]
-        (Include 3-5 bullet points that deliver the actual lesson content without giving teaching instructions.)
+            Slide X: [Engaging and Descriptive Slide Title]
+            Content:
+            - [Bullet 1: Present a key piece of lesson content directly for the students. Use language that is clear, engaging, and suitable for their age. For example, "Hoy vamos a aprender a sumar usando imágenes de manzanas."]
+            - [Bullet 2: Continue with additional student-facing content such as examples, explanations, or interactive questions that the students will see.]
+            - [Bullet 3: Add more student-directed content to clearly convey the lesson material.]
+            (Include 3-5 bullet points that deliver the actual lesson content without giving teaching instructions.)
 
-        Teacher Notes:
-        - ENGAGEMENT: Provide detailed, step-by-step instructions for engaging students. For example, “Invite students to share what they see in the images, then ask, ‘¿Qué sucede cuando juntamos dos grupos de manzanas?’”
-        - ASSESSMENT: Describe precise methods to check for understanding (e.g., ask targeted questions or use quick formative assessments).
-        - DIFFERENTIATION: Offer specific strategies for adapting the lesson to meet diverse learner needs, such as modifications or extension tasks.
+            Teacher Notes:
+            - ENGAGEMENT: Provide detailed, step-by-step instructions for engaging students. For example, "Invite students to share what they see in the images, then ask, '¿Qué sucede cuando juntamos dos grupos de manzanas?'"
+            - ASSESSMENT: Describe precise methods to check for understanding (e.g., ask targeted questions or use quick formative assessments).
+            - DIFFERENTIATION: Offer specific strategies for adapting the lesson to meet diverse learner needs, such as modifications or extension tasks.
 
-        Visual Elements:
-        - List explicit recommendations for visual aids or multimedia (e.g., images, diagrams, animations) that support the student content on the slide.
+            Visual Elements:
+            - List explicit recommendations for visual aids or multimedia (e.g., images, diagrams, animations) that support the student content on the slide.
 
-        Additional Directives:
-        1. Each slide MUST begin with "Slide X:" where X is the slide number, and the total number of slides must match the specified count exactly.
-        2. The section headers "Content:", "Teacher Notes:", and "Visual Elements:" must appear exactly as shown.
-        3. Use a hyphen (-) followed by a space for every bullet point.
-        4. Do NOT include any extra headings (such as "Introduction" or "Conclusion"), disclaimers, or placeholder markers.
-        5. Ensure that the "Content" section is purely student-facing material that presents the lesson narrative, while all teaching instructions are confined to the "Teacher Notes" section.
-        6. The lesson must flow logically from one slide to the next, using concrete, real-world examples that resonate with the specified grade level.
+            Additional Directives:
+            1. Each slide MUST begin with "Slide X:" where X is the slide number, and the total number of slides must match the specified count exactly.
+            2. The section headers "Content:", "Teacher Notes:", and "Visual Elements:" must appear exactly as shown.
+            3. Use a hyphen (-) followed by a space for every bullet point.
+            4. Do NOT include any extra headings (such as "Introduction" or "Conclusion"), disclaimers, or placeholder markers.
+            5. Ensure that the "Content" section is purely student-facing material that presents the lesson narrative, while all teaching instructions are confined to the "Teacher Notes" section.
+            6. The lesson must flow logically from one slide to the next, using concrete, real-world examples that resonate with the specified grade level.
 
-        FINAL GOAL:
-        Produce a comprehensive lesson outline that separates engaging, student-directed content from clear, actionable teacher instructions. The student content must be directly understandable and engaging, while the teacher notes guide the educator on how to deliver the lesson effectively. The outline must be ready for immediate classroom use with ZERO additional preparation.
+            FINAL GOAL:
+            Produce a comprehensive lesson outline that separates engaging, student-directed content from clear, actionable teacher instructions. The student content must be directly understandable and engaging, while the teacher notes guide the educator on how to deliver the lesson effectively. The outline must be ready for immediate classroom use with ZERO additional preparation.
             """
         }
 
-
-
-
-        # Prepare prompt - different logic for regeneration
+        # Prepare user prompt based on whether this is a regeneration request
         if is_regeneration and previous_outline:
-            full_prompt = f"""
-REGENERATION REQUEST:
-Previous Outline Context:
-{previous_outline}
+            user_prompt = f"""
+            REGENERATION REQUEST:
+            Previous Outline Context:
+            {previous_outline}
 
-NEW REQUIREMENTS:
-- Resource Type: {resource_type}
-- Grade Level: {grade_level}
-- Subject: {subject_focus}
-- Lesson Topic: {lesson_topic}
-- Language: {language}
-- Number of Slides: EXACTLY {num_slides}
-- Standards Alignment: {', '.join(selected_standards) if selected_standards else 'Previous Standards'}
-
-REGENERATION INSTRUCTIONS:
-1. Carefully review the previous outline
-2. Incorporate new requirements while maintaining core educational objectives
-3. Ensure coherence and educational continuity
-4. Provide a refined, improved lesson outline
-
-SPECIFIC MODIFICATION GUIDANCE:
-{custom_prompt}
-"""
+            NEW REQUIREMENTS:
+            {requirements_str}
+            
+            REGENERATION INSTRUCTIONS:
+            1. Review and preserve successful elements from the previous outline
+            2. Update content based on the following modification request:
+            {custom_prompt}
+            3. Maintain the same number of slides: {num_slides}
+            4. Keep the same language: {language}
+            5. Ensure any new content aligns with the grade level and standards
+            
+            IMPORTANT:
+            - Keep the successful teaching strategies from the original
+            - Maintain the educational flow and progression
+            - Strengthen areas mentioned in the modification request
+            - Ensure all content is classroom-ready
+            """
+            # Log regeneration attempt
+            logger.debug(f"Regeneration attempt {data.get('regenerationCount', 0) + 1}")
+            logger.debug(f"Modification request: {custom_prompt}")
         else:
-            # Original outline generation prompt
-            full_prompt = f"""
-Create a comprehensive lesson outline with the following specifications:
-- Resource Type: {resource_type}
-- Grade Level: {grade_level}
-- Subject: {subject_focus}
-- Lesson Topic: {lesson_topic}
-- Language: {language}
-- Number of Slides: EXACTLY {num_slides}
-- Standards Alignment: {', '.join(selected_standards) if selected_standards else 'General Learning Objectives'}
+            # Regular outline generation prompt
+            user_prompt = f"""
+            Create a comprehensive lesson outline with the following specifications:
+            {requirements_str}
 
-Additional Requirements:
-{custom_prompt}
-"""
-
-        # Prepare messages for OpenAI
-        messages = [
-            system_instructions,
-            {"role": "user", "content": full_prompt}
-        ]
+            Additional Requirements:
+            {custom_prompt}
+            """
 
         try:
+            # Make the API call
             response = client.chat.completions.create(
                 model="gpt-4-0125-preview",
-                messages=messages,
+                messages=[
+                    system_instructions,
+                    {"role": "user", "content": user_prompt}
+                ],
                 max_tokens=4000,
                 temperature=0.7
             )
@@ -203,9 +221,20 @@ Additional Requirements:
             outline_text = response.choices[0].message.content.strip()
             logger.debug(f"Generated outline: {outline_text}")
 
+            # Parse the outline into structured content
             structured_content = parse_outline_to_structured_content(outline_text)
             logger.debug(f"Structured content: {structured_content}")
 
+            # Validate the structured content
+            for slide in structured_content:
+                if not slide.get('content') and not (slide.get('left_column') or slide.get('right_column')):
+                    raise ValueError(f"Slide '{slide.get('title')}' has no content")
+                if not slide.get('teacher_notes'):
+                    raise ValueError(f"Slide '{slide.get('title')}' has no teacher notes")
+                if not slide.get('visual_elements'):
+                    logger.warning(f"Slide '{slide.get('title')}' has no visual elements")
+
+            # Return the response
             return jsonify({
                 "messages": [outline_text],
                 "structured_content": structured_content
@@ -223,9 +252,8 @@ Additional Requirements:
         return jsonify({
             "error": "An unexpected error occurred",
             "details": str(e)
-        }), 500 
-        
-        
+        }), 500
+         
 @presentation_blueprint.route("/generate", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='download')
 def generate_presentation_endpoint():
