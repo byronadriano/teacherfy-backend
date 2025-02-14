@@ -5,6 +5,7 @@ from src.slide_processor import parse_outline_to_structured_content
 from src.presentation_generator import generate_presentation
 from src.utils.decorators import check_usage_limits
 import json
+import traceback
 
 presentation_blueprint = Blueprint("presentation_blueprint", __name__)
 
@@ -63,10 +64,21 @@ def load_example_outlines():
 @check_usage_limits(action_type='generation')
 def get_outline():
     """Generate a lesson outline using OpenAI."""
+    # Add comprehensive logging at the start of the request
+    logger.info(f"Received outline generation request: {request.method}")
+    
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
     try:
+        # Validate JSON request
+        if not request.is_json:
+            logger.error("Request is not JSON")
+            return jsonify({
+                "error": "Invalid request format",
+                "details": "Request must be in JSON format"
+            }), 400
+
         data = request.json
         logger.debug(f"Received outline request with data: {data}")
 
@@ -248,10 +260,14 @@ def get_outline():
             }), 500
 
     except Exception as e:
-        logger.error(f"Unexpected error in outline generation: {e}", exc_info=True)
+        # More detailed error logging
+        logger.error(f"Unexpected error in outline generation: {str(e)}")
+        logger.error(traceback.format_exc())
+        
         return jsonify({
             "error": "An unexpected error occurred",
-            "details": str(e)
+            "details": str(e),
+            "trace": traceback.format_exc()
         }), 500
          
 @presentation_blueprint.route("/generate", methods=["POST", "OPTIONS"])
