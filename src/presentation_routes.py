@@ -274,40 +274,79 @@ def get_outline():
 @check_usage_limits(action_type='download')
 def generate_presentation_endpoint():
     """Generate a PowerPoint presentation (.pptx) for download."""
+    # Handle preflight requests
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
-    data = request.json
-    logger.debug(f"Generate request headers: {dict(request.headers)}")
-    logger.debug(f"Generate request data: {data}")
-
+    # Log details about the request for debugging
+    logger.info(f"Generate request received from: {request.remote_addr}")
+    logger.info(f"Request headers: {dict(request.headers)}")
+    
+    # Get JSON data, with fallback to form data if JSON parsing fails
+    try:
+        data = request.get_json()
+    except Exception as e:
+        logger.error(f"Error parsing JSON: {e}")
+        data = request.form.to_dict()  # Try form data as fallback
+    
+    logger.info(f"Request data structure: {type(data).__name__}")
+    logger.info(f"Request data keys: {data.keys() if data else 'None'}")
+    
+    # Extract and validate the data
     outline_text = data.get('lesson_outline', '')
     structured_content = data.get('structured_content')
-        
+    
     if not structured_content:
+        logger.error("No structured content provided")
         return jsonify({"error": "No structured content provided"}), 400
-
+    
+    logger.info(f"Processing generate request with {len(structured_content)} slides")
+    
     try:
+        # Generate the presentation
         presentation_path = generate_presentation(outline_text, structured_content)
-        logger.debug(f"Generated presentation at: {presentation_path}")
-
+        logger.info(f"Generated presentation at: {presentation_path}")
+        
+        # Verify the file exists and has content
+        if not os.path.exists(presentation_path):
+            raise FileNotFoundError(f"Generated file not found at {presentation_path}")
+        
+        file_size = os.path.getsize(presentation_path)
+        logger.info(f"Presentation file size: {file_size} bytes")
+        
+        if file_size == 0:
+            raise ValueError("Generated file is empty")
+        
         # Prepare headers for file download
         headers = {
             'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'Content-Disposition': 'attachment; filename=lesson_presentation.pptx',
-            'Access-Control-Expose-Headers': 'Content-Disposition'
+            'Content-Disposition': f'attachment; filename=lesson_presentation.pptx',
+            'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Content-Length',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
         }
         
+        # Use Flask's send_file function to return the file
+        logger.info(f"Sending file: {presentation_path}")
         return send_file(
             presentation_path,
             as_attachment=True,
             download_name="lesson_presentation.pptx",
-            mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            etag=False,  # Disable etag to prevent caching issues
+            conditional=False,  # Don't use conditional responses
+            last_modified=None  # Don't include last-modified header
         ), 200, headers
+        
     except Exception as e:
         logger.error(f"Error generating presentation: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
+        return jsonify({
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "stack_trace": traceback.format_exc()
+        }), 500
+        
 # Helper route to handle CORS preflight for all endpoints
 @presentation_blueprint.after_request
 def after_request(response):
