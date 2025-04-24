@@ -1,5 +1,5 @@
 from functools import wraps
-from flask import request, jsonify, session
+from flask import request, jsonify, session, send_file
 from src.db.usage import check_user_limits, increment_usage
 from src.config import logger
 
@@ -41,7 +41,15 @@ def check_usage_limits(action_type='generation'):
                 # Call the original function
                 result = f(*args, **kwargs)
                 
-                # If the result is a tuple (response, status_code)
+                # IMPORTANT FIX: Don't modify file download responses
+                # Check if this is a file download response
+                if isinstance(result, tuple) and len(result) >= 1:
+                    # If it's a Flask send_file response or has a mimetype for PPTX
+                    if hasattr(result[0], 'mimetype') and result[0].mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+                        logger.debug("File download detected, returning unmodified response")
+                        return result
+                
+                # For JSON responses, add usage limits
                 if isinstance(result, tuple):
                     response, status_code = result
                     if hasattr(response, 'get_json'):
@@ -69,7 +77,8 @@ def check_usage_limits(action_type='generation'):
                 return result
                 
             except Exception as e:
-                logger.error(f"Error checking usage limits: {e}")
+                logger.error(f"Error checking usage limits: {e}", exc_info=True)
+                # In case of any error, still allow the request to proceed
                 return f(*args, **kwargs)
                 
         return decorated_function

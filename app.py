@@ -31,19 +31,20 @@ def create_app():
     CORS(app, 
         resources={
             r"/*": {
-                "origins": config.CORS_ORIGINS,
+                "origins": ["http://localhost:3000", "https://teacherfy.ai", "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net", "*"],
                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                 "allow_headers": [
                     "Content-Type",
                     "Authorization",
                     "X-Requested-With",
                     "Accept",
-                    "Origin"
+                    "Origin",
+                    "Cache-Control"
                 ],
                 "supports_credentials": True,
                 "expose_headers": [
                     "Content-Disposition",
-                    "Content-Type",
+                    "Content-Type", 
                     "Content-Length",
                     "Authorization"
                 ]
@@ -55,6 +56,33 @@ def create_app():
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(slides_blueprint)
     app.register_blueprint(presentation_blueprint)
+    
+    @app.after_request
+    def after_request(response):
+        # Get the origin from the request
+        origin = request.headers.get('Origin', '*')
+        allowed_origins = config.CORS_ORIGINS + ['http://localhost:3000']
+        
+        # If the origin is allowed, set CORS headers
+        if origin in allowed_origins or '*' in allowed_origins:
+            response.headers.update({
+                'Access-Control-Allow-Origin': origin,
+                'Access-Control-Allow-Credentials': 'true',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control',
+            })
+            
+            # For file downloads, add additional headers
+            if response.mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+                response.headers.update({
+                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Content-Length',
+                    'Content-Disposition': 'attachment; filename=lesson_presentation.pptx',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                })
+        
+        return response
     
     @app.route("/health")
     def health_check():
