@@ -7,6 +7,7 @@ from src.config import config, logger
 from src.auth_routes import auth_blueprint
 from src.slides_routes import slides_blueprint
 from src.presentation_routes import presentation_blueprint, load_example_outlines
+from src.history_routes import history_blueprint  # Import the new blueprint
 from src.db.database import test_connection
 
 def create_app():
@@ -56,7 +57,11 @@ def create_app():
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(slides_blueprint)
     app.register_blueprint(presentation_blueprint)
+    app.register_blueprint(history_blueprint)  # Register the new blueprint
     
+    # Rest of your app.py code...
+    
+    # Existing code continues below...
     @app.after_request
     def after_request(response):
         # Get the origin from the request

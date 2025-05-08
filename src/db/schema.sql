@@ -19,12 +19,12 @@ CREATE TABLE IF NOT EXISTS user_logins (
     login_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- User Activities
+-- User Activities (updated to store lesson data)
 CREATE TABLE IF NOT EXISTS user_activities (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     activity VARCHAR(255) NOT NULL,
-    lesson_data JSONB,
+    lesson_data JSONB,  -- JSONB column for storing structured lesson data
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -55,14 +55,36 @@ CREATE TABLE IF NOT EXISTS user_tiers (
     is_default BOOLEAN DEFAULT false
 );
 
+-- User Usage Limits (for rate limiting)
+CREATE TABLE IF NOT EXISTS user_usage_limits (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    ip_address VARCHAR(45) NOT NULL,
+    generations_used INTEGER DEFAULT 0,
+    downloads_used INTEGER DEFAULT 0,
+    last_reset TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_user_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_user_activities_user_id ON user_activities(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_activities_created_at ON user_activities(created_at);
 CREATE INDEX IF NOT EXISTS idx_user_logins_user_id ON user_logins(user_id);
 CREATE INDEX IF NOT EXISTS idx_anonymous_ip ON anonymous_usage(ip_address);
 CREATE INDEX IF NOT EXISTS idx_user_tier ON users(tier_id);
 
--- Insert default tiers
+-- Create partial unique indexes:
+-- For anonymous users (user_id IS NULL), ensure ip_address is unique.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_usage_limits_anonymous 
+  ON user_usage_limits(ip_address)
+  WHERE user_id IS NULL;
+
+-- For registered users (user_id IS NOT NULL), ensure each user_id appears only once.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_usage_limits_registered 
+  ON user_usage_limits(user_id)
+  WHERE user_id IS NOT NULL;
+
+-- Insert default tiers if they don't exist
 INSERT INTO user_tiers (name, max_generations, max_downloads, is_default) 
 VALUES 
     ('Free', 3, 1, true),
