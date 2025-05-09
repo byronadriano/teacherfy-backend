@@ -2,12 +2,15 @@
 from functools import wraps
 from flask import Blueprint, request, jsonify, session
 from src.config import logger
-from src.db.database import get_db_cursor, get_user_by_email
+from src.db.database import get_db_cursor, get_db_connection, get_user_by_email
 import traceback
 import json
 from datetime import datetime, timedelta
 
 history_blueprint = Blueprint("history_blueprint", __name__)
+
+# Cache for anonymous session history
+anonymous_history_cache = {}
 
 def require_auth(f):
     @wraps(f)
@@ -23,7 +26,8 @@ def format_date(timestamp):
         return "Unknown"
         
     now = datetime.now()
-    timestamp = timestamp.replace(tzinfo=None)  # Remove timezone for comparison
+    if hasattr(timestamp, 'tzinfo') and timestamp.tzinfo:
+        timestamp = timestamp.replace(tzinfo=None)  # Remove timezone for comparison
     
     delta = now - timestamp
     
@@ -38,8 +42,20 @@ def format_date(timestamp):
 
 @history_blueprint.route("/user/history", methods=["GET"])
 def get_user_history():
-    """Get history for the current user or session."""
+    """Get history for the current user or session with HTTP caching."""
     try:
+        # Support for HTTP cache headers
+        if request.headers.get('If-None-Match'):
+            # Check if the client has a fresh version based on ETag
+            etag = request.headers.get('If-None-Match')
+            session_id = session.get('session_id', '')
+            
+            # If the ETag matches the session ID (which changes when history changes),
+            # return a 304 Not Modified
+            if etag == session_id:
+                logger.debug("Returning 304 Not Modified for history request")
+                return '', 304
+        
         # Get user info from session if available
         user_info = session.get('user_info', {})
         user_email = user_info.get('email')
@@ -49,89 +65,131 @@ def get_user_history():
         if ip_address:
             ip_address = ip_address.split(',')[0].strip()
         
+        logger.info(f"Fetching history for {'user: ' + user_email if user_email else 'anonymous user: ' + ip_address}")
+        
         # If user is logged in, fetch history from user_activities table
         if user_email:
-            with get_db_cursor() as cursor:
-                # Check which timestamp column exists
-                cursor.execute("""
-                    SELECT column_name 
-                    FROM information_schema.columns 
-                    WHERE table_schema = 'public' 
-                    AND table_name = 'user_activities'
-                    AND column_name IN ('activity_time', 'created_at');
-                """)
-                timestamp_cols = [row['column_name'] for row in cursor.fetchall()]
-                
-                # Determine which timestamp column to use
-                timestamp_col = 'activity_time' if 'activity_time' in timestamp_cols else 'created_at'
-                
-                # Query with the appropriate timestamp column
-                query = f"""
-                    SELECT a.id, a.activity, a.lesson_data, a.{timestamp_col} as timestamp
-                    FROM user_activities a
-                    JOIN users u ON a.user_id = u.id
-                    WHERE u.email = %s
-                    ORDER BY a.{timestamp_col} DESC
-                    LIMIT 10
-                """
-                
-                cursor.execute(query, (user_email,))
-                
-                results = cursor.fetchall()
-                
-                # Format the results
-                history_items = []
-                for item in results:
-                    # Extract resource type from lesson_data if available
-                    resource_type = None
-                    lesson_data = {}
+            with get_db_connection() as conn:
+                with conn.cursor(cursor_factory=get_db_cursor().cursor_factory) as cursor:
+                    # Check which timestamp column exists
+                    cursor.execute("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'user_activities'
+                        AND column_name IN ('activity_time', 'created_at');
+                    """)
+                    timestamp_cols = [row['column_name'] for row in cursor.fetchall()]
                     
-                    if item.get('lesson_data'):
-                        if isinstance(item['lesson_data'], str):
-                            try:
-                                lesson_data = json.loads(item['lesson_data'])
-                            except:
-                                lesson_data = {}
-                        else:
-                            lesson_data = item['lesson_data']
-                            
-                        resource_type = lesson_data.get('resourceType', 'PRESENTATION')
+                    # Determine which timestamp column to use
+                    timestamp_col = 'activity_time' if 'activity_time' in timestamp_cols else 'created_at'
                     
-                    # If resource_type is still None, extract from activity field
-                    if not resource_type and item.get('activity'):
-                        activity = item['activity']
-                        if 'Created ' in activity:
-                            resource_type = activity.replace('Created ', '')
+                    logger.debug(f"Using timestamp column: {timestamp_col}")
                     
-                    # Ensure resource_type is a string
-                    if not resource_type:
-                        resource_type = 'PRESENTATION'
+                    # Query with the appropriate timestamp column
+                    query = f"""
+                        SELECT a.id, a.activity, a.lesson_data, a.{timestamp_col} as timestamp
+                        FROM user_activities a
+                        JOIN users u ON a.user_id = u.id
+                        WHERE u.email = %s
+                        ORDER BY a.{timestamp_col} DESC
+                        LIMIT 10
+                    """
                     
-                    timestamp = item.get('timestamp')
-                    formatted_date = format_date(timestamp) if timestamp else "Recent"
+                    cursor.execute(query, (user_email,))
                     
-                    history_items.append({
-                        "id": item["id"],
-                        "title": lesson_data.get("lessonTopic", "Untitled Lesson"),
-                        "types": [resource_type],
-                        "date": formatted_date,
-                        "lessonData": lesson_data
+                    results = cursor.fetchall()
+                    logger.info(f"Found {len(results)} history items for user {user_email}")
+                    
+                    # Format the results
+                    history_items = []
+                    for item in results:
+                        # Extract resource type from lesson_data if available
+                        resource_type = None
+                        lesson_data = {}
+                        
+                        if item.get('lesson_data'):
+                            if isinstance(item['lesson_data'], str):
+                                try:
+                                    lesson_data = json.loads(item['lesson_data'])
+                                except:
+                                    lesson_data = {}
+                            else:
+                                lesson_data = item['lesson_data']
+                                
+                            resource_type = lesson_data.get('resourceType', 'PRESENTATION')
+                        
+                        # If resource_type is still None, extract from activity field
+                        if not resource_type and item.get('activity'):
+                            activity = item['activity']
+                            if 'Created ' in activity:
+                                resource_type = activity.replace('Created ', '')
+                        
+                        # Ensure resource_type is a string
+                        if not resource_type:
+                            resource_type = 'PRESENTATION'
+                        
+                        timestamp = item.get('timestamp')
+                        formatted_date = format_date(timestamp) if timestamp else "Recent"
+                        
+                        # Create a unique ID for the item
+                        unique_id = f"{item['id']}-{resource_type}-{formatted_date}"
+                        
+                        history_items.append({
+                            "id": unique_id,
+                            "db_id": item["id"],
+                            "title": lesson_data.get("lessonTopic", "Untitled Lesson"),
+                            "types": [resource_type],
+                            "date": formatted_date,
+                            "lessonData": lesson_data
+                        })
+                    
+                    response = jsonify({
+                        "history": history_items,
+                        "user_authenticated": True
                     })
-                
-                return jsonify({
-                    "history": history_items,
-                    "user_authenticated": True
-                })
+                    
+                    # Set cache control headers
+                    response.headers['Cache-Control'] = 'private, max-age=30'
+                    response.headers['ETag'] = str(hash(str(history_items)))
+                    return response
         
         # For anonymous users, fetch from session storage
         else:
+            # Check if we have history for this IP in our cache
+            cache_key = f"anon:{ip_address}"
+            if cache_key in anonymous_history_cache:
+                # Check if the cache is still valid (less than 30 seconds old)
+                cache_time, history = anonymous_history_cache[cache_key]
+                if (datetime.now() - cache_time).total_seconds() < 30:
+                    logger.info(f"Using cached history for anonymous user {ip_address}")
+                    return jsonify({
+                        "history": history,
+                        "user_authenticated": False,
+                        "cache_hit": True
+                    })
+            
             # We store history in session for anonymous users
             history = session.get('anonymous_history', [])
+            logger.info(f"Returning {len(history)} history items from session for anonymous user")
             
-            return jsonify({
+            # Cache the result for this IP address
+            anonymous_history_cache[cache_key] = (datetime.now(), history)
+            
+            # Ensure each history item has a unique ID
+            for index, item in enumerate(history):
+                if 'id' not in item:
+                    item['id'] = f"session-{index}"
+            
+            response = jsonify({
                 "history": history,
                 "user_authenticated": False
             })
+            
+            # Set cache control headers for anonymous users
+            response.headers['Cache-Control'] = 'private, max-age=30'
+            response.headers['ETag'] = str(hash(str(history)))
+            return response
         
     except Exception as e:
         logger.error(f"Error fetching user history: {e}")
@@ -151,62 +209,95 @@ def save_history_item():
         resource_type = data.get("resourceType", "PRESENTATION")
         lesson_data = data.get("lessonData", {})
         
+        logger.info(f"Saving history item: {title}, type: {resource_type}")
+        
         # Get user info from session if available
         user_info = session.get('user_info', {})
         user_email = user_info.get('email')
         
         # For logged-in users, save to database
         if user_email:
+            logger.info(f"Saving history for authenticated user: {user_email}")
+            
             # Get user ID
             user = get_user_by_email(user_email)
             if not user:
+                logger.error(f"User not found: {user_email}")
                 return jsonify({"error": "User not found"}), 404
             
             user_id = user["id"]
             
-            with get_db_cursor() as cursor:
-                # Check which timestamp column exists
-                cursor.execute("""
-                    SELECT column_name 
-                    FROM information_schema.columns 
-                    WHERE table_schema = 'public' 
-                    AND table_name = 'user_activities'
-                    AND column_name IN ('activity_time', 'created_at');
-                """)
-                timestamp_cols = [row['column_name'] for row in cursor.fetchall()]
-                
-                # Determine which timestamp column to use
-                timestamp_col = 'activity_time' if 'activity_time' in timestamp_cols else 'created_at'
-                
-                # Insert query with the appropriate timestamp column
-                query = f"""
-                    INSERT INTO user_activities (user_id, activity, lesson_data, {timestamp_col})
-                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-                    RETURNING id
-                """
-                
-                # Convert lesson_data to JSON string if it's not already
-                if isinstance(lesson_data, dict):
-                    lesson_data_json = json.dumps(lesson_data)
-                else:
-                    lesson_data_json = lesson_data
-                
-                cursor.execute(query, (
-                    user_id, 
-                    f"Created {resource_type}", 
-                    lesson_data_json
-                ))
-                
-                result = cursor.fetchone()
-                
-                return jsonify({
-                    "success": True,
-                    "id": result["id"] if result else None,
-                    "message": "History item saved successfully"
-                })
+            with get_db_connection() as conn:
+                with conn.cursor(cursor_factory=get_db_cursor().cursor_factory) as cursor:
+                    # Check which timestamp column exists
+                    cursor.execute("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'user_activities'
+                        AND column_name IN ('activity_time', 'created_at');
+                    """)
+                    timestamp_cols = [row['column_name'] for row in cursor.fetchall()]
+                    
+                    # Determine which timestamp column to use
+                    timestamp_col = 'activity_time' if 'activity_time' in timestamp_cols else 'created_at'
+                    
+                    # Delete existing entries with the same title and resource type to avoid duplicates
+                    cursor.execute(f"""
+                        DELETE FROM user_activities 
+                        WHERE user_id = %s 
+                        AND lesson_data->>'lessonTopic' = %s
+                        AND lesson_data->>'resourceType' = %s
+                    """, (
+                        user_id,
+                        title,
+                        resource_type
+                    ))
+                    
+                    # Insert query with the appropriate timestamp column
+                    query = f"""
+                        INSERT INTO user_activities (user_id, activity, lesson_data, {timestamp_col})
+                        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                        RETURNING id
+                    """
+                    
+                    # Convert lesson_data to JSON string if it's not already
+                    if isinstance(lesson_data, dict):
+                        lesson_data_json = json.dumps(lesson_data)
+                    else:
+                        lesson_data_json = lesson_data
+                    
+                    cursor.execute(query, (
+                        user_id, 
+                        f"Created {resource_type}", 
+                        lesson_data_json
+                    ))
+                    
+                    result = cursor.fetchone()
+                    
+                    # Add this to commit the changes
+                    conn.commit()
+                    
+                    # Clear cache for this user/IP
+                    ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
+                    if ip_address:
+                        ip_address = ip_address.split(',')[0].strip()
+                    cache_key = f"anon:{ip_address}"
+                    if cache_key in anonymous_history_cache:
+                        del anonymous_history_cache[cache_key]
+                    
+                    logger.info(f"History item saved successfully with ID: {result['id'] if result else 'unknown'}")
+                    
+                    return jsonify({
+                        "success": True,
+                        "id": result["id"] if result else None,
+                        "message": "History item saved successfully"
+                    })
         
         # For anonymous users, save to session
         else:
+            logger.info("Saving history for anonymous user")
+            
             # Get IP address
             ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
             if ip_address:
@@ -216,17 +307,27 @@ def save_history_item():
             if 'anonymous_history' not in session:
                 session['anonymous_history'] = []
             
-            # Add new item to history
-            history_item = {
-                "id": len(session['anonymous_history']) + 1,
-                "title": title,
-                "types": [resource_type],
-                "date": "Today",
-                "lessonData": lesson_data
-            }
+            # Check if an item with the same title and type already exists
+            existing_items = [item for item in session['anonymous_history'] 
+                             if item.get('title') == title and item.get('types', [''])[0] == resource_type]
             
-            # Insert at beginning of list
-            session['anonymous_history'].insert(0, history_item)
+            if existing_items:
+                # Update the existing item instead of creating a new one
+                for item in existing_items:
+                    item['lessonData'] = lesson_data
+                    item['date'] = 'Today'  # Update the date
+            else:
+                # Add new item to history
+                history_item = {
+                    "id": f"session-{len(session['anonymous_history'])}",
+                    "title": title,
+                    "types": [resource_type],
+                    "date": "Today",
+                    "lessonData": lesson_data
+                }
+                
+                # Insert at beginning of list
+                session['anonymous_history'].insert(0, history_item)
             
             # Limit history to 10 items
             if len(session['anonymous_history']) > 10:
@@ -235,6 +336,12 @@ def save_history_item():
             # Save session
             session.modified = True
             
+            # Update the cache
+            cache_key = f"anon:{ip_address}"
+            anonymous_history_cache[cache_key] = (datetime.now(), session['anonymous_history'])
+            
+            logger.info(f"History item saved to session, total items: {len(session['anonymous_history'])}")
+            
             return jsonify({
                 "success": True,
                 "message": "History item saved to session"
@@ -242,5 +349,66 @@ def save_history_item():
         
     except Exception as e:
         logger.error(f"Error saving history item: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+@history_blueprint.route("/user/history/clear", methods=["POST"])
+def clear_history():
+    """Clear history for the current user or session."""
+    try:
+        # Get user info from session if available
+        user_info = session.get('user_info', {})
+        user_email = user_info.get('email')
+        
+        # For logged-in users, clear from database
+        if user_email:
+            logger.info(f"Clearing history for authenticated user: {user_email}")
+            
+            # Get user ID
+            user = get_user_by_email(user_email)
+            if not user:
+                logger.error(f"User not found: {user_email}")
+                return jsonify({"error": "User not found"}), 404
+            
+            user_id = user["id"]
+            
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        DELETE FROM user_activities
+                        WHERE user_id = %s
+                    """, (user_id,))
+                    
+                    # Add this to commit the changes
+                    conn.commit()
+                    
+                    return jsonify({
+                        "success": True,
+                        "message": "History cleared successfully"
+                    })
+        
+        # For anonymous users, clear from session
+        else:
+            logger.info("Clearing history for anonymous user")
+            
+            # Clear history from session
+            session['anonymous_history'] = []
+            session.modified = True
+            
+            # Clear cache for this IP
+            ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
+            if ip_address:
+                ip_address = ip_address.split(',')[0].strip()
+            cache_key = f"anon:{ip_address}"
+            if cache_key in anonymous_history_cache:
+                del anonymous_history_cache[cache_key]
+            
+            return jsonify({
+                "success": True,
+                "message": "History cleared from session"
+            })
+            
+    except Exception as e:
+        logger.error(f"Error clearing history: {e}")
         logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
