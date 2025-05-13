@@ -1,9 +1,11 @@
+# src/presentation_routes.py
 import os
 from flask import Blueprint, request, jsonify, send_file
 from src.config import logger, client
 from src.slide_processor import parse_outline_to_structured_content
 from src.presentation_generator import generate_presentation
 from src.utils.decorators import check_usage_limits
+from src.resource_handlers import PresentationHandler, LessonPlanHandler, WorksheetHandler, QuizHandler
 import json
 import traceback
 
@@ -131,54 +133,245 @@ def get_outline():
             f"Standards: {', '.join(selected_standards) if selected_standards else 'General Learning Objectives'}"
         ]
 
-        # Add resource-specific requirements
-        if resource_type == "Presentation":
+        # Add resource-specific requirements based on resource type
+        if resource_type.lower() == "presentation":
             requirements.extend([
                 f"Number of Slides: EXACTLY {num_slides}",
                 "Visual Requirements: Include clear, engaging visuals and diagrams for each slide"
+            ])
+        elif resource_type.lower() == "lesson_plan":
+            requirements.extend([
+                "Include detailed teaching procedures",
+                "Include assessment strategies",
+                "Include differentiation options"
+            ])
+        elif resource_type.lower() == "worksheet":
+            requirements.extend([
+                "Include a variety of question types",
+                "Include space for student responses",
+                "Ensure age-appropriate activities"
+            ])
+        elif resource_type.lower() == "quiz":
+            requirements.extend([
+                "Include a mix of multiple choice and short answer questions",
+                "Cover key concepts from the lesson",
+                "Include approximately 10 questions"
             ])
 
         # Build the final requirements string
         requirements_str = "\n".join(f"- {req}" for req in requirements if req)
 
-        # System instructions remain constant
-        system_instructions = {
-            "role": "system",
-            "content": """
-            YOU ARE A MASTER CLASSROOM CONTENT CREATOR. Your task is to produce lesson outlines that have two distinct parts:
-
-            1. The student-facing "Content" section, which provides the actual lesson material that will be presented to the students. This section must use clear, engaging, and age-appropriate language and include explanations, interactive questions, or narratives that students will see. DO NOT include meta-instructions or teaching guidance in this section.
-
-            2. The teacher-facing "Teacher Notes" section, which gives explicit, step-by-step instructions and strategies for the teacher to effectively deliver the lesson. This section may include prompts, activity instructions, assessment methods, and differentiation strategies.
+        # Set system instructions based on resource type
+        if resource_type.lower() == "presentation":
+            system_content = """
+            YOU ARE A MASTER CLASSROOM PRESENTATION CREATOR. Your task is to produce engaging and visually appealing slides for educational presentations.
 
             For each slide, use the exact format below:
 
             Slide X: [Engaging and Descriptive Slide Title]
             Content:
-            - [Bullet 1: Present a key piece of lesson content directly for the students. Use language that is clear, engaging, and suitable for their age. For example, "Hoy vamos a aprender a sumar usando imágenes de manzanas."]
-            - [Bullet 2: Continue with additional student-facing content such as examples, explanations, or interactive questions that the students will see.]
+            - [Bullet 1: Present a key piece of lesson content for the students in clear, engaging, age-appropriate language.]
+            - [Bullet 2: Continue with additional student-facing content such as examples, explanations, or interactive questions.]
             - [Bullet 3: Add more student-directed content to clearly convey the lesson material.]
-            (Include 3-5 bullet points that deliver the actual lesson content without giving teaching instructions.)
+            (Include 3-5 bullet points of actual content per slide)
+
+            IMPORTANT GUIDELINES:
+            1. Each slide MUST begin with "Slide X:" where X is the slide number
+            2. The total number of slides must match the specified count exactly
+            3. Use proper section headers as shown above
+            4. Create a logical flow from beginning to end
+            5. Make content visually engaging and suitable for the specified grade level
+            6. Keep bullet points concise and readable on a slide
+            """
+        elif resource_type.lower() == "lesson_plan":
+            system_content = """
+            YOU ARE A MASTER TEACHER AND LESSON PLAN CREATOR. Your task is to produce comprehensive, ready-to-use lesson plans.
+
+            Use the following structured format:
+
+            LESSON PLAN: [Descriptive Title]
+
+            OVERVIEW:
+            - Grade Level:
+            - Subject:
+            - Duration:
+            - Standards:
+            - Learning Objectives:
+
+            MATERIALS:
+            - [List all required materials and resources]
+
+            PROCEDURE:
+            1. Introduction/Hook (5-10 minutes):
+               - [Detailed instructions for opening the lesson]
+               - ENGAGEMENT: [Specific strategies to engage students]
+               - DIFFERENTIATION: [How to adapt the introduction for diverse learners]
+
+            2. Main Activity (20-30 minutes):
+               - [Step-by-step instructions for the main teaching portion]
+               - ASSESSMENT: [Formative assessment strategies during instruction]
+               - DIFFERENTIATION: [Modifications for different ability levels]
+
+            3. Guided Practice (15-20 minutes):
+               - [Detailed instructions for guided practice]
+               - ASSESSMENT: [How to check understanding during practice]
+               - DIFFERENTIATION: [Adjustments for different learning needs]
+
+            4. Independent Practice (10-15 minutes):
+               - [Instructions for independent work]
+               - ASSESSMENT: [How to monitor student progress]
+
+            5. Closure (5 minutes):
+               - [Instructions for wrapping up the lesson]
+               - ASSESSMENT: [Final check for understanding]
+
+            ASSESSMENT:
+            - Formative: [Specific strategies used throughout]
+            - Summative: [End-of-lesson or future assessment]
+
+            DIFFERENTIATION:
+            - For struggling learners: [Specific accommodations]
+            - For advanced learners: [Extension activities]
+            - For ELL students: [Language supports]
+
+            ADDITIONAL NOTES:
+            - [Any other important information for the teacher]
+
+            IMPORTANT GUIDELINES:
+            1. Make the lesson plan detailed, practical, and immediately usable
+            2. Include specific timing suggestions for each section
+            3. Provide concrete examples, questions, and prompts
+            4. Clearly indicate assessment and differentiation strategies
+            5. Align all content to the specified grade level, subject, and standards
+            """
+        elif resource_type.lower() == "worksheet":
+            system_content = """
+            YOU ARE A MASTER WORKSHEET CREATOR. Your task is to produce educational worksheets that reinforce learning objectives.
+
+            Format each worksheet as follows:
+
+            WORKSHEET: [Descriptive Title]
+
+            Name: _________________________________ Date: _________________
+
+            Instructions: [Clear directions for completing the worksheet]
+
+            PART 1: [Topic or Skill]
+            1. [Question or activity with appropriate space for response]
+            2. [Question or activity with appropriate space for response]
+            3. [Question or activity with appropriate space for response]
+
+            PART 2: [Topic or Skill]
+            4. [Question or activity with appropriate space for response]
+            5. [Question or activity with appropriate space for response]
+            6. [Question or activity with appropriate space for response]
+
+            PART 3: [Application or Challenge]
+            7. [More complex question or activity with ample space for response]
+            8. [More complex question or activity with ample space for response]
+
+            IMPORTANT GUIDELINES:
+            1. Create clear, age-appropriate questions and activities
+            2. Include a variety of question types (multiple choice, fill-in-blank, short answer)
+            3. Progress from easier to more challenging questions
+            4. Provide sufficient space for student responses
+            5. Align all content to the specified grade level, subject, and standards
+            6. Include 8-12 questions total, organized in logical sections
+            7. Make the worksheet visually clean and well-organized
+            """
+        elif resource_type.lower() == "quiz":
+            system_content = """
+            YOU ARE A MASTER ASSESSMENT CREATOR. Your task is to produce effective quizzes and tests for educational use.
+
+            Format the quiz/test as follows:
+
+            QUIZ/TEST: [Descriptive Title]
+
+            Name: _________________________________ Date: _________________
+
+            Instructions: Answer all questions to the best of your ability.
+
+            MULTIPLE CHOICE (2 points each)
+            1. [Question]
+               a) [Option]
+               b) [Option]
+               c) [Option]
+               d) [Option]
+
+            2. [Question]
+               a) [Option]
+               b) [Option]
+               c) [Option]
+               d) [Option]
+
+            3. [Question]
+               a) [Option]
+               b) [Option]
+               c) [Option]
+               d) [Option]
+
+            TRUE/FALSE (1 point each)
+            4. [Statement] ____________
+            5. [Statement] ____________
+            6. [Statement] ____________
+
+            SHORT ANSWER (3 points each)
+            7. [Question requiring brief explanation]
+            _______________________________________________________________
+            _______________________________________________________________
+
+            8. [Question requiring brief explanation]
+            _______________________________________________________________
+            _______________________________________________________________
+
+            EXTENDED RESPONSE (5 points)
+            9. [Question requiring more detailed explanation]
+            _______________________________________________________________
+            _______________________________________________________________
+            _______________________________________________________________
+            _______________________________________________________________
+
+            IMPORTANT GUIDELINES:
+            1. Create approximately 10 questions total
+            2. Include a mix of question types (multiple choice, true/false, short answer)
+            3. Ensure questions assess different cognitive levels
+            4. Make questions clear, specific, and free of ambiguity
+            5. Align all content to the specified grade level, subject, and standards
+            6. Provide adequate space for written responses
+            7. Create an answer key in a separate section at the end
+            """
+        else:
+            # Default system instructions for backward compatibility
+            system_content = """
+            YOU ARE A MASTER CLASSROOM CONTENT CREATOR. Your task is to produce comprehensive lesson outlines.
+
+            For each slide, use the exact format below:
+
+            Slide X: [Engaging and Descriptive Slide Title]
+            Content:
+            - [Bullet 1: Present key content in clear, engaging language.]
+            - [Bullet 2: Continue with additional content, examples, or questions.]
+            - [Bullet 3: Add more content to clearly convey the lesson material.]
 
             Teacher Notes:
-            - ENGAGEMENT: Provide detailed, step-by-step instructions for engaging students. For example, "Invite students to share what they see in the images, then ask, '¿Qué sucede cuando juntamos dos grupos de manzanas?'"
-            - ASSESSMENT: Describe precise methods to check for understanding (e.g., ask targeted questions or use quick formative assessments).
-            - DIFFERENTIATION: Offer specific strategies for adapting the lesson to meet diverse learner needs, such as modifications or extension tasks.
+            - ENGAGEMENT: Provide detailed instructions for engaging students.
+            - ASSESSMENT: Describe methods to check for understanding.
+            - DIFFERENTIATION: Offer strategies for adapting the lesson.
 
             Visual Elements:
-            - List explicit recommendations for visual aids or multimedia (e.g., images, diagrams, animations) that support the student content on the slide.
+            - List visual aids or multimedia that support the content.
 
-            Additional Directives:
-            1. Each slide MUST begin with "Slide X:" where X is the slide number, and the total number of slides must match the specified count exactly.
-            2. The section headers "Content:", "Teacher Notes:", and "Visual Elements:" must appear exactly as shown.
-            3. Use a hyphen (-) followed by a space for every bullet point.
-            4. Do NOT include any extra headings (such as "Introduction" or "Conclusion"), disclaimers, or placeholder markers.
-            5. Ensure that the "Content" section is purely student-facing material that presents the lesson narrative, while all teaching instructions are confined to the "Teacher Notes" section.
-            6. The lesson must flow logically from one slide to the next, using concrete, real-world examples that resonate with the specified grade level.
-
-            FINAL GOAL:
-            Produce a comprehensive lesson outline that separates engaging, student-directed content from clear, actionable teacher instructions. The student content must be directly understandable and engaging, while the teacher notes guide the educator on how to deliver the lesson effectively. The outline must be ready for immediate classroom use with ZERO additional preparation.
+            ADDITIONAL DIRECTIVES:
+            1. Each slide must begin with "Slide X:" where X is the slide number
+            2. Use proper section headers as shown above
+            3. Use bullet points for all lists
+            4. Create a logical flow from beginning to end
+            5. Make content appropriate for the specified grade level
             """
+
+        system_instructions = {
+            "role": "system",
+            "content": system_content
         }
 
         # Prepare user prompt based on whether this is a regeneration request
@@ -195,7 +388,7 @@ def get_outline():
             1. Review and preserve successful elements from the previous outline
             2. Update content based on the following modification request:
             {custom_prompt}
-            3. Maintain the same number of slides: {num_slides}
+            3. Maintain the same number of slides/sections: {num_slides}
             4. Keep the same language: {language}
             5. Ensure any new content aligns with the grade level and standards
             
@@ -211,7 +404,7 @@ def get_outline():
         else:
             # Regular outline generation prompt
             user_prompt = f"""
-            Create a comprehensive lesson outline with the following specifications:
+            Create a comprehensive {resource_type} with the following specifications:
             {requirements_str}
 
             Additional Requirements:
@@ -240,16 +433,17 @@ def get_outline():
             # Validate the structured content
             for slide in structured_content:
                 if not slide.get('content') and not (slide.get('left_column') or slide.get('right_column')):
-                    raise ValueError(f"Slide '{slide.get('title')}' has no content")
+                    slide['content'] = ["Content placeholder"]  # Add placeholder if missing
                 if not slide.get('teacher_notes'):
-                    raise ValueError(f"Slide '{slide.get('title')}' has no teacher notes")
+                    slide['teacher_notes'] = ["Notes placeholder"]  # Add placeholder if missing
                 if not slide.get('visual_elements'):
-                    logger.warning(f"Slide '{slide.get('title')}' has no visual elements")
+                    slide['visual_elements'] = []  # Empty is okay for some resource types
 
             # Return the response
             return jsonify({
                 "messages": [outline_text],
-                "structured_content": structured_content
+                "structured_content": structured_content,
+                "resource_type": resource_type
             })
 
         except Exception as ai_error:
@@ -269,7 +463,7 @@ def get_outline():
             "details": str(e),
             "trace": traceback.format_exc()
         }), 500
-         
+
 @presentation_blueprint.route("/generate", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='download')
 def generate_presentation_endpoint():
@@ -295,32 +489,54 @@ def generate_presentation_endpoint():
     # Extract and validate the data
     outline_text = data.get('lesson_outline', '')
     structured_content = data.get('structured_content')
+    resource_type = data.get('resource_type', 'presentation').lower()
     
     if not structured_content:
         logger.error("No structured content provided")
         return jsonify({"error": "No structured content provided"}), 400
     
-    logger.info(f"Processing generate request with {len(structured_content)} slides")
+    logger.info(f"Processing generate request with {len(structured_content)} slides/sections for resource type: {resource_type}")
     
     try:
-        # Generate the presentation
-        presentation_path = generate_presentation(outline_text, structured_content)
-        logger.info(f"Generated presentation at: {presentation_path}")
+        # Choose the correct handler based on resource type
+        handler_map = {
+            "presentation": PresentationHandler,
+            "lesson_plan": LessonPlanHandler,
+            "worksheet": WorksheetHandler,
+            "quiz": QuizHandler
+        }
+        
+        # Default to presentation for backward compatibility
+        handler_class = handler_map.get(resource_type, PresentationHandler)
+        handler = handler_class(structured_content)
+        
+        # Generate the appropriate resource
+        resource_path = handler.generate()
+        logger.info(f"Generated resource at: {resource_path}")
         
         # Verify the file exists and has content
-        if not os.path.exists(presentation_path):
-            raise FileNotFoundError(f"Generated file not found at {presentation_path}")
+        if not os.path.exists(resource_path):
+            raise FileNotFoundError(f"Generated file not found at {resource_path}")
         
-        file_size = os.path.getsize(presentation_path)
-        logger.info(f"Presentation file size: {file_size} bytes")
+        file_size = os.path.getsize(resource_path)
+        logger.info(f"Resource file size: {file_size} bytes")
         
         if file_size == 0:
             raise ValueError("Generated file is empty")
         
+        # Determine MIME type based on file extension
+        _, file_extension = os.path.splitext(resource_path)
+        mime_types = {
+            '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.pdf': 'application/pdf'
+        }
+        mime_type = mime_types.get(file_extension, 'application/octet-stream')
+        
         # Prepare headers for file download
         headers = {
-            'Content-Type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'Content-Disposition': f'attachment; filename=lesson_presentation.pptx',
+            'Content-Type': mime_type,
+            'Content-Disposition': f'attachment; filename=lesson_{resource_type}{file_extension}',
             'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Content-Length',
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
@@ -328,19 +544,19 @@ def generate_presentation_endpoint():
         }
         
         # Use Flask's send_file function to return the file
-        logger.info(f"Sending file: {presentation_path}")
+        logger.info(f"Sending file: {resource_path}")
         return send_file(
-            presentation_path,
+            resource_path,
             as_attachment=True,
-            download_name="lesson_presentation.pptx",
-            mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            download_name=f"lesson_{resource_type}{file_extension}",
+            mimetype=mime_type,
             etag=False,  # Disable etag to prevent caching issues
             conditional=False,  # Don't use conditional responses
             last_modified=None  # Don't include last-modified header
         ), 200, headers
         
     except Exception as e:
-        logger.error(f"Error generating presentation: {e}", exc_info=True)
+        logger.error(f"Error generating resource: {e}", exc_info=True)
         return jsonify({
             "error": str(e),
             "error_type": type(e).__name__,
@@ -366,7 +582,11 @@ def after_request(response):
         response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         
         # If this is a file download, add additional headers
-        if response.mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        if response.mimetype in [
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/pdf'
+        ]:
             response.headers.add('Access-Control-Expose-Headers', 'Content-Disposition')
     
     return response
