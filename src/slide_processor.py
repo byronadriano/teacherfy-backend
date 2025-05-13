@@ -64,23 +64,35 @@ def clean_title(title):
     """Clean markdown formatting from title"""
     return title.replace('*', '').strip()
 
-def parse_outline_to_structured_content(outline_text):
-    """Parse the outline text into structured slide content."""
+def parse_outline_to_structured_content(outline_text, resource_type="PRESENTATION"):
+    """Parse the outline text into structured content."""
     slides = []
     current_slide = None
     current_section = None
+    
+    # Convert resource_type to uppercase for consistency
+    resource_type = resource_type.upper()
+    
+    # Determine the section identifiers based on resource type
+    if resource_type == "PRESENTATION":
+        section_header = "Slide "
+    elif resource_type in ["LESSON_PLAN", "WORKSHEET", "QUIZ"]:
+        section_header = "Section "
+    else:
+        # Default to Slide if unknown resource type
+        section_header = "Slide "
     
     # Split into lines and clean up
     lines = [line.strip() for line in outline_text.strip().split('\n') if line.strip()]
     
     for line_number, line in enumerate(lines):
         try:
-            # Check for slide header
-            if line.lower().startswith('slide '):
+            # Check for slide/section header
+            if line.lower().startswith(section_header.lower()):
                 if current_slide:
                     slides.append(current_slide)
                 
-                # Extract title after "Slide X:" format
+                # Extract title after "Slide X:" or "Section X:" format
                 title = line.split(':', 1)[1].strip() if ':' in line else line
                 title = title.strip().strip('"').strip("'")
                 
@@ -97,6 +109,15 @@ def parse_outline_to_structured_content(outline_text):
                     'left_column': [],
                     'right_column': []
                 }
+                
+                # Add resource-specific fields
+                if resource_type == "LESSON_PLAN":
+                    current_slide['duration'] = "N/A"
+                    current_slide['procedure'] = []
+                elif resource_type == "WORKSHEET" or resource_type == "QUIZ":
+                    current_slide['instructions'] = []
+                    current_slide['answers'] = []
+                
                 current_section = None
                 continue
             
@@ -109,6 +130,19 @@ def parse_outline_to_structured_content(outline_text):
                 continue
             elif line.lower().rstrip(':') == 'visual elements':
                 current_section = 'visual_elements'
+                continue
+            elif resource_type == "LESSON_PLAN" and line.lower().rstrip(':') == 'procedure':
+                current_section = 'procedure'
+                continue
+            elif line.lower().rstrip(':') == 'instructions':
+                current_section = 'instructions'
+                continue
+            elif line.lower().startswith('duration:'):
+                if current_slide:
+                    current_slide['duration'] = line.split(':', 1)[1].strip()
+                continue
+            elif line.lower().rstrip(':') == 'answers':
+                current_section = 'answers'
                 continue
             
             # Process content if we're in a section and have a slide
@@ -123,7 +157,7 @@ def parse_outline_to_structured_content(outline_text):
                 # Additional cleaning for teacher notes
                 if current_section == 'teacher_notes':
                     # Ensure proper formatting for ENGAGEMENT, ASSESSMENT, DIFFERENTIATION
-                    for prefix in ['ENGAGEMENT:', 'ASSESSMENT:', 'DIFFERENTIATION:']:
+                    for prefix in ['ENGAGEMENT:', 'ASSESSMENT:', 'DIFFERENTIATION:', 'PURPOSE:', 'ANSWERS:', 'SCORING:', 'ADMINISTRATION:']:
                         if prefix.lower() in cleaned_line.lower():
                             cleaned_line = prefix + cleaned_line.split(':', 1)[1].strip()
                             break
@@ -160,14 +194,14 @@ def parse_outline_to_structured_content(outline_text):
             logger.warning(f"Slide '{slide['title']}' has no content")
         if not slide['teacher_notes']:
             logger.warning(f"Slide '{slide['title']}' has no teacher notes")
-        if not slide['visual_elements']:
+        if resource_type == "PRESENTATION" and not slide['visual_elements']:
             logger.warning(f"Slide '{slide['title']}' has no visual elements")
     
     return slides
 
 def create_presentation(outline_json):
     """Create a PowerPoint presentation with enhanced formatting"""
-    template_path = os.path.join(os.path.dirname(__file__), 'templates', 'base_template_finalv3.pptx')
+    template_path = os.path.join(os.path.dirname(__file__), 'templates', 'base_template_finalv4.pptx')
     prs = Presentation(template_path)
     
     for slide_data in outline_json:

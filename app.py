@@ -7,7 +7,8 @@ from src.config import config, logger
 from src.auth_routes import auth_blueprint
 from src.slides_routes import slides_blueprint
 from src.presentation_routes import presentation_blueprint, load_example_outlines
-from src.history_routes import history_blueprint  # Import the new blueprint
+from src.history_routes import history_blueprint  # Import the history blueprint
+from src.resource_routes import resource_blueprint  # Import the new resource blueprint
 from src.db.database import test_connection
 
 def create_app():
@@ -57,11 +58,9 @@ def create_app():
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(slides_blueprint)
     app.register_blueprint(presentation_blueprint)
-    app.register_blueprint(history_blueprint)  # Register the new blueprint
-    
-    # Rest of your app.py code...
-    
-    # Existing code continues below...
+    app.register_blueprint(history_blueprint)
+    app.register_blueprint(resource_blueprint)  # Register the new resource blueprint
+
     @app.after_request
     def after_request(response):
         # Get the origin from the request
@@ -77,11 +76,21 @@ def create_app():
                 'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control',
             })
             
-            # For file downloads, add additional headers
-            if response.mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+            # For file downloads, add additional headers - now handles multiple MIME types
+            if response.mimetype in [
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/pdf'
+            ]:
+                file_ext = '.pptx'
+                if response.mimetype == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                    file_ext = '.docx'
+                elif response.mimetype == 'application/pdf':
+                    file_ext = '.pdf'
+                    
                 response.headers.update({
                     'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Content-Length',
-                    'Content-Disposition': 'attachment; filename=lesson_presentation.pptx',
+                    'Content-Disposition': f'attachment; filename=lesson_resource{file_ext}',
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
                     'Pragma': 'no-cache',
                     'Expires': '0'
@@ -141,29 +150,6 @@ def create_app():
             logger.error("Database connection failed")
             return {"error": "Database connection failed"}, 500
         return None
-
-    @app.after_request
-    def after_request(response):
-        origin = request.headers.get('Origin')
-        
-        if origin in config.CORS_ORIGINS:
-            response.headers.update({
-                'Access-Control-Allow-Origin': origin,
-                'Access-Control-Allow-Credentials': 'true',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control'
-            })
-            
-            if response.mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-                response.headers.update({
-                    'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Content-Length',
-                    'Content-Disposition': 'attachment; filename=lesson_presentation.pptx',
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0'
-                })
-        
-        return response
 
     # Initialize example outlines
     with app.app_context():
