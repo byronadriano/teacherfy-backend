@@ -12,21 +12,17 @@ resource_blueprint = Blueprint("resource_blueprint", __name__)
 @check_usage_limits(action_type='download')
 def generate_resource_endpoint(resource_type):
     """Generate a resource file based on the specified resource type."""
-    # Handle preflight requests
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
-    # Log details about the request for debugging
     logger.info(f"Generate {resource_type} request received from: {request.remote_addr}")
     
-    # Get JSON data, with fallback to form data if JSON parsing fails
     try:
         data = request.get_json()
     except Exception as e:
         logger.error(f"Error parsing JSON: {e}")
-        data = request.form.to_dict()  # Try form data as fallback
+        data = request.form.to_dict()
     
-    # Extract and validate the data
     structured_content = data.get('structured_content')
     
     if not structured_content:
@@ -36,8 +32,21 @@ def generate_resource_endpoint(resource_type):
     logger.info(f"Processing generate {resource_type} request with {len(structured_content)} slides/sections")
     
     try:
+        # Normalize resource type
+        normalized_type = resource_type.lower().replace(" ", "_").replace("/", "_")
+        if normalized_type in ['quiz', 'test', 'quiz_test']:
+            normalized_type = 'quiz'
+        elif normalized_type in ['worksheet', 'activity']:
+            normalized_type = 'worksheet'
+        elif normalized_type in ['lesson_plan', 'lesson']:
+            normalized_type = 'lesson_plan'
+        else:
+            normalized_type = 'presentation'
+            
+        logger.info(f"Normalized resource type: {normalized_type}")
+        
         # Get the appropriate handler
-        handler = get_resource_handler(resource_type, structured_content)
+        handler = get_resource_handler(normalized_type, structured_content)
         
         # Generate the resource
         file_path = handler.generate()
@@ -52,13 +61,10 @@ def generate_resource_endpoint(resource_type):
         
         mime_type = mime_types.get(file_extension, 'application/octet-stream')
         
-        # Use Flask's send_file function to return the file
-        logger.info(f"Sending file: {file_path}")
-        
         return send_file(
             file_path,
             as_attachment=True,
-            download_name=f"lesson_{resource_type}{file_extension}",
+            download_name=f"lesson_{normalized_type}{file_extension}",
             mimetype=mime_type,
             etag=False,
             conditional=False,
@@ -72,7 +78,7 @@ def generate_resource_endpoint(resource_type):
             "error_type": type(e).__name__,
             "stack_trace": traceback.format_exc()
         }), 500
-
+        
 # For backward compatibility - maintain the original /generate endpoint 
 # that defaults to presentation type
 @resource_blueprint.route("/generate", methods=["POST", "OPTIONS"])

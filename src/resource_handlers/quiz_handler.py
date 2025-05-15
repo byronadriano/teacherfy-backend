@@ -5,96 +5,101 @@ import docx
 import random
 from typing import Dict, Any, List, Optional
 from .base_handler import BaseResourceHandler
+import re
 
 logger = logging.getLogger(__name__)
 
+def clean_text(text):
+    """Clean up text for document output"""
+    if not text:
+        return ""
+    
+    # Remove markdown formatting
+    text = text.replace('**', '').replace('*', '')
+    
+    # Remove bullet points
+    text = re.sub(r'^[-•*]\s*', '', text)
+    
+    # Remove numbering
+    text = re.sub(r'^\d+\.\s*', '', text)
+    
+    return text.strip()
 class QuizHandler(BaseResourceHandler):
     """Handler for generating quizzes as Word documents"""
     
     def generate(self) -> str:
-        """Generate the quiz docx file and return the file path"""
+        """Generate a quiz docx file with proper formatting for quizzes"""
         # Create temp file
         temp_file = self.create_temp_file("docx")
         
         # Create a new document
         doc = docx.Document()
         
-        # Add a title
-        lesson_title = self.structured_content[0].get('title', 'Quiz')
-        doc.add_heading(f"Quiz: {lesson_title}", 0)
+        # Add title
+        title = self.structured_content[0].get('title', 'Quiz')
+        doc.add_heading(title, 0)
         
         # Add name and date fields
         doc.add_paragraph('Name: _________________________________ Date: _________________')
         
         # Add instructions
-        doc.add_paragraph('Instructions: Answer the following questions based on the lesson material.')
+        doc.add_paragraph('Instructions: Answer the following questions to the best of your ability.')
         
+        # Create question sections
         question_num = 1
-        
-        # Extract key content from all slides to create questions
-        multiple_choice_questions = []
-        short_answer_questions = []
-        
-        for slide in self.structured_content[1:]:  # Skip the title slide
-            title = slide.get('title', '')
-            content_items = slide.get('content', [])
-            
-            # Process each content item into potential questions
-            for item in content_items:
-                if len(item) < 10:  # Skip very short items
-                    continue
-                    
-                # Decide on question type - alternate between multiple choice and short answer
-                if random.choice([True, False]):
-                    multiple_choice_questions.append({
-                        'topic': title,
-                        'content': item
-                    })
-                else:
-                    short_answer_questions.append({
-                        'topic': title,
-                        'content': item
-                    })
-        
-        # Generate multiple choice questions
-        doc.add_heading('Multiple Choice Questions', level=1)
-        for i, q_data in enumerate(multiple_choice_questions[:5], 1):  # Limit to 5 questions
-            topic = q_data['topic']
-            content = q_data['content']
-            
-            # Generate question text
-            question = self.generate_multiple_choice_question(topic, content)
-            
-            # Add to document
-            doc.add_paragraph(f"{question_num}. {question['question']}")
-            
-            # Add options
-            for option in ['A', 'B', 'C', 'D']:
-                doc.add_paragraph(f"    {option}. {question['options'][option]}")
+        for slide in self.structured_content:
+            # Skip the title slide
+            if question_num == 1 and "key takeaway" in slide['title'].lower():
+                continue
                 
-            question_num += 1
+            # Add section title as heading
+            doc.add_heading(slide['title'], level=2)
+            
+            # Process the content as questions
+            for item in slide['content']:
+                # Format as a question
+                p = doc.add_paragraph()
+                p.add_run(f"{question_num}. ").bold = True
+                p.add_run(clean_text(item))
+                
+                # Add space for answer
+                doc.add_paragraph("_______________________________________________________")
+                
+                question_num += 1
+            
+            # Add answers section if available
+            if slide.get('answers'):
+                # Don't add directly to the quiz - save for the answer key
+                pass
         
-        # Generate short answer questions
-        doc.add_heading('Short Answer Questions', level=1)
-        for i, q_data in enumerate(short_answer_questions[:5], 1):  # Limit to 5 questions
-            topic = q_data['topic']
-            content = q_data['content']
-            
-            # Generate question text
-            question = self.generate_short_answer_question(topic, content)
-            
-            # Add to document
-            doc.add_paragraph(f"{question_num}. {question}")
-            # Add answer lines
-            doc.add_paragraph("_______________________________________________________")
-            doc.add_paragraph("_______________________________________________________")
-            
-            question_num += 1
+        # Add an answer key at the end
+        doc.add_page_break()
+        doc.add_heading("Answer Key", level=1)
+        
+        # Reset question number for answer key
+        question_num = 1
+        for slide in self.structured_content:
+            if question_num == 1 and "key takeaway" in slide['title'].lower():
+                continue
+                
+            for item in slide['content']:
+                p = doc.add_paragraph()
+                p.add_run(f"{question_num}. ").bold = True
+                p.add_run(clean_text(item))
+                
+                # Look for corresponding answer
+                if slide.get('answers') and len(slide['answers']) >= question_num:
+                    answer = slide['answers'][question_num - 1]
+                    p = doc.add_paragraph()
+                    p.add_run("   Answer: ").bold = True
+                    p.add_run(clean_text(answer))
+                
+                question_num += 1
         
         # Save the document
         doc.save(temp_file)
         
-        # Verify file was created and is not empty
+        # Verify file exists and has content
         if not os.path.exists(temp_file):
             raise FileNotFoundError(f"Failed to create quiz file at {temp_file}")
             

@@ -1,5 +1,8 @@
 # src/resource_types.py
 from enum import Enum, auto
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ResourceType(Enum):
     """Enum for different resource types"""
@@ -17,12 +20,18 @@ class ResourceType(Enum):
         # Normalize the string (lowercase, remove spaces)
         normalized = resource_type_str.lower().replace(" ", "_")
         
+        # Special case for Quiz/Test
+        if "quiz" in normalized or "test" in normalized:
+            logger.info(f"Resource type '{resource_type_str}' matched to QUIZ")
+            return cls.QUIZ
+        
         # Try to find a matching enum value
         for member in cls:
             if member.value == normalized or member.name.lower() == normalized:
                 return member
         
         # Default to presentation if no match
+        logger.warning(f"Unrecognized resource type: {resource_type_str}, defaulting to PRESENTATION")
         return cls.PRESENTATION
 
 def get_resource_handler(resource_type, structured_content):
@@ -48,6 +57,9 @@ def get_resource_handler(resource_type, structured_content):
     
     # Get the handler class
     handler_class = handlers.get(resource_type, PresentationHandler)
+    
+    # Log which handler is being used
+    logger.info(f"Using resource handler: {handler_class.__name__}")
     
     # Create and return an instance
     return handler_class(structured_content)

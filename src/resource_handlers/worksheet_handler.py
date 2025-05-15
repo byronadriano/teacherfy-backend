@@ -11,72 +11,49 @@ class WorksheetHandler(BaseResourceHandler):
     """Handler for generating worksheets as Word documents"""
     
     def generate(self) -> str:
-        """Generate the worksheet docx file and return the file path"""
+        """Generate a worksheet docx file that properly uses instructions"""
         # Create temp file
         temp_file = self.create_temp_file("docx")
         
         # Create a new document
         doc = docx.Document()
         
-        # Add a title 
-        doc.add_heading('Student Worksheet', 0)
-        
-        lesson_title = self.structured_content[0].get('title', 'Worksheet')
-        doc.add_heading(lesson_title, 1)
+        # Get title from first slide or use default
+        worksheet_title = self.structured_content[0].get('title', 'Worksheet')
+        doc.add_heading(worksheet_title, 0)
         
         # Add name and date fields
         doc.add_paragraph('Name: _________________________________ Date: _________________')
         
-        # Add a brief introduction based on the first slide content
-        if self.structured_content and len(self.structured_content) > 0:
-            first_slide = self.structured_content[0]
-            intro_text = "Introduction: "
+        # Process each section
+        for section in self.structured_content[1:]:  # Skip title slide
+            # Add section title
+            doc.add_heading(section.get('title', 'Section'), level=1)
             
-            if first_slide.get('content'):
-                for item in first_slide.get('content', []):
-                    if len(item) > 20:  # Only use substantial content
-                        intro_text += item
-                        break
+            # Add instructions if available
+            if section.get('instructions'):
+                p = doc.add_paragraph()
+                p.add_run('Instructions: ').bold = True
+                p.add_run(' '.join(section.get('instructions')))
             
-            doc.add_paragraph(intro_text)
-        
-        # Create exercise sections from each slide
-        for i, slide in enumerate(self.structured_content[1:], 1):  # Skip the title slide
-            section_title = slide.get('title', f'Section {i}')
-            doc.add_heading(section_title, level=2)
-            
-            # Add content as questions or exercises
-            content = slide.get('content', [])
-            
-            for j, item in enumerate(content, 1):
-                # Convert content into questions or activities
-                if '?' in item:
-                    # It's already a question
-                    doc.add_paragraph(f"{j}. {item}")
-                    # Add answer lines
-                    doc.add_paragraph("_______________________________________________________")
-                else:
-                    # Convert to a prompt or question
-                    doc.add_paragraph(f"{j}. Based on {section_title}, {self.create_prompt(item)}")
-                    # Add answer lines
+            # Add content/questions
+            for i, item in enumerate(section.get('content', []), 1):
+                p = doc.add_paragraph()
+                p.add_run(f"{i}. ").bold = True
+                p.add_run(item)
+                
+                # Add space for answers
+                doc.add_paragraph("_______________________________________________________")
+                
+                # For drawing activities, add more space
+                if "draw" in item.lower() or "dibuja" in item.lower():
                     doc.add_paragraph("_______________________________________________________")
                     doc.add_paragraph("_______________________________________________________")
-            
-            # Add visual element placeholders as drawing areas or diagrams
-            visual_elements = slide.get('visual_elements', [])
-            if visual_elements:
-                for element in visual_elements:
-                    if 'diagram' in element.lower() or 'draw' in element.lower():
-                        doc.add_paragraph(f"Draw: {element}")
-                        # Add a drawing area (just a paragraph with a border for now)
-                        p = doc.add_paragraph()
-                        p.text = "[Drawing Area]"
-                        # In a real implementation, you would add proper styling here
         
         # Save the document
         doc.save(temp_file)
         
-        # Verify file was created and is not empty
+        # Verify file exists and has content
         if not os.path.exists(temp_file):
             raise FileNotFoundError(f"Failed to create worksheet file at {temp_file}")
             

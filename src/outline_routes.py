@@ -6,6 +6,7 @@ from src.slide_processor import parse_outline_to_structured_content
 from src.utils.decorators import check_usage_limits
 import json
 import traceback
+import re
 
 outline_blueprint = Blueprint("outline_blueprint", __name__)
 
@@ -65,7 +66,10 @@ def get_system_prompt(resource_type="PRESENTATION"):
     Get the appropriate system prompt based on resource type.
     This ensures consistent formatting for each resource type.
     """
-    resource_type = resource_type.upper()
+    # Normalize to uppercase for consistency 
+    resource_type = resource_type.upper() if resource_type else "PRESENTATION"
+    
+    logger.info(f"get_system_prompt called with resource_type: {resource_type}")
     
     if resource_type == "PRESENTATION":
         return """
@@ -89,6 +93,68 @@ def get_system_prompt(resource_type="PRESENTATION"):
         7. Last slide should include key takeaways or review points
         8. DO NOT include Teacher Notes or Visual Elements sections
         9. Keep content concise and suitable for slide display
+        """
+    
+    elif resource_type == "QUIZ":
+        return """
+        YOU ARE A MASTER QUIZ AND TEST CREATOR. Your task is to produce educational assessments.
+
+        FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
+
+        Section X: [Clear, Descriptive Title]
+        
+        Content:
+        - [Question 1 with complete wording]
+        - [Question 2 with complete wording]
+        - [Additional questions as needed]
+        
+        Answers:
+        - [Answer for question 1]
+        - [Answer for question 2]
+        - [Additional answers]
+        
+        Teacher Notes:
+        - SCORING: [Point values and grading guidance]
+        - DIFFERENTIATION: [Modifications for different learners]
+
+        CRITICAL FORMATTING REQUIREMENTS:
+        1. ALWAYS start each section with "Section X:" where X is the section number
+        2. ALWAYS include the exact section headers: "Content:", "Answers:", and "Teacher Notes:"
+        3. ALWAYS use bullet points with a hyphen (-) for all list items
+        4. Create clear, unambiguous questions
+        5. Provide correct answers for all questions
+        6. Make questions appropriate for the grade level
+        """
+    
+    elif resource_type == "WORKSHEET":
+        return """
+        YOU ARE A MASTER WORKSHEET CREATOR. Your task is to produce educational worksheets that reinforce key concepts.
+
+        FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
+
+        Section X: [Clear, Descriptive Title]
+        
+        Instructions:
+        - [Clear directions for completing this section]
+        
+        Content:
+        - [Question or activity 1]
+        - [Question or activity 2]
+        - [Additional questions or activities]
+        
+        Teacher Notes:
+        - PURPOSE: [Learning objective for this section]
+        - ANSWERS: [Correct answers or evaluation criteria]
+        - DIFFERENTIATION: [Modifications for different learners]
+
+        CRITICAL FORMATTING REQUIREMENTS:
+        1. ALWAYS start each section with "Section X:" where X is the section number
+        2. ALWAYS include the exact section headers: "Instructions:", "Content:", and "Teacher Notes:"
+        3. ALWAYS use bullet points with a hyphen (-) for all list items
+        4. EXACTLY match the requested number of sections
+        5. Create age-appropriate questions/activities
+        6. Include a variety of question types
+        7. Arrange questions from easier to more challenging
         """
     
     elif resource_type == "LESSON_PLAN":
@@ -125,73 +191,35 @@ def get_system_prompt(resource_type="PRESENTATION"):
         7. Last section should provide closure/assessment
         """
     
-    elif resource_type == "WORKSHEET":
-        return """
-        YOU ARE A MASTER WORKSHEET CREATOR. Your task is to produce educational worksheets that reinforce key concepts.
-
-        FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
-
-        Section X: [Clear, Descriptive Title]
-        
-        Instructions:
-        - [Clear directions for completing this section]
-        
-        Content:
-        - [Question or activity 1]
-        - [Question or activity 2]
-        - [Additional questions or activities]
-        
-        Teacher Notes:
-        - PURPOSE: [Learning objective for this section]
-        - ANSWERS: [Correct answers or evaluation criteria]
-        - DIFFERENTIATION: [Modifications for different learners]
-
-        CRITICAL FORMATTING REQUIREMENTS:
-        1. ALWAYS start each section with "Section X:" where X is the section number
-        2. ALWAYS include the exact section headers: "Instructions:", "Content:", and "Teacher Notes:"
-        3. ALWAYS use bullet points with a hyphen (-) for all list items
-        4. EXACTLY match the requested number of sections
-        5. Create age-appropriate questions/activities
-        6. Include a variety of question types
-        7. Arrange questions from easier to more challenging
-        """
-    
-    elif resource_type == "QUIZ":
-        return """
-        YOU ARE A MASTER ASSESSMENT CREATOR. Your task is to produce effective quizzes that accurately assess learning.
-
-        FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
-
-        Section X: [Question Type Description]
-        
-        Content:
-        - [Question 1 with all components (options for multiple choice)]
-        - [Question 2 with all components]
-        - [Additional questions]
-        
-        Answers:
-        - [Answer for question 1]
-        - [Answer for question 2]
-        - [Additional answers]
-        
-        Teacher Notes:
-        - SCORING: [Point values and grading guidance]
-        - ADMINISTRATION: [Tips for quiz delivery and timing]
-
-        CRITICAL FORMATTING REQUIREMENTS:
-        1. ALWAYS start each section with "Section X:" where X is the section number
-        2. ALWAYS include the exact section headers: "Content:", "Answers:", and "Teacher Notes:"
-        3. ALWAYS use bullet points with a hyphen (-) for all list items
-        4. EXACTLY match the requested number of sections
-        5. Include a mix of question types
-        6. Create clear, unambiguous questions
-        7. Ensure questions have definite correct answers
-        """
-    
     else:
+        # Log if an unrecognized resource type is passed
+        logger.warning(f"Unrecognized resource type: {resource_type}, defaulting to PRESENTATION")
         # Default to presentation format if resource type not recognized
         return get_system_prompt("PRESENTATION")
     
+@outline_blueprint.route("/test_resource_type", methods=["GET"])
+def test_resource_type():
+    """Test endpoint to verify system prompt selection"""
+    resource_type = request.args.get('type', 'presentation')
+    normalized = resource_type.lower()
+    
+    if "quiz" in normalized or "test" in normalized:
+        normalized = "QUIZ"
+    elif "lesson" in normalized and "plan" in normalized:
+        normalized = "LESSON_PLAN"
+    elif "worksheet" in normalized:
+        normalized = "WORKSHEET"
+    else:
+        normalized = "PRESENTATION"
+    
+    prompt = get_system_prompt(normalized)
+    
+    return jsonify({
+        "original": resource_type,
+        "normalized": normalized,
+        "prompt_first_line": prompt.strip().split('\n')[1]
+    })
+
 @outline_blueprint.route("/outline", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='generation')
 def get_outline():
@@ -254,6 +282,28 @@ def get_outline():
         if not client:
             return jsonify({"error": "OpenAI client not initialized"}), 500
 
+        # Normalize resource type for consistency
+        normalized_resource_type = resource_type.lower()
+        logger.info(f"Original resource type: {resource_type}")
+        
+        # Handle quiz/test type normalization
+        if "quiz" in normalized_resource_type or "test" in normalized_resource_type:
+            normalized_resource_type = "QUIZ"
+            logger.info(f"Resource type normalized to QUIZ")
+        elif "lesson" in normalized_resource_type and "plan" in normalized_resource_type:
+            normalized_resource_type = "LESSON_PLAN"
+            logger.info(f"Resource type normalized to LESSON_PLAN")
+        elif "worksheet" in normalized_resource_type:
+            normalized_resource_type = "WORKSHEET"
+            logger.info(f"Resource type normalized to WORKSHEET")
+        elif "presentation" in normalized_resource_type:
+            normalized_resource_type = "PRESENTATION"
+            logger.info(f"Resource type normalized to PRESENTATION")
+        else:
+            # Default based on structure
+            normalized_resource_type = "PRESENTATION"
+            logger.info(f"Resource type defaulted to PRESENTATION")
+
         # Build requirements list
         requirements = [
             f"Resource Type: {resource_type}",
@@ -265,27 +315,44 @@ def get_outline():
         ]
 
         # Add resource-specific requirements
-        if resource_type.upper() == "PRESENTATION":
+        if normalized_resource_type == "PRESENTATION":
             requirements.extend([
                 f"Number of Slides: EXACTLY {num_slides}",
-                "Visual Requirements: Include clear, engaging visuals and diagrams for each slide"
+                "Visual Requirements: Include clear, engaging content for each slide"
             ])
-        else:
-            # For lesson plans, worksheets, and quizzes
+        elif normalized_resource_type == "QUIZ":
+            requirements.extend([
+                f"Number of Questions: Approximately {num_sections * 2}",
+                "Include a variety of question types",
+                "Provide an answer key",
+                "Make questions clear and appropriate for the grade level"
+            ])
+        elif normalized_resource_type == "WORKSHEET":
             requirements.extend([
                 f"Number of Sections: EXACTLY {num_sections}",
-                f"Format: Structure as {resource_type.lower()} sections rather than slides",
-                "Visual Requirements: Include clear, engaging visuals and diagrams as needed"
+                "Include clear instructions for each section",
+                "Include spaces for student responses",
+                "Ensure age-appropriate activities"
+            ])
+        elif normalized_resource_type == "LESSON_PLAN":
+            requirements.extend([
+                f"Number of Sections: EXACTLY {num_sections}",
+                "Include timing for each section",
+                "Include detailed procedures",
+                "Include assessment strategies"
             ])
 
         # Build the final requirements string
         requirements_str = "\n".join(f"- {req}" for req in requirements if req)
 
-        # Get system instructions based on resource type
+        # Get system instructions based on resource type - THIS IS THE KEY FIX
         system_instructions = {
             "role": "system",
-            "content": get_system_prompt(resource_type)
+            "content": get_system_prompt(normalized_resource_type)
         }
+        
+        # Log the system prompt being used
+        logger.info(f"Using system prompt for resource type: {normalized_resource_type}")
 
         # Prepare user prompt based on whether this is a regeneration request
         if is_regeneration and previous_outline:
@@ -301,7 +368,7 @@ def get_outline():
             1. Review and preserve successful elements from the previous outline
             2. Update content based on the following modification request:
             {custom_prompt}
-            3. Maintain the same number of {'slides' if resource_type.upper() == 'PRESENTATION' else 'sections'}: {num_slides if resource_type.upper() == 'PRESENTATION' else num_sections}
+            3. Maintain the same number of {'slides' if normalized_resource_type == 'PRESENTATION' else 'sections'}: {num_slides if normalized_resource_type == 'PRESENTATION' else num_sections}
             4. Keep the same language: {language}
             5. Ensure any new content aligns with the grade level and standards
             
@@ -317,7 +384,7 @@ def get_outline():
         else:
             # Regular outline generation prompt
             user_prompt = f"""
-            Create a comprehensive {resource_type.lower()} outline with the following specifications:
+            Create a comprehensive {resource_type} with the following specifications:
             {requirements_str}
 
             Additional Requirements:
@@ -340,8 +407,7 @@ def get_outline():
             logger.debug(f"Generated outline: {outline_text}")
 
             # Parse the outline into structured content
-            # We use the same parser for all resource types, as the format is similar enough
-            structured_content = parse_outline_to_structured_content(outline_text, resource_type)
+            structured_content = parse_outline_to_structured_content(outline_text, normalized_resource_type)
             logger.debug(f"Structured content: {structured_content}")
 
             # Validate the structured content
@@ -349,16 +415,23 @@ def get_outline():
                 title = item.get('title', '')
                 if not item.get('content') and not (item.get('left_column') or item.get('right_column')):
                     item['content'] = ["Content placeholder"]  # Add placeholder if missing
-                if not item.get('teacher_notes'):
-                    item['teacher_notes'] = ["Notes placeholder"]  # Add placeholder if missing
-                if not item.get('visual_elements'):
-                    item['visual_elements'] = []  # Empty is okay for some resource types
+                
+                # Resource-specific validation
+                if normalized_resource_type == "WORKSHEET" and not item.get('instructions'):
+                    # Try to find instructions in content
+                    instructions = [c for c in item.get('content', []) if any(w in c.lower() for w in ["instruc", "direc", "observa", "dibuja", "escribe", "draw", "write"])]
+                    if instructions:
+                        item['instructions'] = instructions
+                
+                if normalized_resource_type == "QUIZ" and not item.get('answers'):
+                    # Placeholder for answers if needed
+                    item['answers'] = []
 
             # Return the response
             return jsonify({
                 "messages": [outline_text],
                 "structured_content": structured_content,
-                "resource_type": resource_type
+                "resource_type": resource_type.lower()
             })
 
         except Exception as ai_error:
