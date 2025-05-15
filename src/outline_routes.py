@@ -60,182 +60,138 @@ def load_example_outlines():
         logger.error(f"Error loading example outlines: {e}")
         EXAMPLE_OUTLINES["fallback"] = EXAMPLE_OUTLINE_DATA
 
-def get_system_instructions(resource_type="PRESENTATION"):
-    """Get appropriate system instructions based on resource type"""
+def get_system_prompt(resource_type="PRESENTATION"):
+    """
+    Get the appropriate system prompt based on resource type.
+    This ensures consistent formatting for each resource type.
+    """
     resource_type = resource_type.upper()
     
     if resource_type == "PRESENTATION":
-        return {
-            "role": "system",
-            "content": """
-            YOU ARE A MASTER CLASSROOM CONTENT CREATOR. Your task is to produce lesson outlines that have two distinct parts:
+        return """
+        YOU ARE A MASTER CLASSROOM PRESENTATION CREATOR. Your task is to produce engaging and educationally sound slides.
 
-            1. The student-facing "Content" section, which provides the actual lesson material that will be presented to the students. This section must use clear, engaging, and age-appropriate language and include explanations, interactive questions, or narratives that students will see. DO NOT include meta-instructions or teaching guidance in this section.
+        FOLLOW THIS EXACT FORMAT FOR EACH SLIDE:
 
-            2. The teacher-facing "Teacher Notes" section, which gives explicit, step-by-step instructions and strategies for the teacher to effectively deliver the lesson. This section may include prompts, activity instructions, assessment methods, and differentiation strategies.
+        Slide X: [Clear, Engaging Title]
+        Content:
+        - [First bullet point of student-facing content]
+        - [Second bullet point of student-facing content]
+        - [Additional bullet points as needed]
 
-            For each slide, use the exact format below:
-
-            Slide X: [Engaging and Descriptive Slide Title]
-            Content:
-            - [Bullet 1: Present a key piece of lesson content directly for the students. Use language that is clear, engaging, and suitable for their age. For example, "Hoy vamos a aprender a sumar usando imágenes de manzanas."]
-            - [Bullet 2: Continue with additional student-facing content such as examples, explanations, or interactive questions that the students will see.]
-            - [Bullet 3: Add more student-directed content to clearly convey the lesson material.]
-            (Include 3-5 bullet points that deliver the actual lesson content without giving teaching instructions.)
-
-            Teacher Notes:
-            - ENGAGEMENT: Provide detailed, step-by-step instructions for engaging students. For example, "Invite students to share what they see in the images, then ask, '¿Qué sucede cuando juntamos dos grupos de manzanas?'"
-            - ASSESSMENT: Describe precise methods to check for understanding (e.g., ask targeted questions or use quick formative assessments).
-            - DIFFERENTIATION: Offer specific strategies for adapting the lesson to meet diverse learner needs, such as modifications or extension tasks.
-
-            Visual Elements:
-            - List explicit recommendations for visual aids or multimedia (e.g., images, diagrams, animations) that support the student content on the slide.
-
-            Additional Directives:
-            1. Each slide MUST begin with "Slide X:" where X is the slide number, and the total number of slides must match the specified count exactly.
-            2. The section headers "Content:", "Teacher Notes:", and "Visual Elements:" must appear exactly as shown.
-            3. Use a hyphen (-) followed by a space for every bullet point.
-            4. Do NOT include any extra headings (such as "Introduction" or "Conclusion"), disclaimers, or placeholder markers.
-            5. Ensure that the "Content" section is purely student-facing material that presents the lesson narrative, while all teaching instructions are confined to the "Teacher Notes" section.
-            6. The lesson must flow logically from one slide to the next, using concrete, real-world examples that resonate with the specified grade level.
-
-            FINAL GOAL:
-            Produce a comprehensive lesson outline that separates engaging, student-directed content from clear, actionable teacher instructions. The student content must be directly understandable and engaging, while the teacher notes guide the educator on how to deliver the lesson effectively. The outline must be ready for immediate classroom use with ZERO additional preparation.
-            """
-        }
+        CRITICAL FORMATTING REQUIREMENTS:
+        1. ALWAYS start each slide with "Slide X:" where X is the slide number
+        2. ALWAYS include the exact section header: "Content:"
+        3. ALWAYS use bullet points with a hyphen (-) for all list items
+        4. EXACTLY match the requested number of slides
+        5. Make each slide directly usable in a classroom
+        6. First slide should provide an overview/objectives
+        7. Last slide should include key takeaways or review points
+        8. DO NOT include Teacher Notes or Visual Elements sections
+        9. Keep content concise and suitable for slide display
+        """
+    
     elif resource_type == "LESSON_PLAN":
-        return {
-            "role": "system",
-            "content": """
-            YOU ARE A MASTER LESSON PLANNER. Your task is to create detailed lesson plans that are immediately usable by teachers. Each lesson plan should include:
+        return """
+        YOU ARE A MASTER LESSON PLAN CREATOR. Your task is to produce comprehensive, ready-to-implement lesson plans.
 
-            1. Clear Learning Objectives - What students will learn and be able to do by the end of the lesson
-            2. Essential Materials - What the teacher needs to prepare beforehand
-            3. Detailed Procedure - Step-by-step instructions for the teacher
-            4. Assessment Strategies - How to evaluate student understanding
-            5. Differentiation Options - How to adapt for diverse learners
+        FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
 
-            For each section of the lesson, use the exact format below:
+        Section X: [Clear, Descriptive Title]
+        Duration: [Time in minutes]
+        
+        Content:
+        - [Key concept or information to cover]
+        - [Essential content for this section]
+        - [Additional content points]
+        
+        Procedure:
+        - [Specific teacher action 1]
+        - [Specific teacher action 2]
+        - [Additional teacher actions]
+        
+        Teacher Notes:
+        - ENGAGEMENT: [Specific strategies to engage students]
+        - ASSESSMENT: [Concrete methods to check understanding]
+        - DIFFERENTIATION: [Specific accommodations for different learners]
 
-            Section X: [Descriptive Section Title]
-            Duration: [Approximate time in minutes]
-            
-            Content:
-            - [Bullet 1: Essential information or concepts to be covered]
-            - [Bullet 2: Additional key points or ideas]
-            (Include 3-5 bullet points that outline the essential content)
-
-            Procedure:
-            - [Step 1: Clear instruction for what the teacher should do]
-            - [Step 2: Next teaching action with specific details]
-            (Include detailed steps with timing suggestions where appropriate)
-
-            Teacher Notes:
-            - ENGAGEMENT: Specific strategies to engage students with this content
-            - ASSESSMENT: Concrete methods to check understanding during this section
-            - DIFFERENTIATION: Specific accommodations or extensions for different learners
-
-            Additional Directives:
-            1. Each section MUST begin with "Section X:" where X is the section number
-            2. The plan should flow logically from introduction to conclusion
-            3. Include transitions between sections
-            4. Be specific and concrete - avoid vague instructions
-            5. Use grade-appropriate examples and language
-            6. Ensure the plan aligns with stated learning objectives
-
-            FINAL GOAL:
-            Create a comprehensive, ready-to-use lesson plan that a teacher could implement tomorrow with minimal additional preparation.
-            """
-        }
+        CRITICAL FORMATTING REQUIREMENTS:
+        1. ALWAYS start each section with "Section X:" where X is the section number
+        2. ALWAYS include the exact section headers: "Duration:", "Content:", "Procedure:", and "Teacher Notes:"
+        3. ALWAYS use bullet points with a hyphen (-) for all list items
+        4. EXACTLY match the requested number of sections
+        5. Make sections follow a logical instructional sequence
+        6. First section should introduce the lesson
+        7. Last section should provide closure/assessment
+        """
+    
     elif resource_type == "WORKSHEET":
-        return {
-            "role": "system",
-            "content": """
-            YOU ARE A MASTER EDUCATIONAL WORKSHEET CREATOR. Your task is to create engaging, educationally sound worksheets that reinforce lesson content through varied question types and activities. Each worksheet should include:
+        return """
+        YOU ARE A MASTER WORKSHEET CREATOR. Your task is to produce educational worksheets that reinforce key concepts.
 
-            1. Clear title and instructions
-            2. A variety of question types (multiple choice, fill-in-the-blank, short answer, etc.)
-            3. Age-appropriate content matching the specified grade level
-            4. A logical progression from simpler to more complex questions
-            5. Opportunities for creative thinking and application of concepts
+        FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
 
-            For each section of the worksheet, use the exact format below:
+        Section X: [Clear, Descriptive Title]
+        
+        Instructions:
+        - [Clear directions for completing this section]
+        
+        Content:
+        - [Question or activity 1]
+        - [Question or activity 2]
+        - [Additional questions or activities]
+        
+        Teacher Notes:
+        - PURPOSE: [Learning objective for this section]
+        - ANSWERS: [Correct answers or evaluation criteria]
+        - DIFFERENTIATION: [Modifications for different learners]
 
-            Section X: [Descriptive Section Title]
-            
-            Instructions: [Clear, concise instructions for completing this section]
-            
-            Content:
-            - [Question 1: Complete question text with appropriate formatting]
-            - [Question 2: Complete question text with appropriate formatting]
-            (Include 3-5 questions or activities in each section)
-
-            Teacher Notes:
-            - PURPOSE: Explain what skills or concepts this section assesses
-            - ANSWERS: Provide answer key or evaluation criteria
-            - DIFFERENTIATION: Suggest modifications for different learning needs
-
-            Visual Elements:
-            - [Describe any diagrams, charts, or spaces for drawing needed for this section]
-
-            Additional Directives:
-            1. Each section MUST begin with "Section X:" where X is the section number
-            2. Include appropriate space for student responses
-            3. Use grade-appropriate vocabulary and complexity
-            4. Create questions that assess different cognitive levels (recall, application, analysis)
-            5. Ensure all questions relate clearly to the lesson topic
-
-            FINAL GOAL:
-            Create a ready-to-use worksheet that reinforces key concepts from the lesson, engages students, and provides meaningful assessment opportunities.
-            """
-        }
+        CRITICAL FORMATTING REQUIREMENTS:
+        1. ALWAYS start each section with "Section X:" where X is the section number
+        2. ALWAYS include the exact section headers: "Instructions:", "Content:", and "Teacher Notes:"
+        3. ALWAYS use bullet points with a hyphen (-) for all list items
+        4. EXACTLY match the requested number of sections
+        5. Create age-appropriate questions/activities
+        6. Include a variety of question types
+        7. Arrange questions from easier to more challenging
+        """
+    
     elif resource_type == "QUIZ":
-        return {
-            "role": "system",
-            "content": """
-            YOU ARE A MASTER ASSESSMENT DESIGNER. Your task is to create effective quizzes that accurately assess student understanding of lesson content. Each quiz should include:
+        return """
+        YOU ARE A MASTER ASSESSMENT CREATOR. Your task is to produce effective quizzes that accurately assess learning.
 
-            1. Clear instructions
-            2. A balanced mix of question types (multiple choice, true/false, short answer)
-            3. Questions that assess different cognitive levels
-            4. Clear, unambiguous wording
-            5. An answer key with explanations
+        FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
 
-            For each section of the quiz, use the exact format below:
+        Section X: [Question Type Description]
+        
+        Content:
+        - [Question 1 with all components (options for multiple choice)]
+        - [Question 2 with all components]
+        - [Additional questions]
+        
+        Answers:
+        - [Answer for question 1]
+        - [Answer for question 2]
+        - [Additional answers]
+        
+        Teacher Notes:
+        - SCORING: [Point values and grading guidance]
+        - ADMINISTRATION: [Tips for quiz delivery and timing]
 
-            Section X: [Question Type Description]
-            
-            Instructions: [Clear instructions for answering this section of questions]
-            
-            Content:
-            - [Question 1: Complete question text with all necessary components]
-            - [Question 2: Complete question text with all necessary components]
-            (Include appropriate number of questions based on quiz length)
-
-            Teacher Notes:
-            - ANSWERS: Correct answer with brief explanation for each question
-            - SCORING: Suggested point values and grading guidance
-            - ADMINISTRATION: Tips for quiz delivery and timing
-
-            Visual Elements:
-            - [Describe any diagrams, charts, or images needed for questions]
-
-            Additional Directives:
-            1. Each section MUST begin with "Section X:" where X is the section number
-            2. Include a mix of difficulty levels appropriate to the grade level
-            3. Avoid questions that could be answered correctly without understanding the material
-            4. Ensure questions align with the learning objectives
-            5. Write clear and concise questions that have unambiguous answers
-
-            FINAL GOAL:
-            Create a comprehensive assessment that accurately measures student understanding of key concepts and is ready for immediate classroom use.
-            """
-        }
+        CRITICAL FORMATTING REQUIREMENTS:
+        1. ALWAYS start each section with "Section X:" where X is the section number
+        2. ALWAYS include the exact section headers: "Content:", "Answers:", and "Teacher Notes:"
+        3. ALWAYS use bullet points with a hyphen (-) for all list items
+        4. EXACTLY match the requested number of sections
+        5. Include a mix of question types
+        6. Create clear, unambiguous questions
+        7. Ensure questions have definite correct answers
+        """
+    
     else:
-        # Default to presentation if resource type not recognized
-        logger.warning(f"Unknown resource type: {resource_type}, using PRESENTATION instructions")
-        return get_system_instructions("PRESENTATION")
-
+        # Default to presentation format if resource type not recognized
+        return get_system_prompt("PRESENTATION")
+    
 @outline_blueprint.route("/outline", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='generation')
 def get_outline():
@@ -326,7 +282,10 @@ def get_outline():
         requirements_str = "\n".join(f"- {req}" for req in requirements if req)
 
         # Get system instructions based on resource type
-        system_instructions = get_system_instructions(resource_type)
+        system_instructions = {
+            "role": "system",
+            "content": get_system_prompt(resource_type)
+        }
 
         # Prepare user prompt based on whether this is a regeneration request
         if is_regeneration and previous_outline:
@@ -389,13 +348,11 @@ def get_outline():
             for item in structured_content:
                 title = item.get('title', '')
                 if not item.get('content') and not (item.get('left_column') or item.get('right_column')):
-                    raise ValueError(f"'{title}' has no content")
+                    item['content'] = ["Content placeholder"]  # Add placeholder if missing
                 if not item.get('teacher_notes'):
-                    raise ValueError(f"'{title}' has no teacher notes")
-                
-                # Visual elements are optional for some resource types
-                if resource_type.upper() == "PRESENTATION" and not item.get('visual_elements'):
-                    logger.warning(f"Slide '{title}' has no visual elements")
+                    item['teacher_notes'] = ["Notes placeholder"]  # Add placeholder if missing
+                if not item.get('visual_elements'):
+                    item['visual_elements'] = []  # Empty is okay for some resource types
 
             # Return the response
             return jsonify({

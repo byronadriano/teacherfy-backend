@@ -1,7 +1,7 @@
 # src/resource_routes.py
 from flask import Blueprint, request, jsonify, send_file
 from src.config import logger
-from src.resource_types import ResourceType, get_resource_handler  # Fix this import
+from src.resource_types import ResourceType, get_resource_handler
 from src.utils.decorators import check_usage_limits
 import os
 import traceback
@@ -37,7 +37,7 @@ def generate_resource_endpoint(resource_type):
     
     try:
         # Get the appropriate handler
-        handler = get_resource_handler(resource_type, structured_content)  # Use the correct function
+        handler = get_resource_handler(resource_type, structured_content)
         
         # Generate the resource
         file_path = handler.generate()
@@ -72,3 +72,12 @@ def generate_resource_endpoint(resource_type):
             "error_type": type(e).__name__,
             "stack_trace": traceback.format_exc()
         }), 500
+
+# For backward compatibility - maintain the original /generate endpoint 
+# that defaults to presentation type
+@resource_blueprint.route("/generate", methods=["POST", "OPTIONS"])
+@check_usage_limits(action_type='download')
+def generate_presentation_endpoint():
+    """Generate a PowerPoint presentation (.pptx) for download."""
+    # Just delegate to the new endpoint with presentation type
+    return generate_resource_endpoint("presentation")

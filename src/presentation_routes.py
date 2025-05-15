@@ -8,6 +8,7 @@ from src.utils.decorators import check_usage_limits
 from src.resource_handlers import PresentationHandler, LessonPlanHandler, WorksheetHandler, QuizHandler
 import json
 import traceback
+from src.outline_routes import get_system_prompt
 
 presentation_blueprint = Blueprint("presentation_blueprint", __name__)
 
@@ -371,7 +372,7 @@ def get_outline():
 
         system_instructions = {
             "role": "system",
-            "content": system_content
+            "content": get_system_prompt(resource_type)
         }
 
         # Prepare user prompt based on whether this is a regeneration request
@@ -427,7 +428,7 @@ def get_outline():
             logger.debug(f"Generated outline: {outline_text}")
 
             # Parse the outline into structured content
-            structured_content = parse_outline_to_structured_content(outline_text)
+            structured_content = parse_outline_to_structured_content(outline_text, resource_type)
             logger.debug(f"Structured content: {structured_content}")
 
             # Validate the structured content

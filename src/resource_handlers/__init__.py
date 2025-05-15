@@ -1,3 +1,4 @@
+# src/resource_handlers/__init__.py
 from .presentation_handler import PresentationHandler
 from .lesson_plan_handler import LessonPlanHandler
 from .worksheet_handler import WorksheetHandler
