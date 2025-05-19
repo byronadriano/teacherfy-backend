@@ -13,3 +13,5 @@ __pycache__/
 *.log
 *teacherfy-backend/
 .env.development
+*test_downloads/
+*backup_20250519_111856/
