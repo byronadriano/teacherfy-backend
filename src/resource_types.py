@@ -18,12 +18,27 @@ class ResourceType(Enum):
             return cls.PRESENTATION  # Default
         
         # Normalize the string (lowercase, remove spaces)
-        normalized = resource_type_str.lower().replace(" ", "_")
+        normalized = resource_type_str.lower().replace(" ", "_").replace("/", "_")
         
         # Special case for Quiz/Test
         if "quiz" in normalized or "test" in normalized:
             logger.info(f"Resource type '{resource_type_str}' matched to QUIZ")
             return cls.QUIZ
+        
+        # Special case for Lesson Plan
+        if "lesson" in normalized and "plan" in normalized:
+            logger.info(f"Resource type '{resource_type_str}' matched to LESSON_PLAN")
+            return cls.LESSON_PLAN
+            
+        # Special case for Worksheet
+        if "worksheet" in normalized or "activity" in normalized:
+            logger.info(f"Resource type '{resource_type_str}' matched to WORKSHEET")
+            return cls.WORKSHEET
+            
+        # Special case for Presentation
+        if "presentation" in normalized or "slide" in normalized:
+            logger.info(f"Resource type '{resource_type_str}' matched to PRESENTATION")
+            return cls.PRESENTATION
         
         # Try to find a matching enum value
         for member in cls:

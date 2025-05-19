@@ -66,36 +66,26 @@ def get_system_prompt(resource_type="PRESENTATION"):
     Get the appropriate system prompt based on resource type.
     This ensures consistent formatting for each resource type.
     """
-    # Normalize to uppercase for consistency 
-    resource_type = resource_type.upper() if resource_type else "PRESENTATION"
+    # Normalize for consistency 
+    normalized_type = resource_type.upper() if resource_type else "PRESENTATION"
     
-    logger.info(f"get_system_prompt called with resource_type: {resource_type}")
+    logger.info(f"get_system_prompt called with resource_type: {normalized_type}")
     
-    if resource_type == "PRESENTATION":
-        return """
-        YOU ARE A MASTER CLASSROOM PRESENTATION CREATOR. Your task is to produce engaging and educationally sound slides.
-
-        FOLLOW THIS EXACT FORMAT FOR EACH SLIDE:
-
-        Slide X: [Clear, Engaging Title]
-        Content:
-        - [First bullet point of student-facing content]
-        - [Second bullet point of student-facing content]
-        - [Additional bullet points as needed]
-
-        CRITICAL FORMATTING REQUIREMENTS:
-        1. ALWAYS start each slide with "Slide X:" where X is the slide number
-        2. ALWAYS include the exact section header: "Content:"
-        3. ALWAYS use bullet points with a hyphen (-) for all list items
-        4. EXACTLY match the requested number of slides
-        5. Make each slide directly usable in a classroom
-        6. First slide should provide an overview/objectives
-        7. Last slide should include key takeaways or review points
-        8. DO NOT include Teacher Notes or Visual Elements sections
-        9. Keep content concise and suitable for slide display
-        """
+    # Handle various formats of resource types
+    if "QUIZ" in normalized_type or "TEST" in normalized_type:
+        normalized_type = "QUIZ"
+        logger.info(f"Resource type normalized to QUIZ")
+    elif "LESSON" in normalized_type and "PLAN" in normalized_type:
+        normalized_type = "LESSON_PLAN"
+        logger.info(f"Resource type normalized to LESSON_PLAN")
+    elif "WORKSHEET" in normalized_type or "ACTIVITY" in normalized_type:
+        normalized_type = "WORKSHEET"
+        logger.info(f"Resource type normalized to WORKSHEET")
+    elif "PRESENTATION" in normalized_type or "SLIDE" in normalized_type:
+        normalized_type = "PRESENTATION" 
+        logger.info(f"Resource type normalized to PRESENTATION")
     
-    elif resource_type == "QUIZ":
+    if normalized_type == "QUIZ":
         return """
         YOU ARE A MASTER QUIZ AND TEST CREATOR. Your task is to produce educational assessments.
 
@@ -126,7 +116,7 @@ def get_system_prompt(resource_type="PRESENTATION"):
         6. Make questions appropriate for the grade level
         """
     
-    elif resource_type == "WORKSHEET":
+    elif normalized_type == "WORKSHEET":
         return """
         YOU ARE A MASTER WORKSHEET CREATOR. Your task is to produce educational worksheets that reinforce key concepts.
 
@@ -157,7 +147,7 @@ def get_system_prompt(resource_type="PRESENTATION"):
         7. Arrange questions from easier to more challenging
         """
     
-    elif resource_type == "LESSON_PLAN":
+    elif normalized_type == "LESSON_PLAN":
         return """
         YOU ARE A MASTER LESSON PLAN CREATOR. Your task is to produce comprehensive, ready-to-implement lesson plans.
 
@@ -192,11 +182,30 @@ def get_system_prompt(resource_type="PRESENTATION"):
         """
     
     else:
-        # Log if an unrecognized resource type is passed
-        logger.warning(f"Unrecognized resource type: {resource_type}, defaulting to PRESENTATION")
-        # Default to presentation format if resource type not recognized
-        return get_system_prompt("PRESENTATION")
-    
+        # Default to presentation format
+        return """
+        YOU ARE A MASTER CLASSROOM PRESENTATION CREATOR. Your task is to produce engaging and educationally sound slides.
+
+        FOLLOW THIS EXACT FORMAT FOR EACH SLIDE:
+
+        Slide X: [Clear, Engaging Title]
+        Content:
+        - [First bullet point of student-facing content]
+        - [Second bullet point of student-facing content]
+        - [Additional bullet points as needed]
+
+        CRITICAL FORMATTING REQUIREMENTS:
+        1. ALWAYS start each slide with "Slide X:" where X is the slide number
+        2. ALWAYS include the exact section header: "Content:"
+        3. ALWAYS use bullet points with a hyphen (-) for all list items
+        4. EXACTLY match the requested number of slides
+        5. Make each slide directly usable in a classroom
+        6. First slide should provide an overview/objectives
+        7. Last slide should include key takeaways or review points
+        8. DO NOT include Teacher Notes or Visual Elements sections
+        9. Keep content concise and suitable for slide display
+        """
+        
 @outline_blueprint.route("/test_resource_type", methods=["GET"])
 def test_resource_type():
     """Test endpoint to verify system prompt selection"""

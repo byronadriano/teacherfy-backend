@@ -32,21 +32,11 @@ def generate_resource_endpoint(resource_type):
     logger.info(f"Processing generate {resource_type} request with {len(structured_content)} slides/sections")
     
     try:
-        # Normalize resource type
-        normalized_type = resource_type.lower().replace(" ", "_").replace("/", "_")
-        if normalized_type in ['quiz', 'test', 'quiz_test']:
-            normalized_type = 'quiz'
-        elif normalized_type in ['worksheet', 'activity']:
-            normalized_type = 'worksheet'
-        elif normalized_type in ['lesson_plan', 'lesson']:
-            normalized_type = 'lesson_plan'
-        else:
-            normalized_type = 'presentation'
-            
-        logger.info(f"Normalized resource type: {normalized_type}")
+        # Use the improved resource_types module
+        from src.resource_types import ResourceType, get_resource_handler
         
-        # Get the appropriate handler
-        handler = get_resource_handler(normalized_type, structured_content)
+        # Get the appropriate handler using the updated logic
+        handler = get_resource_handler(resource_type, structured_content)
         
         # Generate the resource
         file_path = handler.generate()
@@ -64,7 +54,7 @@ def generate_resource_endpoint(resource_type):
         return send_file(
             file_path,
             as_attachment=True,
-            download_name=f"lesson_{normalized_type}{file_extension}",
+            download_name=f"lesson_{handler.__class__.__name__.lower().replace('handler', '')}{file_extension}",
             mimetype=mime_type,
             etag=False,
             conditional=False,

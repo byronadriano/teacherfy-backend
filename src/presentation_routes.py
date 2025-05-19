@@ -499,16 +499,30 @@ def generate_presentation_endpoint():
     logger.info(f"Processing generate request with {len(structured_content)} slides/sections for resource type: {resource_type}")
     
     try:
-        # Choose the correct handler based on resource type
+        # Choose the correct handler based on resource type - IMPROVED MAPPING
         handler_map = {
             "presentation": PresentationHandler,
             "lesson_plan": LessonPlanHandler,
             "worksheet": WorksheetHandler,
-            "quiz": QuizHandler
+            "quiz": QuizHandler,
+            "test": QuizHandler,  # Map "test" to QuizHandler
         }
         
+        # Handle variations with slashes and spaces
+        normalized_type = resource_type.lower().replace(" ", "_").replace("/", "_")
+        
+        # Special cases
+        if "quiz" in normalized_type or "test" in normalized_type:
+            normalized_type = "quiz"
+        elif "lesson" in normalized_type and "plan" in normalized_type:
+            normalized_type = "lesson_plan"
+        elif "worksheet" in normalized_type or "activity" in normalized_type:
+            normalized_type = "worksheet"
+        
         # Default to presentation for backward compatibility
-        handler_class = handler_map.get(resource_type, PresentationHandler)
+        handler_class = handler_map.get(normalized_type, PresentationHandler)
+        logger.info(f"Selected handler class: {handler_class.__name__}")
+        
         handler = handler_class(structured_content)
         
         # Generate the appropriate resource
@@ -537,7 +551,7 @@ def generate_presentation_endpoint():
         # Prepare headers for file download
         headers = {
             'Content-Type': mime_type,
-            'Content-Disposition': f'attachment; filename=lesson_{resource_type}{file_extension}',
+            'Content-Disposition': f'attachment; filename=lesson_{normalized_type}{file_extension}',
             'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Content-Length',
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
@@ -549,7 +563,7 @@ def generate_presentation_endpoint():
         return send_file(
             resource_path,
             as_attachment=True,
-            download_name=f"lesson_{resource_type}{file_extension}",
+            download_name=f"lesson_{normalized_type}{file_extension}",
             mimetype=mime_type,
             etag=False,  # Disable etag to prevent caching issues
             conditional=False,  # Don't use conditional responses
@@ -562,7 +576,7 @@ def generate_presentation_endpoint():
             "error": str(e),
             "error_type": type(e).__name__,
             "stack_trace": traceback.format_exc()
-        }), 500
+        }), 500  
         
 # Helper route to handle CORS preflight for all endpoints
 @presentation_blueprint.after_request
