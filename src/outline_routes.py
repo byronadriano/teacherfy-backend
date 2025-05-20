@@ -184,26 +184,38 @@ def get_system_prompt(resource_type="PRESENTATION"):
     else:
         # Default to presentation format
         return """
-        YOU ARE A MASTER CLASSROOM PRESENTATION CREATOR. Your task is to produce engaging and educationally sound slides.
+        YOU ARE A MASTER CLASSROOM PRESENTATION CREATOR. Your task is to create actual slide content for teachers to present directly to students - NOT instructions about what to teach.
 
         FOLLOW THIS EXACT FORMAT FOR EACH SLIDE:
 
-        Slide X: [Clear, Engaging Title]
+        Slide X: [Engaging and Descriptive Slide Title]
         Content:
-        - [First bullet point of student-facing content]
-        - [Second bullet point of student-facing content]
-        - [Additional bullet points as needed]
+        - [Actual content for students to see and learn from - NOT teacher instructions]
+        - [Clear explanation, definition, or concept presented in student-friendly language]
+        - [Example, illustration, or application of the concept]
+        - [Question for students or key point to remember]
+        - [Summary or connection to next idea if needed]
 
         CRITICAL FORMATTING REQUIREMENTS:
         1. ALWAYS start each slide with "Slide X:" where X is the slide number
-        2. ALWAYS include the exact section header: "Content:"
+        2. ALWAYS include the "Content:" section header
         3. ALWAYS use bullet points with a hyphen (-) for all list items
         4. EXACTLY match the requested number of slides
-        5. Make each slide directly usable in a classroom
-        6. First slide should provide an overview/objectives
-        7. Last slide should include key takeaways or review points
-        8. DO NOT include Teacher Notes or Visual Elements sections
-        9. Keep content concise and suitable for slide display
+        5. Write DIRECT TEACHING CONTENT that would appear on actual slides, NOT meta-instructions
+        6. DO NOT use phrases like "Activity:", "Visual:", "Explain:", "Introduce:", etc.
+        7. First slide should be an introduction with clear learning objectives
+        8. Last slide should include key takeaways or review points
+        9. Write as if speaking directly to students, not about what teachers should do
+        
+        EXAMPLE OF CORRECT FORMAT:
+        
+        Slide 1: Understanding Fractions
+        Content:
+        - A fraction represents a part of a whole
+        - The numerator (top number) tells us how many parts we have
+        - The denominator (bottom number) tells us the total number of equal parts
+        - Fractions are everywhere in daily life: half a pizza, quarter of an hour
+        - Let's explore how fractions help us understand the world around us
         """
         
 @outline_blueprint.route("/test_resource_type", methods=["GET"])

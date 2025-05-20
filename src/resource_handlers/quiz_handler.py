@@ -27,17 +27,48 @@ def clean_text(text):
 class QuizHandler(BaseResourceHandler):
     """Handler for generating quizzes as Word documents"""
     
+    def _extract_questions_and_answers(self, content):
+        """Extract questions and answers from mixed content"""
+        questions = []
+        answers = []
+        
+        # Track if we're in an answer section
+        in_answer_section = False
+        
+        for line in content:
+            line = line.strip()
+            
+            # Skip empty lines
+            if not line:
+                continue
+                
+            # Check if this is an "Answers:" marker
+            if line.lower() == "answers:" or line.lower().startswith("answers:"):
+                in_answer_section = True
+                continue
+                
+            # If we're in the answer section, collect answers
+            if in_answer_section:
+                answers.append(line)
+            else:
+                # Otherwise it's a question
+                questions.append(line)
+        
+        return questions, answers
+    
     def generate(self) -> str:
-        """Generate a quiz docx file with proper formatting for quizzes"""
+        """Generate a quiz docx file with properly separated questions and answers"""
         # Create temp file
         temp_file = self.create_temp_file("docx")
         
         # Create a new document
         doc = docx.Document()
         
-        # Add title
-        title = self.structured_content[0].get('title', 'Quiz')
-        doc.add_heading(title, 0)
+        # Add title - use first section title or default
+        quiz_title = "Quiz/Test"
+        if self.structured_content and len(self.structured_content) > 0:
+            quiz_title = self.structured_content[0].get('title', 'Quiz/Test')
+        doc.add_heading(quiz_title, 0)
         
         # Add name and date fields
         doc.add_paragraph('Name: _________________________________ Date: _________________')
@@ -45,61 +76,70 @@ class QuizHandler(BaseResourceHandler):
         # Add instructions
         doc.add_paragraph('Instructions: Answer the following questions to the best of your ability.')
         
-        # Create question sections
-        question_num = 1
-        for slide in self.structured_content:
-            # Skip the title slide
-            if question_num == 1 and "key takeaway" in slide['title'].lower():
-                continue
-                
-            # Add section title as heading
-            doc.add_heading(slide['title'], level=2)
+        # Now we need to separate questions from answers across all sections
+        all_questions = []
+        all_answers = []
+        
+        # Process each section
+        for section in self.structured_content:
+            # Get this section's title
+            section_title = section.get('title', '')
             
-            # Process the content as questions
-            for item in slide['content']:
-                # Format as a question
+            # Get content items
+            content_items = section.get('content', [])
+            
+            # Extract questions and answers
+            questions, answers = self._extract_questions_and_answers(content_items)
+            
+            # Add to our lists, with section titles
+            if section_title:
+                all_questions.append((section_title, questions))
+                all_answers.append((section_title, questions, answers))
+        
+        # Now generate the quiz document with questions
+        question_num = 1
+        for section_title, questions in all_questions:
+            # Add section heading
+            doc.add_heading(section_title, level=1)
+            
+            # Add each question with space for answers
+            for question in questions:
                 p = doc.add_paragraph()
                 p.add_run(f"{question_num}. ").bold = True
-                p.add_run(clean_text(item))
+                p.add_run(question)
                 
                 # Add space for answer
                 doc.add_paragraph("_______________________________________________________")
-                
                 question_num += 1
-            
-            # Add answers section if available
-            if slide.get('answers'):
-                # Don't add directly to the quiz - save for the answer key
-                pass
         
-        # Add an answer key at the end
+        # Add answer key section after a page break
         doc.add_page_break()
         doc.add_heading("Answer Key", level=1)
         
-        # Reset question number for answer key
+        # Now add the answer key
         question_num = 1
-        for slide in self.structured_content:
-            if question_num == 1 and "key takeaway" in slide['title'].lower():
-                continue
-                
-            for item in slide['content']:
+        for section_title, questions, answers in all_answers:
+            # Add section heading
+            doc.add_heading(section_title, level=2)
+            
+            # Add each question with its answer
+            for i, question in enumerate(questions):
                 p = doc.add_paragraph()
                 p.add_run(f"{question_num}. ").bold = True
-                p.add_run(clean_text(item))
+                p.add_run(question)
                 
-                # Look for corresponding answer
-                if slide.get('answers') and len(slide['answers']) >= question_num:
-                    answer = slide['answers'][question_num - 1]
+                # Add the corresponding answer if available
+                if i < len(answers):
                     p = doc.add_paragraph()
                     p.add_run("   Answer: ").bold = True
-                    p.add_run(clean_text(answer))
+                    p.add_run(answers[i])
                 
                 question_num += 1
         
         # Save the document
         doc.save(temp_file)
         
-        # Verify file exists and has content
+        # Verify file was created and is not empty
         if not os.path.exists(temp_file):
             raise FileNotFoundError(f"Failed to create quiz file at {temp_file}")
             
@@ -110,54 +150,3 @@ class QuizHandler(BaseResourceHandler):
             raise ValueError("Generated quiz file is empty")
             
         return temp_file
-    
-    def generate_multiple_choice_question(self, topic: str, content: str) -> Dict[str, Any]:
-        """Generate a multiple choice question based on content"""
-        # This is a simplified version - in a real implementation, we would use
-        # more sophisticated techniques to generate good questions and distractors
-        
-        # Simple patterns for question generation
-        if "is" in content:
-            question_text = content.replace("is", "______ is")
-            correct_answer = content.split("is")[0].strip()
-        elif "are" in content:
-            question_text = content.replace("are", "______ are")
-            correct_answer = content.split("are")[0].strip()
-        else:
-            # Default format for other content
-            question_text = f"Which of the following best describes {topic}?"
-            correct_answer = content
-        
-        # Generate distractors (fake answers)
-        distractors = [
-            f"The opposite of {correct_answer}",
-            f"A different aspect of {topic}",
-            f"An unrelated concept to {topic}"
-        ]
-        
-        # Create options with the correct answer in a random position
-        options = {}
-        option_keys = ['A', 'B', 'C', 'D']
-        correct_position = random.randint(0, 3)
-        
-        for i, key in enumerate(option_keys):
-            if i == correct_position:
-                options[key] = correct_answer
-            else:
-                options[key] = distractors.pop(0)
-        
-        return {
-            'question': question_text,
-            'options': options,
-            'correct': option_keys[correct_position]
-        }
-    
-    def generate_short_answer_question(self, topic: str, content: str) -> str:
-        """Generate a short answer question based on content"""
-        # Simple patterns for question generation
-        if "defined as" in content.lower() or "refers to" in content.lower():
-            return f"Define or explain {topic}."
-        elif "example" in content.lower() or "instance" in content.lower():
-            return f"Provide an example of {topic}."
-        else:
-            return f"Explain the importance of {topic} in relation to {content.split()[0]}."

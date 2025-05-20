@@ -11,7 +11,7 @@ resource_blueprint = Blueprint("resource_blueprint", __name__)
 @resource_blueprint.route("/generate/<resource_type>", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='download')
 def generate_resource_endpoint(resource_type):
-    """Generate a resource file based on the specified resource type."""
+    """Generate a resource file based on the specified resource type with improved efficiency."""
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
@@ -29,19 +29,34 @@ def generate_resource_endpoint(resource_type):
         logger.error("No structured content provided")
         return jsonify({"error": "No structured content provided"}), 400
     
-    logger.info(f"Processing generate {resource_type} request with {len(structured_content)} slides/sections")
+    logger.info(f"Processing resource generation request for: {resource_type} with {len(structured_content)} items")
     
     try:
-        # Use the improved resource_types module
-        from src.resource_types import ResourceType, get_resource_handler
+        # Normalize resource type
+        normalized_resource_type = resource_type.lower().replace('-', '_').replace(' ', '_')
         
-        # Get the appropriate handler using the updated logic
-        handler = get_resource_handler(resource_type, structured_content)
+        # Better resource type normalization with improved mapping
+        if "quiz" in normalized_resource_type or "test" in normalized_resource_type:
+            handler_type = "quiz"
+        elif "lesson" in normalized_resource_type and "plan" in normalized_resource_type:
+            handler_type = "lesson_plan"
+        elif "worksheet" in normalized_resource_type or "activity" in normalized_resource_type:
+            handler_type = "worksheet"
+        else:
+            handler_type = "presentation"  # Default
+        
+        logger.info(f"Normalized resource type '{resource_type}' to handler type: {handler_type}")
+        
+        # Use the resource_types.py module for better handler selection
+        from src.resource_types import get_resource_handler
+        
+        # Get the appropriate handler
+        handler = get_resource_handler(handler_type, structured_content)
         
         # Generate the resource
         file_path = handler.generate()
         
-        # Get file extension for proper MIME type
+        # Get appropriate file extension
         _, file_extension = os.path.splitext(file_path)
         mime_types = {
             '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -51,10 +66,13 @@ def generate_resource_endpoint(resource_type):
         
         mime_type = mime_types.get(file_extension, 'application/octet-stream')
         
+        # Clean resource type for filename
+        clean_resource_type = handler_type.replace('_', '-')
+        
         return send_file(
             file_path,
             as_attachment=True,
-            download_name=f"lesson_{handler.__class__.__name__.lower().replace('handler', '')}{file_extension}",
+            download_name=f"lesson_{clean_resource_type}{file_extension}",
             mimetype=mime_type,
             etag=False,
             conditional=False,
@@ -68,7 +86,7 @@ def generate_resource_endpoint(resource_type):
             "error_type": type(e).__name__,
             "stack_trace": traceback.format_exc()
         }), 500
-        
+            
 # For backward compatibility - maintain the original /generate endpoint 
 # that defaults to presentation type
 @resource_blueprint.route("/generate", methods=["POST", "OPTIONS"])

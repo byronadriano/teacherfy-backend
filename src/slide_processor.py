@@ -55,6 +55,11 @@ def parse_outline_to_structured_content(outline_text, resource_type="PRESENTATIO
     resource_type = resource_type.upper() if resource_type else "PRESENTATION"
     logger.info(f"Parsing outline for resource type: {resource_type}")
     
+    # Special handling for different resource types
+    if resource_type == "QUIZ" or "TEST" in resource_type:
+        # Use the specialized quiz parser
+        return parse_quiz_test_format(outline_text)
+    
     # Dictionary of section identifiers for different resource types
     markers = {
         "PRESENTATION": {
@@ -438,3 +443,115 @@ def create_presentation(structured_content, resource_type="PRESENTATION"):
                     p.font.size = STYLE['sizes']['notes']
     
     return prs
+
+def parse_quiz_test_format(outline_text):
+    """
+    Specialized parser for quiz/test content that properly separates 
+    questions from answers
+    """
+    import re
+    
+    # First try to find distinct sections
+    sections = []
+    
+    # Look for section headers like "Section X:" 
+    section_headers = re.findall(r"(?:Section|SECTION)\s+(\d+):\s*([^\n]+)", outline_text)
+    
+    if section_headers:
+        # We have proper sections, process each one
+        for i, (section_num, section_title) in enumerate(section_headers):
+            # Find the content between this section header and the next (or the end)
+            start_pattern = f"(?:Section|SECTION)\\s+{section_num}:\\s*{re.escape(section_title)}"
+            
+            # If this is the last section, go to the end, otherwise to the next section
+            if i < len(section_headers) - 1:
+                next_num, next_title = section_headers[i+1]
+                end_pattern = f"(?:Section|SECTION)\\s+{next_num}:\\s*{re.escape(next_title)}"
+                section_content = re.search(
+                    f"{start_pattern}(.*?){end_pattern}", 
+                    outline_text, 
+                    re.DOTALL
+                )
+            else:
+                section_content = re.search(
+                    f"{start_pattern}(.*?)(?:$|Overall Test Instructions)", 
+                    outline_text, 
+                    re.DOTALL
+                )
+            
+            if not section_content:
+                continue
+                
+            content_text = section_content.group(1)
+            
+            # Create section structure
+            section = {
+                'title': f"Section {section_num}: {section_title.strip()}",
+                'layout': 'TITLE_AND_CONTENT',
+                'content': [],
+                'answers': [],
+                'teacher_notes': [],
+                'visual_elements': []
+            }
+            
+            # Find the questions (content)
+            content_match = re.search(r"Content:\s*(.*?)(?:Answers:|Teacher Notes:|$)", 
+                                     content_text, re.DOTALL)
+            if content_match:
+                # Extract bullet points or numbered items
+                items = re.findall(r"[-•*]?\s*(.*?)(?:\n|$)", content_match.group(1))
+                section['content'] = [item.strip() for item in items if item.strip()]
+            
+            # Find the answers 
+            answers_match = re.search(r"Answers:\s*(.*?)(?:Teacher Notes:|$)", 
+                                     content_text, re.DOTALL)
+            if answers_match:
+                # Extract bullet points or numbered items
+                items = re.findall(r"[-•*]?\s*(.*?)(?:\n|$)", answers_match.group(1))
+                section['answers'] = [item.strip() for item in items if item.strip()]
+            
+            # Find teacher notes
+            notes_match = re.search(r"Teacher Notes:\s*(.*?)(?:$)", 
+                                   content_text, re.DOTALL)
+            if notes_match:
+                # Extract bullet points or numbered items
+                items = re.findall(r"[-•*]?\s*(.*?)(?:\n|$)", notes_match.group(1))
+                section['teacher_notes'] = [item.strip() for item in items if item.strip()]
+            
+            sections.append(section)
+    
+    # If no sections were found, create one section with all content
+    if not sections:
+        # Create a basic section
+        section = {
+            'title': "Quiz Questions",
+            'layout': 'TITLE_AND_CONTENT',
+            'content': [],
+            'answers': [],
+            'teacher_notes': [],
+            'visual_elements': []
+        }
+        
+        # Extract all lines as content
+        lines = outline_text.strip().split('\n')
+        section['content'] = [line.strip() for line in lines if line.strip()]
+        
+        sections.append(section)
+    
+    # Look for general instructions and add them as teacher notes to the last section
+    instructions_match = re.search(
+        r"(?:Overall Test Instructions:|Test Scoring Guide:|Additional Teacher Notes:)(.*?)$", 
+        outline_text, 
+        re.DOTALL
+    )
+    
+    if instructions_match and sections:
+        instructions = instructions_match.group(1).strip()
+        for line in instructions.split('\n'):
+            line = line.strip()
+            if line and not line.startswith('---'):
+                line = re.sub(r'^[-•*]\s*', '', line)  # Remove bullet points
+                if line:
+                    sections[-1]['teacher_notes'].append(line)
+    
+    return sections
