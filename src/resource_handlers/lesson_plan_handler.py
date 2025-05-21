@@ -2,14 +2,14 @@
 import os
 import logging
 import docx
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from .base_handler import BaseResourceHandler
 
 logger = logging.getLogger(__name__)
 
 class LessonPlanHandler(BaseResourceHandler):
     """Handler for generating lesson plans as Word documents"""
-    
+
     def generate(self) -> str:
         """Generate the lesson plan docx file and return the file path"""
         # Create temp file
@@ -38,7 +38,7 @@ class LessonPlanHandler(BaseResourceHandler):
                 p.add_run(objective)
         else:
             doc.add_paragraph('No specific objectives found.')
-            
+                
         # Add materials section
         doc.add_heading('Materials', level=1)
         materials = []
@@ -55,13 +55,19 @@ class LessonPlanHandler(BaseResourceHandler):
                 p.add_run(material)
         else:
             doc.add_paragraph('Standard classroom materials.')
-        
+            
         # Add procedure section with details from each slide
         doc.add_heading('Procedure', level=1)
         
         for i, slide in enumerate(self.structured_content):
-            title = slide.get('title', f'Slide {i+1}')
+            title = slide.get('title', f'Section {i+1}')
             doc.add_heading(title, level=2)
+            
+            # Add duration if available
+            if slide.get('duration'):
+                p = doc.add_paragraph()
+                p.add_run('Duration: ').bold = True
+                p.add_run(slide.get('duration'))
             
             # Add content
             content = slide.get('content', [])
@@ -72,32 +78,26 @@ class LessonPlanHandler(BaseResourceHandler):
                     p.add_run('• ').bold = True
                     p.add_run(item)
             
-            # Add teacher notes as procedure steps
-            notes = slide.get('teacher_notes', [])
-            if notes:
-                doc.add_paragraph('Instructions:')
-                for note in notes:
+            # Add procedure steps
+            procedure = slide.get('procedure', [])
+            if procedure:
+                doc.add_paragraph('Procedure:')
+                for step in procedure:
+                    p = doc.add_paragraph()
+                    p.add_run('• ').bold = True
+                    p.add_run(step)
+        
+        # Add teacher notes section
+        doc.add_heading('Teacher Notes and Assessment', level=1)
+        for i, slide in enumerate(self.structured_content):
+            if slide.get('teacher_notes'):
+                doc.add_heading(slide.get('title', f'Section {i+1}'), level=2)
+                
+                for note in slide.get('teacher_notes'):
                     p = doc.add_paragraph()
                     p.add_run('• ').bold = True
                     p.add_run(note)
         
-        # Add assessment section
-        doc.add_heading('Assessment', level=1)
-        assessments = []
-        for slide in self.structured_content:
-            notes = slide.get('teacher_notes', [])
-            for note in notes:
-                if 'ASSESSMENT:' in note or 'assessment' in note.lower():
-                    assessments.append(note.replace('ASSESSMENT:', '').strip())
-        
-        if assessments:
-            for assessment in assessments:
-                p = doc.add_paragraph()
-                p.add_run('• ').bold = True
-                p.add_run(assessment)
-        else:
-            doc.add_paragraph('Formative assessment through questioning and observation.')
-            
         # Save the document
         doc.save(temp_file)
         

@@ -93,183 +93,95 @@ def parse_outline_to_structured_content(outline_text, resource_type="PRESENTATIO
     # Default to PRESENTATION if resource type not recognized
     resource_markers = markers.get(resource_type, markers["PRESENTATION"])
     
-    # Split into lines and clean up
-    lines = [line.strip() for line in outline_text.strip().split('\n') if line.strip()]
-    
-    # Initialize variables
+    # Split the outline text into sections based on the appropriate pattern
     sections = []
-    current_section = None
-    current_part = None
     
-    # Detect section header patterns
-    section_pattern = resource_markers.get("section_pattern")
-    if not section_pattern:
-        section_pattern = r"(?:SECTION|Section|SLIDE|Slide|PART|Part)\s+(\d+):\s*(.*)"
+    # Check if outline text starts with a title that's not a section
+    first_line = outline_text.strip().split('\n')[0].strip() if outline_text else ""
+    title_not_section = first_line and not re.match(resource_markers["section_pattern"], first_line)
     
-    # Process each line
-    for line in lines:
-        try:
-            # Check if this line starts a new section
-            section_match = re.match(section_pattern, line, re.IGNORECASE)
+    # Extract main title
+    main_title = first_line if title_not_section else "Generated Resource"
+    
+    # For worksheets, try to extract sections more precisely
+    if resource_type == "WORKSHEET":
+        # Look for section headers in the text
+        section_matches = re.finditer(r"\*\*Section\s+(\d+):\s*(.*?)\*\*", outline_text)
+        section_boundaries = []
+        
+        for match in section_matches:
+            section_num = match.group(1)
+            section_title = match.group(2).strip()
+            start_pos = match.start()
             
-            if section_match:
-                # Save previous section if exists
-                if current_section:
-                    sections.append(current_section)
+            section_boundaries.append((start_pos, section_num, section_title))
+        
+        if section_boundaries:
+            section_boundaries.sort()  # Sort by position in text
+            
+            # Process each section
+            for i, (start_pos, section_num, section_title) in enumerate(section_boundaries):
+                # Determine end position (start of next section or end of text)
+                if i < len(section_boundaries) - 1:
+                    end_pos = section_boundaries[i+1][0]
+                else:
+                    end_pos = len(outline_text)
                 
-                # Create new section with standard fields
-                section_title = section_match.group(2).strip()
-                if not section_title:
-                    section_title = f"Section {section_match.group(1)}"
+                section_text = outline_text[start_pos:end_pos].strip()
                 
-                current_section = {
+                # Extract instructions
+                instructions = []
+                instructions_match = re.search(r"Instructions:(.*?)(?:Content:|$)", section_text, re.DOTALL)
+                if instructions_match:
+                    instructions_raw = instructions_match.group(1).strip()
+                    instructions = [line.strip().strip('- ') for line in instructions_raw.split('\n') if line.strip()]
+                
+                # Extract content
+                content = []
+                content_match = re.search(r"Content:(.*?)(?:Teacher Notes:|$)", section_text, re.DOTALL)
+                if content_match:
+                    content_raw = content_match.group(1).strip()
+                    content = [line.strip().strip('- ') for line in content_raw.split('\n') if line.strip()]
+                
+                # Extract teacher notes
+                teacher_notes = []
+                notes_match = re.search(r"Teacher Notes:(.*?)(?:$)", section_text, re.DOTALL)
+                if notes_match:
+                    notes_raw = notes_match.group(1).strip()
+                    teacher_notes = [line.strip().strip('- ') for line in notes_raw.split('\n') if line.strip()]
+                
+                # Create section with all extracted content
+                section = {
                     'title': section_title,
                     'layout': "TITLE_AND_CONTENT",
-                    'content': [],
-                    'teacher_notes': [],
+                    'content': content,
+                    'instructions': instructions,
+                    'teacher_notes': teacher_notes,
                     'visual_elements': [],
                     'left_column': [],
                     'right_column': []
                 }
                 
-                # Add resource-specific fields
-                if resource_type == "WORKSHEET":
-                    current_section['instructions'] = []
-                elif resource_type == "QUIZ":
-                    current_section['answers'] = []
-                elif resource_type == "LESSON_PLAN":
-                    current_section['procedure'] = []
-                    current_section['duration'] = ""
-                
-                current_part = None
-                continue
-            
-            # Skip if no current section
-            if not current_section:
-                # Check if this might be a title
-                if not any(re.match(marker, line, re.IGNORECASE) 
-                          for marker in [v for k, v in resource_markers.items() if k.endswith('_header')]):
-                    # This might be a title, create a section for it
-                    current_section = {
-                        'title': line,
-                        'layout': "TITLE_AND_CONTENT",
-                        'content': [],
-                        'teacher_notes': [],
-                        'visual_elements': [],
-                        'left_column': [],
-                        'right_column': []
-                    }
-                    
-                    # Add resource-specific fields
-                    if resource_type == "WORKSHEET":
-                        current_section['instructions'] = []
-                    elif resource_type == "QUIZ":
-                        current_section['answers'] = []
-                    elif resource_type == "LESSON_PLAN":
-                        current_section['procedure'] = []
-                        current_section['duration'] = ""
-                
-                continue
-            
-            # Check for section headers
-            is_header = False
-            for header_name, pattern in resource_markers.items():
-                if header_name.endswith("_header") and re.match(pattern, line, re.IGNORECASE):
-                    header_type = header_name.replace("_header", "")
-                    current_part = header_type
-                    is_header = True
-                    break
-                    
-            if is_header:
-                continue
-            
-            # Process content based on current part
-            if current_part:
-                cleaned_line = line.lstrip('•-* ').strip()
-                if not cleaned_line:
-                    continue
-                
-                if current_part == "content":
-                    current_section['content'].append(cleaned_line)
-                elif current_part == "notes":
-                    current_section['teacher_notes'].append(cleaned_line)
-                elif current_part == "visual":
-                    current_section['visual_elements'].append(cleaned_line)
-                elif current_part == "instructions" and "instructions" in current_section:
-                    current_section['instructions'].append(cleaned_line)
-                elif current_part == "answers" and "answers" in current_section:
-                    current_section['answers'].append(cleaned_line)
-                elif current_part == "procedure" and "procedure" in current_section:
-                    current_section['procedure'].append(cleaned_line)
-            else:
-                # If line looks like a bullet point and we don't have a current part
-                if line.startswith(('-', '•', '*', '1.', '2.', '3.')):
-                    current_section['content'].append(line.lstrip('•-*123456789. ').strip())
-                else:
-                    # Try to infer content type based on line content
-                    lower_line = line.lower()
-                    if "purpose:" in lower_line or "assessment:" in lower_line or "differentiation:" in lower_line:
-                        current_section['teacher_notes'].append(line.strip())
-                    elif resource_type == "WORKSHEET" and any(word in lower_line for word in ["dibuja", "escribe", "observa", "draw", "write"]):
-                        current_section['instructions'].append(line.strip())
-                    elif resource_type == "QUIZ" and any(word in lower_line for word in ["answers:", "answer:", "respuesta:"]):
-                        if "answers" in current_section:
-                            current_section['answers'].append(line.strip())
-                        else:
-                            current_section['teacher_notes'].append(line.strip())
-                    else:
-                        current_section['content'].append(line.strip())
-        
-        except Exception as e:
-            logger.error(f"Error parsing line '{line}': {str(e)}")
-            continue
+                sections.append(section)
     
-    # Add the last section
-    if current_section:
-        sections.append(current_section)
-    
-    # If no valid sections were found, try a fallback approach
+    # If no sections were found using the specific extractor
     if not sections:
-        logger.warning(f"No valid {resource_type} sections found in outline. Attempting fallback parsing.")
-        sections = fallback_parsing(outline_text, resource_type)
-    
-    # Post-process sections for the specific resource type
-    for section in sections:
-        # Clean up any markdown formatting
-        section['title'] = clean_markdown_formatting(section['title'])
+        # Create a single section with the whole content
+        section = {
+            'title': main_title,
+            'layout': "TITLE_AND_CONTENT",
+            'content': [line.strip() for line in outline_text.split('\n') if line.strip()],
+            'teacher_notes': [],
+            'visual_elements': [],
+            'left_column': [],
+            'right_column': []
+        }
         
-        # Make sure we have content
-        if not section['content'] and not (section['left_column'] or section['right_column']):
-            section['content'] = ["Content placeholder"]
+        # For worksheets, add empty instructions field
+        if resource_type == "WORKSHEET":
+            section['instructions'] = []
         
-        # Check for resource-specific adjustments
-        if resource_type == "WORKSHEET" and not section.get('instructions'):
-            # Look for instruction-like content in the content
-            instructions = []
-            content = []
-            for item in section['content']:
-                if any(word in item.lower() for word in ["dibuja", "escribe", "observa", "draw", "write", "instruc"]):
-                    instructions.append(item)
-                else:
-                    content.append(item)
-            
-            if instructions:
-                section['instructions'] = instructions
-                section['content'] = content
-        
-        elif resource_type == "QUIZ" and not section.get('answers') and "answers" in section:
-            # Look for answer-like content
-            answers = []
-            content = []
-            for item in section['content']:
-                if "answer" in item.lower() or "respuesta" in item.lower() or re.match(r'^[A-D]\.', item):
-                    answers.append(item)
-                else:
-                    content.append(item)
-            
-            if answers:
-                section['answers'] = answers
-                section['content'] = content
+        sections.append(section)
     
     logger.info(f"Successfully parsed {len(sections)} {resource_type} sections")
     return sections
