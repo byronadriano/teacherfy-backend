@@ -1,4 +1,4 @@
-# app.py
+# app.py - CLEAN VERSION with unified routes
 import os
 import tempfile
 from flask import Flask, jsonify, request, make_response
@@ -6,9 +6,9 @@ from flask_cors import CORS
 from src.config import config, logger
 from src.auth_routes import auth_blueprint
 from src.slides_routes import slides_blueprint
-from src.presentation_routes import presentation_blueprint, load_example_outlines
-from src.history_routes import history_blueprint  # Import the history blueprint
-from src.resource_routes import resource_blueprint  # Import the new resource blueprint
+from src.outline_routes import outline_blueprint  # Use unified outline routes
+from src.history_routes import history_blueprint
+from src.resource_routes import resource_blueprint
 from src.db.database import test_connection
 
 def create_app():
@@ -54,12 +54,12 @@ def create_app():
         },
         supports_credentials=True)
 
-    # Register blueprints
+    # Register blueprints - REMOVE presentation_blueprint to avoid duplicate routes
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(slides_blueprint)
-    app.register_blueprint(presentation_blueprint)
+    app.register_blueprint(outline_blueprint)  # This now handles all outline generation
     app.register_blueprint(history_blueprint)
-    app.register_blueprint(resource_blueprint)  # Register the new resource blueprint
+    app.register_blueprint(resource_blueprint)
 
     @app.after_request
     def after_request(response):
@@ -150,14 +150,6 @@ def create_app():
             logger.error("Database connection failed")
             return {"error": "Database connection failed"}, 500
         return None
-
-    # Initialize example outlines
-    with app.app_context():
-        try:
-            load_example_outlines()
-            logger.info("Example outlines initialized successfully")
-        except Exception as e:
-            logger.error(f"Error initializing example outlines: {e}")
 
     return app
 

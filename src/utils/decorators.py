@@ -1,5 +1,6 @@
+# src/utils/decorators.py
 from functools import wraps
-from flask import request, jsonify, session, send_file
+from flask import request, jsonify, session
 from src.db.usage import check_user_limits, increment_usage
 from src.config import logger
 
@@ -41,39 +42,69 @@ def check_usage_limits(action_type='generation'):
                 # Call the original function
                 result = f(*args, **kwargs)
                 
-                # IMPORTANT FIX: Don't modify file download responses
-                # Check if this is a file download response
-                if isinstance(result, tuple) and len(result) >= 1:
-                    # If it's a Flask send_file response or has a mimetype for PPTX
-                    if hasattr(result[0], 'mimetype') and result[0].mimetype == 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
-                        logger.debug("File download detected, returning unmodified response")
+                # CRITICAL FIX: Check if this is a file download response
+                # Don't modify file download responses at all
+                if isinstance(result, tuple) and len(result) >= 2:
+                    response, status_code = result
+                    # Check if it's a Flask send_file response (has mimetype)
+                    if hasattr(response, 'mimetype'):
+                        # Check for file download MIME types
+                        file_mime_types = [
+                            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                            'application/pdf',
+                            'application/octet-stream'
+                        ]
+                        if any(mime in str(response.mimetype) for mime in file_mime_types):
+                            logger.debug(f"File download detected with mimetype {response.mimetype}, returning unmodified response")
+                            return result
+                
+                # Also check for single response objects (Flask send_file returns single response)
+                if hasattr(result, 'mimetype'):
+                    file_mime_types = [
+                        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                        'application/pdf',
+                        'application/octet-stream'
+                    ]
+                    if any(mime in str(result.mimetype) for mime in file_mime_types):
+                        logger.debug(f"File download detected with mimetype {result.mimetype}, returning unmodified response")
                         return result
                 
-                # For JSON responses, add usage limits
+                # For JSON responses only, add usage limits
                 if isinstance(result, tuple):
                     response, status_code = result
                     if hasattr(response, 'get_json'):
-                        response_data = response.get_json() or {}
+                        try:
+                            response_data = response.get_json() or {}
+                            response_data.update({
+                                "usage_limits": {
+                                    "generations_left": usage['generations_left'],
+                                    "downloads_left": usage['downloads_left']
+                                }
+                            })
+                            return jsonify(response_data), status_code
+                        except:
+                            # If we can't parse as JSON, return original
+                            return result
+                    return result
+                
+                # If the result is a Flask response object with JSON
+                if hasattr(result, 'get_json'):
+                    try:
+                        response_data = result.get_json() or {}
                         response_data.update({
                             "usage_limits": {
                                 "generations_left": usage['generations_left'],
                                 "downloads_left": usage['downloads_left']
                             }
                         })
-                        return jsonify(response_data), status_code
-                    return result
+                        return jsonify(response_data)
+                    except:
+                        # If we can't parse as JSON, return original
+                        return result
                 
-                # If the result is just the response object
-                if hasattr(result, 'get_json'):
-                    response_data = result.get_json() or {}
-                    response_data.update({
-                        "usage_limits": {
-                            "generations_left": usage['generations_left'],
-                            "downloads_left": usage['downloads_left']
-                        }
-                    })
-                    return jsonify(response_data)
-                
+                # For all other cases, return the result unchanged
                 return result
                 
             except Exception as e:

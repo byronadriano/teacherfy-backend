@@ -1,89 +1,145 @@
-# src/outline_routes.py
+# src/outline_routes.py - UNIFIED and CLEAN version
 import os
+import re
 from flask import Blueprint, request, jsonify
 from src.config import logger, client
-from src.slide_processor import parse_outline_to_structured_content
 from src.utils.decorators import check_usage_limits
 import json
 import traceback
-import re
 
 outline_blueprint = Blueprint("outline_blueprint", __name__)
 
-# Example outline data
+# Clean example data with new structure
 EXAMPLE_OUTLINE_DATA = {
+    "title": "Equivalent Fractions Lesson",
     "messages": [
-        "Slide 1: Let's Explore Equivalent Fractions!\nContent:\n- Students ..."
+        """Slide 1: Let's Explore Equivalent Fractions!
+Content:
+- Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix
+- Students will be able to explain why different fractions can show the same amount using pictures and numbers
+
+Slide 2: What Are Equivalent Fractions?  
+Content:
+- Let's learn our fraction vocabulary!
+- Imagine sharing a breakfast burrito with your friend - you can cut it in half (1/2) or into four equal pieces and take two (2/4). You get the same amount!
+- The top number (numerator) tells us how many pieces we have
+- The bottom number (denominator) tells us how many total equal pieces
+- When fractions show the same amount, we call them equivalent"""
     ],
     "structured_content": [
         {
             "title": "Let's Explore Equivalent Fractions!",
             "layout": "TITLE_AND_CONTENT",
             "content": [
-                "Today we're going on a fraction adventure!",
-                "- Students will be able to recognize and create equivalent ..."
-            ],
-            "teacher_notes": [
-                "Begin with students sharing their experiences with fractions in their daily lives",
-                "Use culturally relevant examples from Denver communities"
-            ],
-            "visual_elements": [
-                "Interactive display showing local treats divided into equivalent parts",
-                "Student-friendly vocabulary cards with pictures"
-            ],
-            "left_column": [],
-            "right_column": []
+                "Students will be able to recognize and create equivalent fractions in everyday situations, like sharing cookies, pizza, or our favorite Colorado trail mix",
+                "Students will be able to explain why different fractions can show the same amount using pictures and numbers"
+            ]
         },
+        {
+            "title": "What Are Equivalent Fractions?",
+            "layout": "TITLE_AND_CONTENT", 
+            "content": [
+                "Let's learn our fraction vocabulary!",
+                "Imagine sharing a breakfast burrito with your friend - you can cut it in half (1/2) or into four equal pieces and take two (2/4). You get the same amount!",
+                "The top number (numerator) tells us how many pieces we have",
+                "The bottom number (denominator) tells us how many total equal pieces",
+                "When fractions show the same amount, we call them equivalent"
+            ]
+        }
     ]
 }
 
-# Directory for storing example outlines
-EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), '..', 'examples')
-EXAMPLE_OUTLINES = {}
-
-def load_example_outlines():
-    """Load example outlines from the examples directory."""
+def generate_outline_title(form_data, structured_content=None):
+    """Generate a meaningful title for the outline based on form data and content."""
     try:
-        if not os.path.exists(EXAMPLES_DIR):
-            os.makedirs(EXAMPLES_DIR)
-        example_path = os.path.join(EXAMPLES_DIR, 'equivalent_fractions_outline.json')
-        if not os.path.exists(example_path):
-            with open(example_path, 'w', encoding='utf-8') as f:
-                json.dump(EXAMPLE_OUTLINE_DATA, f, indent=2)
+        # Extract key information
+        lesson_topic = form_data.get('lessonTopic', '').strip()
+        subject_focus = form_data.get('subjectFocus', '').strip()
+        grade_level = form_data.get('gradeLevel', '').strip()
+        resource_type = form_data.get('resourceType', 'Lesson').strip()
         
-        for filename in os.listdir(EXAMPLES_DIR):
-            if filename.endswith('.json'):
-                with open(os.path.join(EXAMPLES_DIR, filename), 'r', encoding='utf-8') as f:
-                    name = os.path.splitext(filename)[0]
-                    EXAMPLE_OUTLINES[name] = json.load(f)
-        logger.debug(f"Loaded {len(EXAMPLE_OUTLINES)} example outlines.")
+        # Priority 1: Use lesson topic if available and meaningful
+        if lesson_topic and lesson_topic.lower() not in ['general learning', 'exploratory lesson']:
+            title = lesson_topic
+            
+            # Add resource type context if not already implied
+            if not any(word in title.lower() for word in ['lesson', 'presentation', 'quiz', 'worksheet']):
+                if resource_type.lower() == 'presentation':
+                    title = f"{title} Presentation"
+                elif resource_type.lower() in ['quiz', 'test']:
+                    title = f"{title} Quiz"
+                elif resource_type.lower() == 'worksheet':
+                    title = f"{title} Worksheet"
+                elif 'lesson' in resource_type.lower():
+                    title = f"{title} Lesson Plan"
+                else:
+                    title = f"{title} {resource_type}"
+            
+            return title
+        
+        # Priority 2: Combine subject and grade level
+        if subject_focus and grade_level:
+            clean_grade = grade_level.replace('grade', '').replace('Grade', '').strip()
+            if clean_grade.lower() == 'kindergarten':
+                clean_grade = 'Kindergarten'
+            elif clean_grade.endswith(('st', 'nd', 'rd', 'th')):
+                clean_grade = f"Grade {clean_grade}"
+            
+            base_title = f"{clean_grade} {subject_focus}"
+            
+            if resource_type.lower() == 'presentation':
+                title = f"{base_title} Presentation"
+            elif resource_type.lower() in ['quiz', 'test']:
+                title = f"{base_title} Quiz"
+            elif resource_type.lower() == 'worksheet':
+                title = f"{base_title} Worksheet"
+            elif 'lesson' in resource_type.lower():
+                title = f"{base_title} Lesson Plan"
+            else:
+                title = f"{base_title} {resource_type}"
+                
+            return title
+        
+        # Priority 3: Try to extract title from first slide/section
+        if structured_content and len(structured_content) > 0:
+            first_slide_title = structured_content[0].get('title', '').strip()
+            if first_slide_title and not first_slide_title.lower().startswith(('slide 1', 'section 1')):
+                clean_title = re.sub(r'^(Slide \d+:|Section \d+:)\s*', '', first_slide_title, flags=re.IGNORECASE)
+                return clean_title.strip()
+        
+        # Fallback based on available information
+        if subject_focus:
+            if resource_type.lower() == 'presentation':
+                return f"{subject_focus} Presentation"
+            elif resource_type.lower() in ['quiz', 'test']:
+                return f"{subject_focus} Quiz"
+            elif resource_type.lower() == 'worksheet':
+                return f"{subject_focus} Worksheet"
+            elif 'lesson' in resource_type.lower():
+                return f"{subject_focus} Lesson Plan"
+            else:
+                return f"{subject_focus} {resource_type}"
+        
+        # Final fallback
+        return f"Educational {resource_type}"
+            
     except Exception as e:
-        logger.error(f"Error loading example outlines: {e}")
-        EXAMPLE_OUTLINES["fallback"] = EXAMPLE_OUTLINE_DATA
+        logger.error(f"Error generating outline title: {e}")
+        return "Educational Resource"
 
 def get_system_prompt(resource_type="PRESENTATION"):
-    """
-    Get the appropriate system prompt based on resource type.
-    This ensures consistent formatting for each resource type.
-    """
-    # Normalize for consistency 
+    """Get the appropriate system prompt based on resource type."""
     normalized_type = resource_type.upper() if resource_type else "PRESENTATION"
-    
-    logger.info(f"get_system_prompt called with resource_type: {normalized_type}")
     
     # Handle various formats of resource types
     if "QUIZ" in normalized_type or "TEST" in normalized_type:
         normalized_type = "QUIZ"
-        logger.info(f"Resource type normalized to QUIZ")
     elif "LESSON" in normalized_type and "PLAN" in normalized_type:
         normalized_type = "LESSON_PLAN"
-        logger.info(f"Resource type normalized to LESSON_PLAN")
     elif "WORKSHEET" in normalized_type or "ACTIVITY" in normalized_type:
         normalized_type = "WORKSHEET"
-        logger.info(f"Resource type normalized to WORKSHEET")
     elif "PRESENTATION" in normalized_type or "SLIDE" in normalized_type:
-        normalized_type = "PRESENTATION" 
-        logger.info(f"Resource type normalized to PRESENTATION")
+        normalized_type = "PRESENTATION"
     
     if normalized_type == "QUIZ":
         return """
@@ -92,28 +148,18 @@ def get_system_prompt(resource_type="PRESENTATION"):
         FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
 
         Section X: [Clear, Descriptive Title]
-        
         Content:
         - [Question 1 with complete wording]
         - [Question 2 with complete wording]
         - [Additional questions as needed]
-        
-        Answers:
-        - [Answer for question 1]
-        - [Answer for question 2]
-        - [Additional answers]
-        
-        Teacher Notes:
-        - SCORING: [Point values and grading guidance]
-        - DIFFERENTIATION: [Modifications for different learners]
 
         CRITICAL FORMATTING REQUIREMENTS:
         1. ALWAYS start each section with "Section X:" where X is the section number
-        2. ALWAYS include the exact section headers: "Content:", "Answers:", and "Teacher Notes:"
+        2. ALWAYS include the exact section header: "Content:"
         3. ALWAYS use bullet points with a hyphen (-) for all list items
         4. Create clear, unambiguous questions
-        5. Provide correct answers for all questions
-        6. Make questions appropriate for the grade level
+        5. Make questions appropriate for the grade level
+        6. Include a variety of question types (multiple choice, short answer, etc.)
         """
     
     elif normalized_type == "WORKSHEET":
@@ -123,28 +169,18 @@ def get_system_prompt(resource_type="PRESENTATION"):
         FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
 
         Section X: [Clear, Descriptive Title]
-        
-        Instructions:
-        - [Clear directions for completing this section]
-        
         Content:
         - [Question or activity 1]
         - [Question or activity 2]
         - [Additional questions or activities]
-        
-        Teacher Notes:
-        - PURPOSE: [Learning objective for this section]
-        - ANSWERS: [Correct answers or evaluation criteria]
-        - DIFFERENTIATION: [Modifications for different learners]
 
         CRITICAL FORMATTING REQUIREMENTS:
         1. ALWAYS start each section with "Section X:" where X is the section number
-        2. ALWAYS include the exact section headers: "Instructions:", "Content:", and "Teacher Notes:"
+        2. ALWAYS include the exact section header: "Content:"
         3. ALWAYS use bullet points with a hyphen (-) for all list items
-        4. EXACTLY match the requested number of sections
-        5. Create age-appropriate questions/activities
-        6. Include a variety of question types
-        7. Arrange questions from easier to more challenging
+        4. Create age-appropriate questions/activities
+        5. Include a variety of question types
+        6. Arrange questions from easier to more challenging
         """
     
     elif normalized_type == "LESSON_PLAN":
@@ -154,31 +190,18 @@ def get_system_prompt(resource_type="PRESENTATION"):
         FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
 
         Section X: [Clear, Descriptive Title]
-        Duration: [Time in minutes]
-        
         Content:
         - [Key concept or information to cover]
         - [Essential content for this section]
         - [Additional content points]
-        
-        Procedure:
-        - [Specific teacher action 1]
-        - [Specific teacher action 2]
-        - [Additional teacher actions]
-        
-        Teacher Notes:
-        - ENGAGEMENT: [Specific strategies to engage students]
-        - ASSESSMENT: [Concrete methods to check understanding]
-        - DIFFERENTIATION: [Specific accommodations for different learners]
 
         CRITICAL FORMATTING REQUIREMENTS:
         1. ALWAYS start each section with "Section X:" where X is the section number
-        2. ALWAYS include the exact section headers: "Duration:", "Content:", "Procedure:", and "Teacher Notes:"
+        2. ALWAYS include the exact section header: "Content:"
         3. ALWAYS use bullet points with a hyphen (-) for all list items
-        4. EXACTLY match the requested number of sections
-        5. Make sections follow a logical instructional sequence
-        6. First section should introduce the lesson
-        7. Last section should provide closure/assessment
+        4. Make sections follow a logical instructional sequence
+        5. First section should introduce the lesson
+        6. Last section should provide closure/assessment
         """
     
     else:
@@ -218,43 +241,83 @@ def get_system_prompt(resource_type="PRESENTATION"):
         - Let's explore how fractions help us understand the world around us
         """
         
-@outline_blueprint.route("/test_resource_type", methods=["GET"])
-def test_resource_type():
-    """Test endpoint to verify system prompt selection"""
-    resource_type = request.args.get('type', 'presentation')
-    normalized = resource_type.lower()
+def parse_outline_to_clean_structure(outline_text, resource_type="PRESENTATION"):
+    """Parse outline text into clean, consistent structure for all resource types."""
+    logger.info(f"Parsing outline for resource type: {resource_type}")
     
-    if "quiz" in normalized or "test" in normalized:
-        normalized = "QUIZ"
-    elif "lesson" in normalized and "plan" in normalized:
-        normalized = "LESSON_PLAN"
-    elif "worksheet" in normalized:
-        normalized = "WORKSHEET"
+    # Determine section/slide pattern based on resource type
+    if resource_type.upper() == "PRESENTATION":
+        section_pattern = r"Slide (\d+):\s*(.*)"
+        section_word = "Slide"
     else:
-        normalized = "PRESENTATION"
+        section_pattern = r"Section (\d+):\s*(.*)"
+        section_word = "Section"
     
-    prompt = get_system_prompt(normalized)
+    # Split by section headers
+    sections = []
+    current_section = None
     
-    return jsonify({
-        "original": resource_type,
-        "normalized": normalized,
-        "prompt_first_line": prompt.strip().split('\n')[1]
-    })
+    lines = outline_text.strip().split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Check if this is a section/slide header
+        match = re.match(section_pattern, line)
+        if match:
+            # Save previous section
+            if current_section:
+                sections.append(current_section)
+            
+            # Start new section
+            section_num = match.group(1)
+            section_title = match.group(2).strip()
+            current_section = {
+                "title": section_title,
+                "layout": "TITLE_AND_CONTENT",
+                "content": []
+            }
+        elif line.lower() == "content:":
+            # Skip content headers
+            continue
+        elif line.startswith('-') or line.startswith('•'):
+            # This is content
+            if current_section:
+                clean_content = line.lstrip('-•').strip()
+                if clean_content:
+                    current_section["content"].append(clean_content)
+        elif current_section and line:
+            # Any other non-empty line goes to content
+            current_section["content"].append(line)
+    
+    # Don't forget the last section
+    if current_section:
+        sections.append(current_section)
+    
+    # If no sections found, create a fallback
+    if not sections:
+        sections.append({
+            "title": "Generated Content",
+            "layout": "TITLE_AND_CONTENT",
+            "content": [line.strip() for line in lines if line.strip()]
+        })
+    
+    logger.info(f"Successfully parsed {len(sections)} sections for {resource_type}")
+    return sections
 
 @outline_blueprint.route("/outline", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='generation')
 def get_outline():
-    """Generate a lesson outline using OpenAI."""
-    # Add comprehensive logging at the start of the request
+    """Generate a lesson outline using OpenAI - UNIFIED ENDPOINT"""
     logger.info(f"Received outline generation request: {request.method}")
     
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
     try:
-        # Validate JSON request
         if not request.is_json:
-            logger.error("Request is not JSON")
             return jsonify({
                 "error": "Invalid request format",
                 "details": "Request must be in JSON format"
@@ -263,18 +326,13 @@ def get_outline():
         data = request.json
         logger.debug(f"Received outline request with data: {data}")
 
-        # Check for regeneration request
-        is_regeneration = data.get('regeneration', False)
-        previous_outline = data.get('previous_outline', '')
-
         # Validate and set default values
         resource_type = data.get('resourceType', 'Presentation')
         subject_focus = data.get('subjectFocus', 'General Learning')
         grade_level = data.get('gradeLevel', 'Not Specified')
         language = data.get('language', 'English')
         lesson_topic = data.get('lessonTopic', 'Exploratory Lesson')
-        num_slides = int(data.get('numSlides', 3))
-        num_sections = int(data.get('numSections', 5))  # For non-presentation resources
+        num_items = int(data.get('numSlides', data.get('numSections', 5)))
         selected_standards = data.get('selectedStandards', [])
         custom_prompt = data.get('custom_prompt', '').strip()
 
@@ -288,195 +346,86 @@ def get_outline():
         # Check for example outline
         is_example = (
             data.get("use_example") or
-            (
-                lesson_topic.lower().strip() == "equivalent fractions" and
-                grade_level.lower().strip() == "4th grade" and
-                subject_focus.lower().strip() == "math" and
-                language.lower().strip() == "english"
-            )
+            (lesson_topic.lower().strip() == "equivalent fractions" and
+             grade_level.lower().strip() == "4th grade" and
+             subject_focus.lower().strip() == "math" and
+             language.lower().strip() == "english")
         )
+        
         if is_example:
-            example_data = EXAMPLE_OUTLINES.get("equivalent_fractions_outline")
-            return jsonify(example_data or EXAMPLE_OUTLINE_DATA)
+            return jsonify(EXAMPLE_OUTLINE_DATA)
 
         # Validate OpenAI client
         if not client:
             return jsonify({"error": "OpenAI client not initialized"}), 500
 
-        # Normalize resource type for consistency
-        normalized_resource_type = resource_type.lower()
-        logger.info(f"Original resource type: {resource_type}")
-        
-        # Handle quiz/test type normalization
-        if "quiz" in normalized_resource_type or "test" in normalized_resource_type:
-            normalized_resource_type = "QUIZ"
-            logger.info(f"Resource type normalized to QUIZ")
-        elif "lesson" in normalized_resource_type and "plan" in normalized_resource_type:
-            normalized_resource_type = "LESSON_PLAN"
-            logger.info(f"Resource type normalized to LESSON_PLAN")
-        elif "worksheet" in normalized_resource_type:
-            normalized_resource_type = "WORKSHEET"
-            logger.info(f"Resource type normalized to WORKSHEET")
-        elif "presentation" in normalized_resource_type:
-            normalized_resource_type = "PRESENTATION"
-            logger.info(f"Resource type normalized to PRESENTATION")
-        else:
-            # Default based on structure
-            normalized_resource_type = "PRESENTATION"
-            logger.info(f"Resource type defaulted to PRESENTATION")
-
-        # Build requirements list
+        # Build requirements
+        item_word = "slides" if resource_type.lower() == "presentation" else "sections"
         requirements = [
             f"Resource Type: {resource_type}",
             f"Grade Level: {grade_level}",
             f"Subject: {subject_focus}",
             f"Topic: {lesson_topic}",
             f"Language: {language}",
+            f"Number of {item_word}: EXACTLY {num_items}",
             f"Standards: {', '.join(selected_standards) if selected_standards else 'General Learning Objectives'}"
         ]
 
-        # Add resource-specific requirements
-        if normalized_resource_type == "PRESENTATION":
-            requirements.extend([
-                f"Number of Slides: EXACTLY {num_slides}",
-                "Visual Requirements: Include clear, engaging content for each slide"
-            ])
-        elif normalized_resource_type == "QUIZ":
-            requirements.extend([
-                f"Number of Questions: Approximately {num_sections * 2}",
-                "Include a variety of question types",
-                "Provide an answer key",
-                "Make questions clear and appropriate for the grade level"
-            ])
-        elif normalized_resource_type == "WORKSHEET":
-            requirements.extend([
-                f"Number of Sections: EXACTLY {num_sections}",
-                "Include clear instructions for each section",
-                "Include spaces for student responses",
-                "Ensure age-appropriate activities"
-            ])
-        elif normalized_resource_type == "LESSON_PLAN":
-            requirements.extend([
-                f"Number of Sections: EXACTLY {num_sections}",
-                "Include timing for each section",
-                "Include detailed procedures",
-                "Include assessment strategies"
-            ])
+        requirements_str = "\n".join(f"- {req}" for req in requirements)
 
-        # Build the final requirements string
-        requirements_str = "\n".join(f"- {req}" for req in requirements if req)
-
-        # Get system instructions based on resource type - THIS IS THE KEY FIX
+        # Get system instructions
         system_instructions = {
             "role": "system",
-            "content": get_system_prompt(normalized_resource_type)
+            "content": get_system_prompt(resource_type)
         }
+
+        # Create user prompt
+        user_prompt = f"""
+        Create a comprehensive {resource_type} with the following specifications:
+        {requirements_str}
+
+        Additional Requirements:
+        {custom_prompt}
+        """
+
+        # Make the API call
+        response = client.chat.completions.create(
+            model="gpt-4-0125-preview",
+            messages=[system_instructions, {"role": "user", "content": user_prompt}],
+            max_tokens=4000,
+            temperature=0.7
+        )
+
+        outline_text = response.choices[0].message.content.strip()
+        logger.debug(f"Generated outline: {outline_text}")
+
+        # Parse into clean structure
+        structured_content = parse_outline_to_clean_structure(outline_text, resource_type)
         
-        # Log the system prompt being used
-        logger.info(f"Using system prompt for resource type: {normalized_resource_type}")
+        # Generate title
+        generated_title = generate_outline_title(data, structured_content)
+        logger.info(f"Generated title: {generated_title}")
 
-        # Prepare user prompt based on whether this is a regeneration request
-        if is_regeneration and previous_outline:
-            user_prompt = f"""
-            REGENERATION REQUEST:
-            Previous Outline Context:
-            {previous_outline}
-
-            NEW REQUIREMENTS:
-            {requirements_str}
-            
-            REGENERATION INSTRUCTIONS:
-            1. Review and preserve successful elements from the previous outline
-            2. Update content based on the following modification request:
-            {custom_prompt}
-            3. Maintain the same number of {'slides' if normalized_resource_type == 'PRESENTATION' else 'sections'}: {num_slides if normalized_resource_type == 'PRESENTATION' else num_sections}
-            4. Keep the same language: {language}
-            5. Ensure any new content aligns with the grade level and standards
-            
-            IMPORTANT:
-            - Keep the successful teaching strategies from the original
-            - Maintain the educational flow and progression
-            - Strengthen areas mentioned in the modification request
-            - Ensure all content is classroom-ready
-            """
-            # Log regeneration attempt
-            logger.debug(f"Regeneration attempt {data.get('regenerationCount', 0) + 1}")
-            logger.debug(f"Modification request: {custom_prompt}")
-        else:
-            # Regular outline generation prompt
-            user_prompt = f"""
-            Create a comprehensive {resource_type} with the following specifications:
-            {requirements_str}
-
-            Additional Requirements:
-            {custom_prompt}
-            """
-
-        try:
-            # Make the API call
-            response = client.chat.completions.create(
-                model="gpt-4-0125-preview",
-                messages=[
-                    system_instructions,
-                    {"role": "user", "content": user_prompt}
-                ],
-                max_tokens=4000,
-                temperature=0.7
-            )
-
-            outline_text = response.choices[0].message.content.strip()
-            logger.debug(f"Generated outline: {outline_text}")
-
-            # Parse the outline into structured content
-            structured_content = parse_outline_to_structured_content(outline_text, normalized_resource_type)
-            logger.debug(f"Structured content: {structured_content}")
-
-            # Validate the structured content
-            for item in structured_content:
-                title = item.get('title', '')
-                if not item.get('content') and not (item.get('left_column') or item.get('right_column')):
-                    item['content'] = ["Content placeholder"]  # Add placeholder if missing
-                
-                # Resource-specific validation
-                if normalized_resource_type == "WORKSHEET" and not item.get('instructions'):
-                    # Try to find instructions in content
-                    instructions = [c for c in item.get('content', []) if any(w in c.lower() for w in ["instruc", "direc", "observa", "dibuja", "escribe", "draw", "write"])]
-                    if instructions:
-                        item['instructions'] = instructions
-                
-                if normalized_resource_type == "QUIZ" and not item.get('answers'):
-                    # Placeholder for answers if needed
-                    item['answers'] = []
-
-            # Return the response
-            return jsonify({
-                "messages": [outline_text],
-                "structured_content": structured_content,
-                "resource_type": resource_type.lower()
-            })
-
-        except Exception as ai_error:
-            logger.error(f"OpenAI API error: {ai_error}", exc_info=True)
-            return jsonify({
-                "error": "Failed to generate outline",
-                "details": str(ai_error)
-            }), 500
+        # Return clean response
+        return jsonify({
+            "title": generated_title,
+            "messages": [outline_text],
+            "structured_content": structured_content,
+            "resource_type": resource_type.lower()
+        })
 
     except Exception as e:
-        # More detailed error logging
-        logger.error(f"Unexpected error in outline generation: {str(e)}")
+        logger.error(f"Error in outline generation: {str(e)}")
         logger.error(traceback.format_exc())
         
         return jsonify({
             "error": "An unexpected error occurred",
-            "details": str(e),
-            "trace": traceback.format_exc()
+            "details": str(e)
         }), 500
 
-# Helper route to handle CORS preflight for all endpoints
+# Helper route to handle CORS preflight
 @outline_blueprint.after_request
 def after_request(response):
-    # Get the origin from the request
     origin = request.headers.get('Origin')
     allowed_origins = [
         'http://localhost:3000',
@@ -484,7 +433,6 @@ def after_request(response):
         'https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net'
     ]
     
-    # If the origin is in our allowed list, set CORS headers
     if origin in allowed_origins:
         response.headers.add('Access-Control-Allow-Origin', origin)
         response.headers.add('Access-Control-Allow-Credentials', 'true')

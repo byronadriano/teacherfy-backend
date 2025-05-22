@@ -1,23 +1,25 @@
-# src/resource_handlers/presentation_handler.py
+# src/resource_handlers/presentation_handler.py - CLEAN VERSION
 import os
 import logging
 from typing import Dict, Any, List, Optional
 from .base_handler import BaseResourceHandler
-from src.slide_processor import create_presentation
 
 logger = logging.getLogger(__name__)
 
 class PresentationHandler(BaseResourceHandler):
-    """Handler for generating PowerPoint presentations"""
+    """Handler for generating PowerPoint presentations with clean structure"""
     
     def generate(self) -> str:
         """Generate the presentation file and return the file path"""
         # Create temp file
         temp_file = self.create_temp_file("pptx")
         
-        # Create presentation
+        # Import presentation creation function
+        from src.slide_processor import create_clean_presentation
+        
+        # Create presentation with clean structure
         logger.info(f"Creating presentation with {len(self.structured_content)} slides")
-        prs = create_presentation(self.structured_content)
+        prs = create_clean_presentation(self.structured_content)
         
         # Save presentation
         logger.info(f"Saving presentation to {temp_file}")
