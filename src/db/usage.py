@@ -34,6 +34,29 @@ def sanitize_ip_address(ip_address):
         logger.warning(f"Invalid IP address format: {ip_address}")
         return ip_address
 
+def is_new_month(last_reset_time):
+    """Check if we're in a new month compared to the last reset time."""
+    if not last_reset_time:
+        return True
+        
+    now = datetime.now()
+    
+    # If different year or different month, it's a new month
+    return (now.year != last_reset_time.year or 
+            now.month != last_reset_time.month)
+
+def get_monthly_reset_time():
+    """Get the timestamp for when limits will reset (first day of next month)."""
+    now = datetime.now()
+    
+    # Calculate first day of next month
+    if now.month == 12:
+        next_month = datetime(now.year + 1, 1, 1)
+    else:
+        next_month = datetime(now.year, now.month + 1, 1)
+    
+    return next_month
+
 def increment_usage(ip_address=None, user_id=None, action_type='generation'):
     """
     Increment the usage count for a user or IP address.
@@ -59,12 +82,12 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
             ON CONFLICT (ip_address) WHERE user_id IS NULL DO UPDATE 
             SET 
               generations_used = CASE 
-                WHEN user_usage_limits.last_reset < NOW() - INTERVAL '24 hours'
+                WHEN DATE_TRUNC('month', user_usage_limits.last_reset) < DATE_TRUNC('month', NOW())
                   THEN CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
                 ELSE user_usage_limits.generations_used + CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
               END,
               downloads_used = CASE 
-                WHEN user_usage_limits.last_reset < NOW() - INTERVAL '24 hours'
+                WHEN DATE_TRUNC('month', user_usage_limits.last_reset) < DATE_TRUNC('month', NOW())
                   THEN CASE WHEN %s = 'download' THEN 1 ELSE 0 END
                 ELSE user_usage_limits.downloads_used + CASE WHEN %s = 'download' THEN 1 ELSE 0 END
               END,
@@ -87,12 +110,12 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
             ON CONFLICT (user_id) DO UPDATE 
             SET 
               generations_used = CASE 
-                WHEN user_usage_limits.last_reset < NOW() - INTERVAL '24 hours'
+                WHEN DATE_TRUNC('month', user_usage_limits.last_reset) < DATE_TRUNC('month', NOW())
                   THEN CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
                 ELSE user_usage_limits.generations_used + CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
               END,
               downloads_used = CASE 
-                WHEN user_usage_limits.last_reset < NOW() - INTERVAL '24 hours'
+                WHEN DATE_TRUNC('month', user_usage_limits.last_reset) < DATE_TRUNC('month', NOW())
                   THEN CASE WHEN %s = 'download' THEN 1 ELSE 0 END
                 ELSE user_usage_limits.downloads_used + CASE WHEN %s = 'download' THEN 1 ELSE 0 END
               END,
@@ -116,7 +139,7 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
 
 def check_user_limits(user_id=None, ip_address=None):
     """
-    Check usage limits for a user or IP address.
+    Check usage limits for a user or IP address with monthly reset logic.
     
     Args:
         user_id (int, optional): The user ID to check.
@@ -134,11 +157,12 @@ def check_user_limits(user_id=None, ip_address=None):
             query = """
             SELECT 
               COALESCE(
-                CASE WHEN last_reset < NOW() - INTERVAL '24 hours'
+                CASE WHEN DATE_TRUNC('month', last_reset) < DATE_TRUNC('month', NOW())
                   THEN 0 ELSE generations_used END, 0) AS generations_used,
               COALESCE(
-                CASE WHEN last_reset < NOW() - INTERVAL '24 hours'
-                  THEN 0 ELSE downloads_used END, 0) AS downloads_used
+                CASE WHEN DATE_TRUNC('month', last_reset) < DATE_TRUNC('month', NOW())
+                  THEN 0 ELSE downloads_used END, 0) AS downloads_used,
+              last_reset
             FROM user_usage_limits
             WHERE 
             """
@@ -157,7 +181,8 @@ def check_user_limits(user_id=None, ip_address=None):
                     'can_generate': True,
                     'can_download': True,
                     'generations_left': DAILY_GENERATION_LIMIT,
-                    'downloads_left': DAILY_DOWNLOAD_LIMIT
+                    'downloads_left': DAILY_DOWNLOAD_LIMIT,
+                    'reset_time': get_monthly_reset_time().isoformat()
                 }
 
             generations_left = max(0, DAILY_GENERATION_LIMIT - (usage.get('generations_used') or 0))
@@ -167,7 +192,8 @@ def check_user_limits(user_id=None, ip_address=None):
                 'can_generate': generations_left > 0,
                 'can_download': downloads_left > 0,
                 'generations_left': generations_left,
-                'downloads_left': downloads_left
+                'downloads_left': downloads_left,
+                'reset_time': get_monthly_reset_time().isoformat()
             }
     except Exception as e:
         logger.error(f"Error checking user limits: {e}")

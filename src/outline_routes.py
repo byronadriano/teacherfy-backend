@@ -1,4 +1,4 @@
-# src/outline_routes.py - UNIFIED and CLEAN version
+# src/outline_routes.py - Updated with proper limit checking
 import os
 import re
 from flask import Blueprint, request, jsonify
@@ -49,6 +49,16 @@ Content:
     ]
 }
 
+def is_example_request(data):
+    """Check if this is an example request that shouldn't count against limits."""
+    return (
+        data.get("use_example") or
+        (data.get("lessonTopic", "").lower().strip() == "equivalent fractions" and
+         data.get("gradeLevel", "").lower().strip() == "4th grade" and
+         data.get("subjectFocus", "").lower().strip() == "math" and
+         data.get("language", "").lower().strip() == "english")
+    )
+    
 def generate_outline_title(form_data, structured_content=None):
     """Generate a meaningful title for the outline based on form data and content."""
     try:
@@ -100,13 +110,6 @@ def generate_outline_title(form_data, structured_content=None):
                 
             return title
         
-        # Priority 3: Try to extract title from first slide/section
-        if structured_content and len(structured_content) > 0:
-            first_slide_title = structured_content[0].get('title', '').strip()
-            if first_slide_title and not first_slide_title.lower().startswith(('slide 1', 'section 1')):
-                clean_title = re.sub(r'^(Slide \d+:|Section \d+:)\s*', '', first_slide_title, flags=re.IGNORECASE)
-                return clean_title.strip()
-        
         # Fallback based on available information
         if subject_focus:
             if resource_type.lower() == 'presentation':
@@ -126,7 +129,7 @@ def generate_outline_title(form_data, structured_content=None):
     except Exception as e:
         logger.error(f"Error generating outline title: {e}")
         return "Educational Resource"
-
+    
 def get_system_prompt(resource_type="PRESENTATION"):
     """Get the appropriate system prompt based on resource type."""
     normalized_type = resource_type.upper() if resource_type else "PRESENTATION"
@@ -261,7 +264,6 @@ def get_system_prompt(resource_type="PRESENTATION"):
         - Differentiation tip: Use fraction tiles for hands-on exploration
         - Assessment check: Have students hold up a card showing whether two fractions are equal
         """
-
     
     else:
         # Default to presentation format
@@ -302,7 +304,7 @@ def get_system_prompt(resource_type="PRESENTATION"):
         - Fractions are everywhere in daily life: half a pizza, quarter of an hour
         - Today we will learn to work with fractions confidently
         """
-        
+              
 def parse_outline_to_clean_structure(outline_text, resource_type="PRESENTATION"):
     """Parse outline text into clean, consistent structure for all resource types."""
     logger.info(f"Parsing outline for resource type: {resource_type}")
@@ -370,7 +372,7 @@ def parse_outline_to_clean_structure(outline_text, resource_type="PRESENTATION")
     return sections
 
 @outline_blueprint.route("/outline", methods=["POST", "OPTIONS"])
-@check_usage_limits(action_type='generation')
+@check_usage_limits(action_type='generation')  # This will check and increment generation limits
 def get_outline():
     """Generate a lesson outline using OpenAI - UNIFIED ENDPOINT"""
     logger.info(f"Received outline generation request: {request.method}")
@@ -388,6 +390,11 @@ def get_outline():
         data = request.json
         logger.debug(f"Received outline request with data: {data}")
 
+        # Check for example outline first (before any processing)
+        if is_example_request(data):
+            logger.info("Returning example outline - no usage increment")
+            return jsonify(EXAMPLE_OUTLINE_DATA)
+
         # Validate and set default values
         resource_type = data.get('resourceType', 'Presentation')
         subject_focus = data.get('subjectFocus', 'General Learning')
@@ -404,18 +411,6 @@ def get_outline():
                 "error": "Missing required fields",
                 "details": "Subject, grade level, language, and lesson topic are required."
             }), 400
-
-        # Check for example outline
-        is_example = (
-            data.get("use_example") or
-            (lesson_topic.lower().strip() == "equivalent fractions" and
-             grade_level.lower().strip() == "4th grade" and
-             subject_focus.lower().strip() == "math" and
-             language.lower().strip() == "english")
-        )
-        
-        if is_example:
-            return jsonify(EXAMPLE_OUTLINE_DATA)
 
         # Validate OpenAI client
         if not client:

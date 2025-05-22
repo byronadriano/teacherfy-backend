@@ -2,16 +2,16 @@
 from flask import Blueprint, request, jsonify, send_file
 from src.config import logger
 from src.resource_types import ResourceType, get_resource_handler
-from src.utils.decorators import check_usage_limits
+# Remove the usage decorator for download endpoints
 import os
 import traceback
 
 resource_blueprint = Blueprint("resource_blueprint", __name__)
 
 @resource_blueprint.route("/generate/<resource_type>", methods=["POST", "OPTIONS"])
-@check_usage_limits(action_type='download')
+# No usage limit decorator - downloads are unlimited once content is generated
 def generate_resource_endpoint(resource_type):
-    """Generate a resource file based on the specified resource type with improved efficiency."""
+    """Generate a resource file based on the specified resource type - NO USAGE LIMITS."""
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
@@ -105,9 +105,9 @@ def generate_resource_endpoint(resource_type):
 # For backward compatibility - maintain the original /generate endpoint 
 # that defaults to presentation type
 @resource_blueprint.route("/generate", methods=["POST", "OPTIONS"])
-@check_usage_limits(action_type='download')
+# No usage limit decorator - downloads are unlimited once content is generated
 def generate_presentation_endpoint():
-    """Generate a PowerPoint presentation (.pptx) for download."""
+    """Generate a PowerPoint presentation (.pptx) for download - NO USAGE LIMITS."""
     # Handle preflight requests
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
