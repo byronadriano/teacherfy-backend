@@ -1,4 +1,4 @@
-# src/slide_processor.py - FIXED VERSION
+# src/slide_processor.py - Updated with better text cleaning
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN, MSO_VERTICAL_ANCHOR
@@ -29,27 +29,72 @@ STYLE = {
     }
 }
 
-def clean_markdown_formatting(text):
-    """Remove markdown formatting while preserving the text structure"""
-    if not text:
+def clean_text_for_presentation(text):
+    """
+    Clean text specifically for PowerPoint presentations.
+    Remove all markdown and formatting while preserving readability.
+    """
+    if not text or not isinstance(text, str):
         return ""
     
-    # Remove bold markdown indicators
-    text = text.replace('**', '')
+    # Remove markdown bold/italic formatting
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **bold** -> bold
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)      # *italic* -> italic
+    text = re.sub(r'__([^_]+)__', r'\1', text)      # __bold__ -> bold
+    text = re.sub(r'_([^_]+)_', r'\1', text)        # _italic_ -> italic
     
-    # Remove any remaining asterisks at the start of lines
-    text = text.lstrip('*')
+    # Remove strikethrough
+    text = re.sub(r'~~([^~]+)~~', r'\1', text)      # ~~strike~~ -> strike
     
-    # Clean up any double spaces that might have been created
+    # Remove markdown headers but keep the text
+    text = re.sub(r'^#{1,6}\s*(.+)$', r'\1', text, flags=re.MULTILINE)
+    
+    # Remove markdown links but keep the text
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)  # [text](url) -> text
+    
+    # Remove inline code backticks
+    text = re.sub(r'`([^`]+)`', r'\1', text)        # `code` -> code
+    
+    # Remove section dividers and markers
+    text = re.sub(r'^---+$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\*\*Section \d+:', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\*\*Slide \d+:', '', text, flags=re.MULTILINE)
+    
+    # Clean up standalone asterisks
+    text = re.sub(r'^\*+\s*', '', text)             # Remove leading asterisks
+    text = re.sub(r'\s*\*+$', '', text)             # Remove trailing asterisks
+    
+    # Clean up bullet points and numbering (but preserve the content)
+    text = re.sub(r'^[-•*]\s*', '', text)           # Remove bullet points
+    text = re.sub(r'^\d+\.\s*', '', text)           # Remove numbering
+    
+    # Clean up multiple spaces and normalize whitespace
     text = ' '.join(text.split())
     
-    # Handle numbered lists (e.g., "1.", "2.", etc.)
-    text = re.sub(r'^\d+\.\s*', '', text)
+    # Remove any remaining special formatting characters
+    text = text.replace('---', '')                   # Remove horizontal rules
+    text = text.replace('***', '')                   # Remove emphasis combinations
     
-    # Remove bullet points 
-    text = re.sub(r'^[-•*]\s*', '', text)
+    # Remove content labels that might have been included
+    if text.lower().startswith('content:'):
+        text = text[8:].strip()
     
     return text.strip()
+
+def clean_content_list_for_presentation(content_list):
+    """Clean a list of content items for presentation use."""
+    if not content_list or not isinstance(content_list, list):
+        return []
+    
+    cleaned_list = []
+    for item in content_list:
+        if isinstance(item, str):
+            cleaned_item = clean_text_for_presentation(item)
+            # Skip empty items and content headers
+            if cleaned_item and cleaned_item.lower() not in ['content', 'content:', '---']:
+                cleaned_list.append(cleaned_item)
+    
+    return cleaned_list
 
 def find_content_placeholder(slide):
     """Find a suitable content placeholder on the slide"""
@@ -98,9 +143,12 @@ def add_text_box_to_slide(slide, content_items):
     text_frame = textbox.text_frame
     text_frame.clear()
     
-    for item in content_items:
+    # Use cleaned content
+    cleaned_items = clean_content_list_for_presentation(content_items)
+    
+    for item in cleaned_items:
         p = text_frame.add_paragraph()
-        p.text = f"• {clean_markdown_formatting(item)}"
+        p.text = f"• {item}"
         p.font.name = STYLE['fonts']['body']
         p.font.size = STYLE['sizes']['body']
         p.font.color.rgb = STYLE['colors']['body']
@@ -163,27 +211,32 @@ def create_clean_presentation(structured_content):
                 slide = prs.slides.add_slide(prs.slide_layouts[0])
                 logger.warning(f"Using fallback layout 0 for slide {slide_index + 1}")
             
-            # Add title
+            # Clean and add title
             title_added = False
+            raw_title = slide_data.get('title', 'Untitled')
+            clean_title = clean_text_for_presentation(raw_title)
+            
             if slide.shapes.title:
                 try:
                     title_frame = slide.shapes.title.text_frame
                     title_frame.clear()
                     title_para = title_frame.add_paragraph()
-                    title_para.text = clean_markdown_formatting(slide_data.get('title', 'Untitled'))
+                    title_para.text = clean_title
                     title_para.font.name = STYLE['fonts']['title']
                     title_para.font.size = STYLE['sizes']['title']
                     title_para.font.color.rgb = STYLE['colors']['title']
                     title_para.font.bold = True
                     title_para.alignment = PP_ALIGN.CENTER
                     title_added = True
-                    logger.debug(f"Added title to slide {slide_index + 1}")
+                    logger.debug(f"Added clean title to slide {slide_index + 1}: {clean_title}")
                 except Exception as e:
                     logger.warning(f"Failed to add title to slide {slide_index + 1}: {e}")
             
-            # Add content
-            content_items = slide_data.get('content', [])
-            if content_items:
+            # Clean and add content
+            raw_content_items = slide_data.get('content', [])
+            clean_content_items = clean_content_list_for_presentation(raw_content_items)
+            
+            if clean_content_items:
                 content_placeholder = find_content_placeholder(slide)
                 
                 if content_placeholder:
@@ -191,38 +244,36 @@ def create_clean_presentation(structured_content):
                         text_frame = content_placeholder.text_frame
                         text_frame.clear()
                         
-                        for item in content_items:
+                        for item in clean_content_items:
                             p = text_frame.add_paragraph()
-                            p.text = clean_markdown_formatting(item)
+                            p.text = item
                             p.font.name = STYLE['fonts']['body']
                             p.font.size = STYLE['sizes']['body']
                             p.font.color.rgb = STYLE['colors']['body']
                             p.level = 0  # Main bullet level
                         
-                        logger.debug(f"Added content to placeholder on slide {slide_index + 1}")
+                        logger.debug(f"Added {len(clean_content_items)} clean content items to slide {slide_index + 1}")
                     except Exception as e:
                         logger.warning(f"Failed to add content to placeholder on slide {slide_index + 1}: {e}")
                         # Fallback to text box
-                        add_text_box_to_slide(slide, content_items)
+                        add_text_box_to_slide(slide, clean_content_items)
                 else:
                     # No suitable placeholder found, create a text box
                     logger.warning(f"No content placeholder found on slide {slide_index + 1}, using text box")
-                    add_text_box_to_slide(slide, content_items)
+                    add_text_box_to_slide(slide, clean_content_items)
                     
                     # If we couldn't add a title through placeholder, add it as text box too
-                    if not title_added:
-                        title_text = clean_markdown_formatting(slide_data.get('title', 'Untitled'))
-                        if title_text:
-                            title_box = slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(8), Inches(1))
-                            title_frame = title_box.text_frame
-                            title_para = title_frame.add_paragraph()
-                            title_para.text = title_text
-                            title_para.font.name = STYLE['fonts']['title']
-                            title_para.font.size = STYLE['sizes']['title']
-                            title_para.font.color.rgb = STYLE['colors']['title']
-                            title_para.font.bold = True
-                            title_para.alignment = PP_ALIGN.CENTER
-                            logger.debug(f"Added title as text box to slide {slide_index + 1}")
+                    if not title_added and clean_title:
+                        title_box = slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(8), Inches(1))
+                        title_frame = title_box.text_frame
+                        title_para = title_frame.add_paragraph()
+                        title_para.text = clean_title
+                        title_para.font.name = STYLE['fonts']['title']
+                        title_para.font.size = STYLE['sizes']['title']
+                        title_para.font.color.rgb = STYLE['colors']['title']
+                        title_para.font.bold = True
+                        title_para.alignment = PP_ALIGN.CENTER
+                        logger.debug(f"Added title as text box to slide {slide_index + 1}")
         
         except Exception as e:
             logger.error(f"Error creating slide {slide_index + 1}: {e}")
@@ -231,11 +282,11 @@ def create_clean_presentation(structured_content):
                 slide = prs.slides.add_slide(prs.slide_layouts[0])
                 
                 # Add title as text box
-                title_text = clean_markdown_formatting(slide_data.get('title', f'Slide {slide_index + 1}'))
+                clean_title = clean_text_for_presentation(slide_data.get('title', f'Slide {slide_index + 1}'))
                 title_box = slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(8), Inches(1))
                 title_frame = title_box.text_frame
                 title_para = title_frame.add_paragraph()
-                title_para.text = title_text
+                title_para.text = clean_title
                 title_para.font.name = STYLE['fonts']['title']
                 title_para.font.size = STYLE['sizes']['title']
                 title_para.font.color.rgb = STYLE['colors']['title']
@@ -261,20 +312,22 @@ def create_presentation(structured_content, resource_type="PRESENTATION"):
     clean_content = []
     
     for slide_data in structured_content:
+        # Clean all the text content
         clean_slide = {
-            'title': slide_data.get('title', 'Untitled'),
+            'title': clean_text_for_presentation(slide_data.get('title', 'Untitled')),
             'layout': slide_data.get('layout', 'TITLE_AND_CONTENT'),
-            'content': slide_data.get('content', [])
+            'content': clean_content_list_for_presentation(slide_data.get('content', []))
         }
         
-        # Handle old structure fields - convert to content
+        # Handle old structure fields - convert to content and clean
         if not clean_slide['content']:
             # Try to extract from old fields
             if slide_data.get('left_column') or slide_data.get('right_column'):
-                clean_slide['content'] = (slide_data.get('left_column', []) + 
-                                        slide_data.get('right_column', []))
+                combined_content = (slide_data.get('left_column', []) + 
+                                 slide_data.get('right_column', []))
+                clean_slide['content'] = clean_content_list_for_presentation(combined_content)
             elif slide_data.get('teacher_notes'):
-                clean_slide['content'] = slide_data.get('teacher_notes', [])
+                clean_slide['content'] = clean_content_list_for_presentation(slide_data.get('teacher_notes', []))
         
         clean_content.append(clean_slide)
     
@@ -314,7 +367,7 @@ def parse_outline_to_structured_content(outline_text, resource_type="PRESENTATIO
             section_num = match.group(1)
             section_title = match.group(2).strip()
             current_section = {
-                "title": section_title,
+                "title": clean_text_for_presentation(section_title),
                 "layout": "TITLE_AND_CONTENT",
                 "content": []
             }
@@ -324,12 +377,14 @@ def parse_outline_to_structured_content(outline_text, resource_type="PRESENTATIO
         elif line.startswith('-') or line.startswith('•'):
             # This is content
             if current_section:
-                clean_content = line.lstrip('-•').strip()
+                clean_content = clean_text_for_presentation(line.lstrip('-•').strip())
                 if clean_content:
                     current_section["content"].append(clean_content)
         elif current_section and line:
             # Any other non-empty line goes to content
-            current_section["content"].append(line)
+            clean_content = clean_text_for_presentation(line)
+            if clean_content:
+                current_section["content"].append(clean_content)
     
     # Don't forget the last section
     if current_section:
@@ -340,7 +395,7 @@ def parse_outline_to_structured_content(outline_text, resource_type="PRESENTATIO
         sections.append({
             "title": "Generated Content",
             "layout": "TITLE_AND_CONTENT",
-            "content": [line.strip() for line in lines if line.strip()]
+            "content": [clean_text_for_presentation(line.strip()) for line in lines if line.strip()]
         })
     
     logger.info(f"Successfully parsed {len(sections)} sections for {resource_type}")
