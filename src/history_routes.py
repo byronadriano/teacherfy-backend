@@ -104,9 +104,16 @@ def get_user_history():
                     # Format the results
                     history_items = []
                     for item in results:
-                        # Extract resource type from lesson_data if available
+                        # Extract resource type from activity and lesson_data
                         resource_type = None
                         lesson_data = {}
+                        
+                        # FIXED: Extract resource type from activity field first
+                        if item.get('activity'):
+                            activity = item['activity']
+                            if activity.startswith('Created '):
+                                resource_type = activity.replace('Created ', '').strip()
+                                logger.debug(f"📝 Extracted resource type from activity: '{resource_type}'")
                         
                         if item.get('lesson_data'):
                             if isinstance(item['lesson_data'], str):
@@ -117,17 +124,15 @@ def get_user_history():
                             else:
                                 lesson_data = item['lesson_data']
                                 
-                            resource_type = lesson_data.get('resourceType', 'PRESENTATION')
+                            # Use resource type from lesson_data if not found in activity
+                            if not resource_type:
+                                resource_type = lesson_data.get('resourceType', 'Presentation')
+                                logger.debug(f"📋 Extracted resource type from lesson_data: '{resource_type}'")
                         
-                        # If resource_type is still None, extract from activity field
-                        if not resource_type and item.get('activity'):
-                            activity = item['activity']
-                            if 'Created ' in activity:
-                                resource_type = activity.replace('Created ', '')
-                        
-                        # Ensure resource_type is a string
+                        # Ensure resource_type is a string and not None
                         if not resource_type:
-                            resource_type = 'PRESENTATION'
+                            resource_type = 'Presentation'
+                            logger.warning("⚠️ No resource type found, defaulting to Presentation")
                         
                         timestamp = item.get('timestamp')
                         formatted_date = format_date(timestamp) if timestamp else "Recent"
@@ -135,14 +140,22 @@ def get_user_history():
                         # Create a unique ID for the item
                         unique_id = f"{item['id']}-{resource_type}-{formatted_date}"
                         
+                        # FIXED: Better title extraction
+                        title = (lesson_data.get("generatedTitle") or 
+                                lesson_data.get("lessonTopic") or 
+                                lesson_data.get("subjectFocus") or 
+                                "Untitled Lesson")
+                        
                         history_items.append({
                             "id": unique_id,
                             "db_id": item["id"],
-                            "title": lesson_data.get("lessonTopic", "Untitled Lesson"),
-                            "types": [resource_type],
+                            "title": title,
+                            "types": [resource_type],  # FIXED: Store as array for consistency
                             "date": formatted_date,
                             "lessonData": lesson_data
                         })
+                        
+                        logger.debug(f"✅ Processed history item: {title} ({resource_type})")
                     
                     response = jsonify({
                         "history": history_items,
@@ -173,13 +186,22 @@ def get_user_history():
             history = session.get('anonymous_history', [])
             logger.info(f"Returning {len(history)} history items from session for anonymous user")
             
-            # Cache the result for this IP address
-            anonymous_history_cache[cache_key] = (datetime.now(), history)
-            
-            # Ensure each history item has a unique ID
+            # FIXED: Ensure each history item has a unique ID and proper format
             for index, item in enumerate(history):
                 if 'id' not in item:
                     item['id'] = f"session-{index}"
+                
+                # FIXED: Ensure types is always an array
+                if 'types' not in item or not isinstance(item['types'], list):
+                    if item.get('lessonData', {}).get('resourceType'):
+                        item['types'] = [item['lessonData']['resourceType']]
+                    else:
+                        item['types'] = ['Presentation']
+                
+                logger.debug(f"📋 Anonymous history item: {item.get('title', 'No title')} - {item.get('types', ['Unknown'])}")
+            
+            # Cache the result for this IP address
+            anonymous_history_cache[cache_key] = (datetime.now(), history)
             
             response = jsonify({
                 "history": history,
@@ -192,10 +214,10 @@ def get_user_history():
             return response
         
     except Exception as e:
-        logger.error(f"Error fetching user history: {e}")
+        logger.error(f"❌ Error fetching user history: {e}")
         logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
-
+    
 @history_blueprint.route("/user/history", methods=["POST"])
 def save_history_item():
     """Save a history item for the current user or session."""
