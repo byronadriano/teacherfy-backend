@@ -1,4 +1,4 @@
-# src/resource_handlers/quiz_handler.py - UPDATED with better separation
+# src/resource_handlers/quiz_handler.py - ROBUST MULTILINGUAL VERSION
 import os
 import logging
 import docx
@@ -32,19 +32,33 @@ def clean_text_for_quiz(text):
     return text.strip()
 
 def extract_question_and_answer(text):
-    """Extract question and answer from text, separating them cleanly"""
+    """Extract question and answer from text, handling multiple languages"""
     if not text or not isinstance(text, str):
         return text, None
     
     cleaned_text = clean_text_for_quiz(text)
     
-    # Look for (Answer: ...) pattern
-    answer_match = re.search(r'\(Answer:\s*([^)]+)\)', cleaned_text, re.IGNORECASE)
-    if answer_match:
-        answer = answer_match.group(1).strip()
-        # Remove the answer from the question
-        question = re.sub(r'\s*\(Answer:\s*[^)]+\)', '', cleaned_text, flags=re.IGNORECASE).strip()
-        return question, answer
+    # Look for multiple answer patterns (English and common translations)
+    answer_patterns = [
+        r'\(Answer:\s*([^)]+)\)',      # English: (Answer: ...)
+        r'\(Respuesta:\s*([^)]+)\)',   # Spanish: (Respuesta: ...)
+        r'\(Réponse:\s*([^)]+)\)',     # French: (Réponse: ...)
+        r'\(Antwort:\s*([^)]+)\)',     # German: (Antwort: ...)
+        r'\(Risposta:\s*([^)]+)\)',    # Italian: (Risposta: ...)
+        r'\(答案:\s*([^)]+)\)',         # Chinese: (答案: ...)
+        r'\(回答:\s*([^)]+)\)',         # Japanese: (回答: ...)
+        r'\(답:\s*([^)]+)\)',          # Korean: (답: ...)
+        r'\(Jawaban:\s*([^)]+)\)',     # Indonesian: (Jawaban: ...)
+        r'\(Câu trả lời:\s*([^)]+)\)', # Vietnamese: (Câu trả lời: ...)
+    ]
+    
+    for pattern in answer_patterns:
+        answer_match = re.search(pattern, cleaned_text, re.IGNORECASE)
+        if answer_match:
+            answer = answer_match.group(1).strip()
+            # Remove the answer from the question
+            question = re.sub(pattern, '', cleaned_text, flags=re.IGNORECASE).strip()
+            return question, answer
     
     return cleaned_text, None
 
@@ -57,16 +71,25 @@ def extract_questions_from_content(content_list):
         if not item.strip():
             continue
         
-        # Skip teacher guidance content
+        # Skip teacher guidance content (check for multiple languages)
         item_lower = item.lower()
-        if any(keyword in item_lower for keyword in [
+        teacher_keywords = [
             'differentiation tip:', 'teacher note:', 'teacher action:', 
-            'assessment check:', 'instructions:'
-        ]):
+            'assessment check:', 'instructions:',
+            # Spanish
+            'consejo de diferenciación:', 'nota del maestro:', 'acción del maestro:',
+            # French  
+            'conseil de différenciation:', 'note de l\'enseignant:', 'action de l\'enseignant:',
+            # German
+            'differenzierungstipp:', 'lehrernotiz:', 'lehreraktion:',
+            # Add more as needed
+        ]
+        
+        if any(keyword in item_lower for keyword in teacher_keywords):
             continue
             
         # Skip section headers and content labels
-        if (item_lower.startswith(('content:', 'questions:', 'section')) or 
+        if (item_lower.startswith(('content:', 'questions:', 'section', 'contenido:', 'preguntas:')) or 
             item in ['---', '', 'Content']):
             continue
         
@@ -79,7 +102,7 @@ def extract_questions_from_content(content_list):
     return questions, answers
 
 def extract_teacher_guidance(content_list):
-    """Extract teacher notes and differentiation tips from content"""
+    """Extract teacher notes and differentiation tips from content (multilingual)"""
     teacher_notes = []
     differentiation_tips = []
     
@@ -90,23 +113,48 @@ def extract_teacher_guidance(content_list):
         item_clean = clean_text_for_quiz(item)
         item_lower = item_clean.lower()
         
-        if item_lower.startswith('differentiation tip:'):
-            tip = item_clean.replace('Differentiation tip:', '').replace('differentiation tip:', '').strip()
-            if tip:
-                differentiation_tips.append(tip)
-        elif item_lower.startswith('teacher note:'):
-            note = item_clean.replace('Teacher note:', '').replace('teacher note:', '').strip()
-            if note:
-                teacher_notes.append(note)
-        elif item_lower.startswith('teacher action:'):
-            action = item_clean.replace('Teacher action:', '').replace('teacher action:', '').strip()
-            if action:
-                teacher_notes.append(action)
+        # Check for differentiation tips in multiple languages
+        diff_patterns = [
+            (r'^differentiation tip:\s*(.+)', 'differentiation tip:'),
+            (r'^consejo de diferenciación:\s*(.+)', 'consejo de diferenciación:'),
+            (r'^conseil de différenciation:\s*(.+)', 'conseil de différenciation:'),
+            (r'^differenzierungstipp:\s*(.+)', 'differenzierungstipp:'),
+        ]
+        
+        # Check for teacher notes in multiple languages
+        note_patterns = [
+            (r'^teacher note:\s*(.+)', 'teacher note:'),
+            (r'^teacher action:\s*(.+)', 'teacher action:'),
+            (r'^nota del maestro:\s*(.+)', 'nota del maestro:'),
+            (r'^acción del maestro:\s*(.+)', 'acción del maestro:'),
+            (r'^note de l\'enseignant:\s*(.+)', 'note de l\'enseignant:'),
+            (r'^action de l\'enseignant:\s*(.+)', 'action de l\'enseignant:'),
+            (r'^lehrernotiz:\s*(.+)', 'lehrernotiz:'),
+            (r'^lehreraktion:\s*(.+)', 'lehreraktion:'),
+        ]
+        
+        # Check differentiation patterns
+        for pattern, keyword in diff_patterns:
+            match = re.search(pattern, item_lower)
+            if match:
+                tip = item_clean.replace(keyword, '').replace(keyword.title(), '').strip()
+                if tip:
+                    differentiation_tips.append(tip)
+                break
+        
+        # Check teacher note patterns
+        for pattern, keyword in note_patterns:
+            match = re.search(pattern, item_lower)
+            if match:
+                note = item_clean.replace(keyword, '').replace(keyword.title(), '').strip()
+                if note:
+                    teacher_notes.append(note)
+                break
     
     return teacher_notes, differentiation_tips
 
 class QuizHandler(BaseResourceHandler):
-    """Handler for generating quizzes as Word documents with properly separated questions and answers"""
+    """Handler for generating quizzes as Word documents with multilingual support"""
     
     def generate(self) -> str:
         """Generate a quiz docx file with properly separated questions and answers"""
@@ -163,7 +211,7 @@ class QuizHandler(BaseResourceHandler):
             if section.get('teacher_notes'):
                 for note in section.get('teacher_notes'):
                     clean_note = clean_text_for_quiz(note)
-                    if clean_note and not clean_note.lower().startswith(('differentiation', 'teacher')):
+                    if clean_note and not any(keyword in clean_note.lower() for keyword in ['differentiation', 'teacher']):
                         teacher_notes.append(clean_note)
             
             # Store teacher data for later use
@@ -200,7 +248,7 @@ class QuizHandler(BaseResourceHandler):
                     question_para.add_run(question)
                     
                     # Add answer space based on question type
-                    if any(word in question.lower() for word in ['calculate', 'solve', 'find', 'what is']):
+                    if any(word in question.lower() for word in ['calculate', 'solve', 'find', 'what is', 'calcular', 'resolver', 'encontrar', 'qué es']):
                         # Math/calculation question - provide work space
                         doc.add_paragraph()
                         doc.add_paragraph("Show your work:")
