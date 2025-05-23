@@ -144,7 +144,63 @@ def get_system_prompt(resource_type="PRESENTATION"):
     elif "PRESENTATION" in normalized_type or "SLIDE" in normalized_type:
         normalized_type = "PRESENTATION"
     
-    if normalized_type == "QUIZ":
+    if normalized_type == "WORKSHEET":
+        return """
+        YOU ARE A MASTER WORKSHEET CREATOR. Your task is to create educational worksheets with clean separation between student content and teacher guidance.
+
+        CRITICAL REQUIREMENTS:
+        1. STUDENT QUESTIONS must be completely separate from ANSWERS
+        2. TEACHER GUIDANCE must be separate from student content
+        3. Each question must have a corresponding answer
+        4. Use proper formatting for easy parsing
+
+        FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
+
+        Section X: [Clear, Descriptive Title]
+        Content:
+        - [Question 1] (Answer: [Correct Answer])
+        - [Question 2] (Answer: [Correct Answer])
+        - [Question 3] (Answer: [Correct Answer])
+        - Differentiation tip: [Specific strategy for supporting different learners]
+        - Teacher note: [Implementation guidance, materials needed, or teaching tips]
+
+        CRITICAL FORMATTING REQUIREMENTS:
+        1. ALWAYS start each section with "Section X:" where X is the section number
+        2. ALWAYS include the exact section header: "Content:"
+        3. ALWAYS use bullet points with a hyphen (-) for all list items
+        4. DO NOT use any markdown formatting (no **, __, ~~, #, etc.)
+        5. DO NOT use asterisks, underscores, or other special formatting characters
+        6. Use plain text only - formatting will be handled by the document processor
+        7. ALWAYS put answers in parentheses: (Answer: [correct answer])
+        8. Make questions clear and specific
+        9. Provide complete, accurate answers
+        10. Include varied question types (calculation, short answer, multiple choice, etc.)
+
+        QUESTION GUIDELINES:
+        - Create questions that match the grade level and subject
+        - Include a mix of question types: calculations, fill-in-the-blank, short answer
+        - Make questions progressive in difficulty within each section
+        - Ensure each question has ONE clear, correct answer
+        - Word problems should be relatable and age-appropriate
+
+        TEACHER GUIDANCE GUIDELINES:
+        - Differentiation tips should be specific and actionable
+        - Teacher notes should include implementation tips, common mistakes to watch for
+        - Suggest materials or manipulatives when helpful
+        - Provide timing estimates when relevant
+
+        EXAMPLE OF CORRECT FORMAT:
+        Section 1: Basic Addition Practice
+        Content:
+        - Solve: 25 + 17 = ____ (Answer: 42)
+        - What is the sum of 34 and 28? (Answer: 62)
+        - Fill in the missing number: 45 + ___ = 73 (Answer: 28)
+        - Maria has 15 stickers and buys 23 more. How many stickers does she have now? (Answer: 38)
+        - Differentiation tip: Provide number lines or base-ten blocks for visual learners
+        - Teacher note: Remind students to line up numbers by place value when adding
+        """
+    
+    elif normalized_type == "QUIZ":
         return """
         YOU ARE A MASTER QUIZ AND TEST CREATOR. Your task is to produce educational assessments with clean, professional formatting that include everything a teacher needs.
 
@@ -181,44 +237,6 @@ def get_system_prompt(resource_type="PRESENTATION"):
         - Teacher note: Review numerator/denominator before the quiz if needed
         """
     
-    elif normalized_type == "WORKSHEET":
-        return """
-        YOU ARE A MASTER WORKSHEET CREATOR. Your task is to produce educational worksheets with clean, professional formatting and built-in support for teachers and learners.
-
-        FOLLOW THIS EXACT FORMAT FOR EACH SECTION:
-
-        Section X: [Clear, Descriptive Title]
-        Content:
-        - [Activity or question 1] (Answer: [Correct Answer])
-        - [Activity or question 2] (Answer: [Correct Answer])
-        - [More questions or activities, with answers in brackets]
-
-        - Differentiation tip: [Scaffolding strategies, enrichment ideas, or alternate formats]
-        - Teacher note: [Tips for implementing the worksheet, materials needed, or grouping ideas]
-
-        CRITICAL FORMATTING REQUIREMENTS:
-        1. ALWAYS start each section with "Section X:" where X is the section number
-        2. ALWAYS include the exact section header: "Content:"
-        3. ALWAYS use bullet points with a hyphen (-) for all list items
-        4. DO NOT use any markdown formatting (no **, __, ~~, #, etc.)
-        5. DO NOT use asterisks, underscores, or other special formatting characters
-        6. Use plain text only - formatting will be handled by the document processor
-        7. Include varied and age-appropriate activity types
-        8. Organize from simple to more complex
-        9. Embed answers for fast reference
-        10. Provide clear, direct instructions with each task
-
-        EXAMPLE OF CORRECT FORMAT:
-        Section 1: Basic Addition Practice
-        Content:
-        - Solve: 15 + 27 = ____ (Answer: 42)
-        - Circle the larger number: 34 or 29 (Answer: 34)
-        - Draw 12 dots and group them into sets of 3. How many groups? (Answer: 4)
-
-        - Differentiation tip: Use number lines or counters for hands-on learners
-        - Teacher note: Ask early finishers to create their own number sentences
-        """
-
     elif normalized_type == "LESSON_PLAN":
         return """
         YOU ARE A MASTER LESSON PLAN CREATOR. Your task is to produce comprehensive, ready-to-use lesson plans with professional formatting, actionable teacher guidance, and built-in differentiation.

@@ -1,11 +1,10 @@
-# src/resource_handlers/quiz_handler.py - Updated with better text processing
+# src/resource_handlers/quiz_handler.py - UPDATED with better separation
 import os
 import logging
 import docx
-import random
+import re
 from typing import Dict, Any, List, Optional
 from .base_handler import BaseResourceHandler
-import re
 
 logger = logging.getLogger(__name__)
 
@@ -32,27 +31,82 @@ def clean_text_for_quiz(text):
     
     return text.strip()
 
+def extract_question_and_answer(text):
+    """Extract question and answer from text, separating them cleanly"""
+    if not text or not isinstance(text, str):
+        return text, None
+    
+    cleaned_text = clean_text_for_quiz(text)
+    
+    # Look for (Answer: ...) pattern
+    answer_match = re.search(r'\(Answer:\s*([^)]+)\)', cleaned_text, re.IGNORECASE)
+    if answer_match:
+        answer = answer_match.group(1).strip()
+        # Remove the answer from the question
+        question = re.sub(r'\s*\(Answer:\s*[^)]+\)', '', cleaned_text, flags=re.IGNORECASE).strip()
+        return question, answer
+    
+    return cleaned_text, None
+
 def extract_questions_from_content(content_list):
-    """Extract and separate questions from content"""
+    """Extract and separate questions from content, filtering out teacher notes"""
     questions = []
+    answers = []
     
     for item in content_list:
         if not item.strip():
             continue
-            
-        cleaned_item = clean_text_for_quiz(item)
         
-        # Skip section headers and content labels
-        if (cleaned_item.lower().startswith(('content:', 'questions:', 'section')) or 
-            cleaned_item in ['---', '', 'Content']):
+        # Skip teacher guidance content
+        item_lower = item.lower()
+        if any(keyword in item_lower for keyword in [
+            'differentiation tip:', 'teacher note:', 'teacher action:', 
+            'assessment check:', 'instructions:'
+        ]):
             continue
             
-        questions.append(cleaned_item)
+        # Skip section headers and content labels
+        if (item_lower.startswith(('content:', 'questions:', 'section')) or 
+            item in ['---', '', 'Content']):
+            continue
+        
+        question, answer = extract_question_and_answer(item)
+        if question:
+            questions.append(question)
+            if answer:
+                answers.append(answer)
     
-    return questions
+    return questions, answers
+
+def extract_teacher_guidance(content_list):
+    """Extract teacher notes and differentiation tips from content"""
+    teacher_notes = []
+    differentiation_tips = []
+    
+    for item in content_list:
+        if not item or not isinstance(item, str):
+            continue
+            
+        item_clean = clean_text_for_quiz(item)
+        item_lower = item_clean.lower()
+        
+        if item_lower.startswith('differentiation tip:'):
+            tip = item_clean.replace('Differentiation tip:', '').replace('differentiation tip:', '').strip()
+            if tip:
+                differentiation_tips.append(tip)
+        elif item_lower.startswith('teacher note:'):
+            note = item_clean.replace('Teacher note:', '').replace('teacher note:', '').strip()
+            if note:
+                teacher_notes.append(note)
+        elif item_lower.startswith('teacher action:'):
+            action = item_clean.replace('Teacher action:', '').replace('teacher action:', '').strip()
+            if action:
+                teacher_notes.append(action)
+    
+    return teacher_notes, differentiation_tips
 
 class QuizHandler(BaseResourceHandler):
-    """Handler for generating quizzes as Word documents with improved text processing"""
+    """Handler for generating quizzes as Word documents with properly separated questions and answers"""
     
     def generate(self) -> str:
         """Generate a quiz docx file with properly separated questions and answers"""
@@ -71,153 +125,154 @@ class QuizHandler(BaseResourceHandler):
         doc.add_heading(quiz_title, 0)
         
         # Add name and date fields
-        doc.add_paragraph('Name: _________________________________ Date: _________________')
+        name_date_para = doc.add_paragraph()
+        name_date_para.add_run('Name: ').bold = True
+        name_date_para.add_run('_' * 40)
+        name_date_para.add_run('    Date: ').bold = True
+        name_date_para.add_run('_' * 20)
+        
         doc.add_paragraph()  # Add spacing
         
         # STUDENT SECTION
-        doc.add_heading("STUDENT SECTION", 1)
+        student_heading = doc.add_heading("STUDENT SECTION", 1)
+        student_heading.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
         
-        # Add instructions if available
-        instructions_added = False
-        for section in self.structured_content:
-            if section.get('instructions'):
-                instructions = section.get('instructions')
-                if instructions and len(instructions) > 0:
-                    p = doc.add_paragraph()
-                    p.add_run('Instructions: ').bold = True
-                    p.add_run(clean_text_for_quiz(instructions[0]))
-                    instructions_added = True
-                    break
-        
-        if not instructions_added:
-            # Default instructions
-            p = doc.add_paragraph()
-            p.add_run('Instructions: ').bold = True
-            p.add_run('Answer the following questions to the best of your ability.')
+        # Add general instructions
+        instructions_para = doc.add_paragraph()
+        instructions_para.add_run('Instructions: ').bold = True
+        instructions_para.add_run('Answer all questions to the best of your ability. Show your work where applicable.')
         
         doc.add_paragraph()  # Add some space
         
-        # Process each section
+        # Process each section and extract questions
         question_counter = 1
-        all_answers = []  # Collect answers for answer key
+        all_teacher_data = []  # Collect all teacher guidance for the answer key
         
         for section_idx, section in enumerate(self.structured_content):
             section_title = clean_text_for_quiz(section.get('title', f'Section {section_idx + 1}'))
             
-            # Skip if this is just a title section
+            # Skip if this is just a title section with no content
             if not section.get('content'):
                 continue
-                
-            # Add section heading
-            doc.add_heading(section_title, level=2)
             
-            # Extract and process questions
-            questions = extract_questions_from_content(section.get('content', []))
-            section_answers = []
+            # Extract questions, answers, and teacher guidance
+            questions, answers = extract_questions_from_content(section.get('content', []))
+            teacher_notes, differentiation_tips = extract_teacher_guidance(section.get('content', []))
             
-            current_question = None
-            current_options = []
+            # Add any teacher_notes from the structured content
+            if section.get('teacher_notes'):
+                for note in section.get('teacher_notes'):
+                    clean_note = clean_text_for_quiz(note)
+                    if clean_note and not clean_note.lower().startswith(('differentiation', 'teacher')):
+                        teacher_notes.append(clean_note)
             
-            for item in questions:
-                # Check if this is a multiple choice option
-                if re.match(r'^[A-D]\)\s*.+', item):
-                    current_options.append(item)
-                else:
-                    # This is a new question
-                    # First, save the previous question if it exists
-                    if current_question:
-                        # Add the question
-                        p = doc.add_paragraph()
-                        p.add_run(f"{question_counter}. ").bold = True
-                        p.add_run(current_question)
-                        
-                        # Add options if any
-                        for option in current_options:
-                            doc.add_paragraph(f"    {option}")
-                        
-                        # Add answer space if no options (short answer)
-                        if not current_options:
-                            doc.add_paragraph("_______________________________________________________")
-                        
-                        # Store for answer key
-                        section_answers.append({
-                            'question_num': question_counter,
-                            'question': current_question,
-                            'options': current_options.copy()
-                        })
-                        
-                        question_counter += 1
-                    
-                    # Start new question
-                    current_question = item
-                    current_options = []
-            
-            # Don't forget the last question
-            if current_question:
-                p = doc.add_paragraph()
-                p.add_run(f"{question_counter}. ").bold = True
-                p.add_run(current_question)
-                
-                for option in current_options:
-                    doc.add_paragraph(f"    {option}")
-                
-                if not current_options:
-                    doc.add_paragraph("_______________________________________________________")
-                
-                section_answers.append({
-                    'question_num': question_counter,
-                    'question': current_question,
-                    'options': current_options.copy()
-                })
-                
-                question_counter += 1
-            
-            # Store section answers
-            all_answers.append({
+            # Store teacher data for later use
+            all_teacher_data.append({
                 'section_title': section_title,
-                'questions': section_answers,
-                'teacher_notes': [clean_text_for_quiz(note) for note in section.get('teacher_notes', []) if note.strip()],
-                'provided_answers': [clean_text_for_quiz(ans) for ans in section.get('answers', []) if ans.strip()]
+                'questions': questions.copy(),
+                'answers': answers.copy(),
+                'teacher_notes': teacher_notes.copy(),
+                'differentiation_tips': differentiation_tips.copy(),
+                'start_question_num': question_counter
             })
+            
+            if not questions:
+                continue
+            
+            # Add section heading for students
+            section_heading = doc.add_heading(section_title, level=2)
+            
+            # Add questions only (no answers, no teacher notes)
+            for question in questions:
+                # Check if it's a multiple choice question
+                if re.search(r'\b[A-D]\)', question):
+                    # Multiple choice - add question as is
+                    question_para = doc.add_paragraph()
+                    question_para.add_run(f"{question_counter}. ").bold = True
+                    question_para.add_run(question)
+                    
+                    # Add some space for the answer
+                    doc.add_paragraph("Answer: _____")
+                else:
+                    # Regular question - add question with answer space
+                    question_para = doc.add_paragraph()
+                    question_para.add_run(f"{question_counter}. ").bold = True
+                    question_para.add_run(question)
+                    
+                    # Add answer space based on question type
+                    if any(word in question.lower() for word in ['calculate', 'solve', 'find', 'what is']):
+                        # Math/calculation question - provide work space
+                        doc.add_paragraph()
+                        doc.add_paragraph("Show your work:")
+                        doc.add_paragraph("_" * 60)
+                        doc.add_paragraph("_" * 60)
+                        doc.add_paragraph()
+                        answer_para = doc.add_paragraph()
+                        answer_para.add_run("Answer: ").bold = True
+                        answer_para.add_run("_" * 30)
+                    else:
+                        # Short answer question
+                        doc.add_paragraph("_" * 60)
+                        doc.add_paragraph("_" * 60)
+                
+                doc.add_paragraph()  # Add spacing between questions
+                question_counter += 1
         
-        # TEACHER SECTION
+        # TEACHER SECTION - Start on new page
         doc.add_page_break()
-        doc.add_heading("TEACHER GUIDE: ANSWER KEY", 1)
+        teacher_heading = doc.add_heading("TEACHER GUIDE & ANSWER KEY", 1)
+        teacher_heading.alignment = docx.enum.text.WD_ALIGN_PARAGRAPH.CENTER
         
-        # Add answer key by section
-        for section_data in all_answers:
+        # Add teacher guidance and answers by section
+        for section_data in all_teacher_data:
             if not section_data['questions']:  # Skip sections with no questions
                 continue
-                
+            
+            # Section heading
             doc.add_heading(section_data['section_title'], level=2)
             
-            # Add questions and space for answers
-            doc.add_heading("Questions and Answer Space", level=3)
-            for q_data in section_data['questions']:
-                p = doc.add_paragraph()
-                p.add_run(f"Question {q_data['question_num']}: ").bold = True
-                p.add_run(q_data['question'])
+            # Questions and Answers
+            if section_data['questions'] and section_data['answers']:
+                doc.add_heading("Questions & Answers", level=3)
                 
-                if q_data['options']:
-                    doc.add_paragraph("Multiple choice options provided above.")
-                
-                # Add space for teacher to write correct answer
-                doc.add_paragraph("Answer: _________________________________")
-                doc.add_paragraph()  # Spacing
+                current_q_num = section_data['start_question_num']
+                for i, question in enumerate(section_data['questions']):
+                    # Question
+                    q_para = doc.add_paragraph()
+                    q_para.add_run(f"Q{current_q_num}: ").bold = True
+                    q_para.add_run(question)
+                    
+                    # Answer
+                    if i < len(section_data['answers']):
+                        a_para = doc.add_paragraph()
+                        a_para.add_run("Answer: ").bold = True
+                        a_para.add_run(section_data['answers'][i])
+                    else:
+                        a_para = doc.add_paragraph()
+                        a_para.add_run("Answer: ").bold = True
+                        a_para.add_run("(Teacher to provide)")
+                    
+                    doc.add_paragraph()  # Spacing
+                    current_q_num += 1
             
-            # Add provided answers if any
-            if section_data['provided_answers']:
-                doc.add_heading("Provided Answer Key", level=3)
-                for i, answer in enumerate(section_data['provided_answers']):
-                    p = doc.add_paragraph()
-                    p.add_run(f"• {answer}")
-            
-            # Add teacher notes if any
+            # Teaching Notes
             if section_data['teacher_notes']:
-                doc.add_heading("Teacher Notes", level=3)
+                doc.add_heading("Teaching Notes", level=3)
                 for note in section_data['teacher_notes']:
-                    p = doc.add_paragraph()
-                    p.add_run(f"• {note}")
+                    note_para = doc.add_paragraph()
+                    note_para.add_run("• ").bold = True
+                    note_para.add_run(note)
+            
+            # Differentiation Tips
+            if section_data['differentiation_tips']:
+                doc.add_heading("Differentiation Tips", level=3)
+                for tip in section_data['differentiation_tips']:
+                    tip_para = doc.add_paragraph()
+                    tip_para.add_run("• ").bold = True
+                    tip_para.add_run(tip)
+            
+            # Add spacing between sections
+            doc.add_paragraph()
         
         # Save the document
         doc.save(temp_file)
