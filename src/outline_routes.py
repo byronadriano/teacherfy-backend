@@ -58,7 +58,54 @@ def is_example_request(data):
          data.get("subjectFocus", "").lower().strip() == "math" and
          data.get("language", "").lower().strip() == "english")
     )
-    
+
+# Test data that doesn't call OpenAI
+TEST_OUTLINE_DATA = {
+    "title": "Test Lesson Plan",
+    "messages": [
+        """Slide 1: Test Topic Introduction
+Content:
+- This is a test slide for limit testing
+- No OpenAI API calls were made
+- This tests the usage limits system
+
+Slide 2: Test Content
+Content:
+- More test content here
+- Testing monthly limits functionality
+- Verifying database tracking"""
+    ],
+    "structured_content": [
+        {
+            "title": "Test Topic Introduction",
+            "layout": "TITLE_AND_CONTENT",
+            "content": [
+                "This is a test slide for limit testing",
+                "No OpenAI API calls were made",
+                "This tests the usage limits system"
+            ]
+        },
+        {
+            "title": "Test Content",
+            "layout": "TITLE_AND_CONTENT",
+            "content": [
+                "More test content here",
+                "Testing monthly limits functionality", 
+                "Verifying database tracking"
+            ]
+        }
+    ]
+}
+
+def is_test_request(request_data):
+    """Check if this is a test request for limits testing."""
+    return (
+        request_data.get("test_limits") or
+        request_data.get("lessonTopic", "").lower().startswith("test topic") or
+        request_data.get("customPrompt", "").lower().find("test request for limit testing") != -1
+    )
+
+  
 def generate_outline_title(form_data, structured_content=None):
     """Generate a meaningful title for the outline based on form data and content."""
     try:
@@ -426,7 +473,16 @@ def get_outline():
             logger.info("Returning example outline - no usage increment")
             return jsonify(EXAMPLE_OUTLINE_DATA)
 
-        # Validate and set default values
+        # NEW: Check for test request (counts against limits but doesn't call OpenAI)
+        if is_test_request(data):
+            logger.info("Returning test outline - usage incremented but no OpenAI call")
+            # Generate a unique title for the test
+            test_title = f"Test Lesson - {data.get('lessonTopic', 'Generic Test')}"
+            test_data = TEST_OUTLINE_DATA.copy()
+            test_data["title"] = test_title
+            return jsonify(test_data)
+
+        # Validate and set default values for real OpenAI requests
         resource_type = data.get('resourceType', 'Presentation')
         subject_focus = data.get('subjectFocus', 'General Learning')
         grade_level = data.get('gradeLevel', 'Not Specified')
@@ -446,6 +502,8 @@ def get_outline():
         # Validate OpenAI client
         if not client:
             return jsonify({"error": "OpenAI client not initialized"}), 500
+
+        logger.info("Making real OpenAI API call for non-test request...")
 
         # Build requirements
         item_word = "slides" if resource_type.lower() == "presentation" else "sections"

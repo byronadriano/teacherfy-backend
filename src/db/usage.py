@@ -1,4 +1,4 @@
-# src/db/usage.py
+# src/db/usage.py - FIXED VERSION with proper monthly limits
 import os
 import logging
 import traceback
@@ -7,25 +7,20 @@ from .database import get_db_cursor, get_db_connection
 
 logger = logging.getLogger(__name__)
 
-# Configuration for usage limits
-DAILY_GENERATION_LIMIT = int(os.getenv('DAILY_GENERATION_LIMIT', 3))
-DAILY_DOWNLOAD_LIMIT = int(os.getenv('DAILY_DOWNLOAD_LIMIT', 1))
+# FIXED: Use monthly limits consistently
+MONTHLY_GENERATION_LIMIT = int(os.getenv('MONTHLY_GENERATION_LIMIT', 5))  # Changed from daily to monthly
+MONTHLY_DOWNLOAD_LIMIT = int(os.getenv('MONTHLY_DOWNLOAD_LIMIT', 5))      # Changed from daily to monthly
 
 def sanitize_ip_address(ip_address):
-    """
-    Sanitize the IP address input.
-    Handles various input types and converts it to a string.
-    """
+    """Sanitize the IP address input."""
     if ip_address is None:
         return None
 
-    # If it's a tuple, take the first element
     if isinstance(ip_address, tuple):
         ip_address = ip_address[0]
 
     ip_address = str(ip_address).strip()
 
-    # Optional basic validation
     try:
         import ipaddress
         ipaddress.ip_address(ip_address)
@@ -41,7 +36,11 @@ def is_new_month(last_reset_time):
         
     now = datetime.now()
     
-    # If different year or different month, it's a new month
+    # FIXED: More robust month comparison
+    if hasattr(last_reset_time, 'tzinfo') and last_reset_time.tzinfo:
+        last_reset_time = last_reset_time.replace(tzinfo=None)
+    
+    # If different year OR different month, it's a new month
     return (now.year != last_reset_time.year or 
             now.month != last_reset_time.month)
 
@@ -59,7 +58,7 @@ def get_monthly_reset_time():
 
 def increment_usage(ip_address=None, user_id=None, action_type='generation'):
     """
-    Increment the usage count for a user or IP address.
+    Increment the usage count for a user or IP address with MONTHLY limits.
     
     Args:
         ip_address (str, optional): The IP address to track.
@@ -70,68 +69,76 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
     if not ip_address:
         raise ValueError("IP address is required")
 
-    try:
-        if user_id is None:
-            # For anonymous users, store user_id as NULL and use the unique index on ip_address.
-            query = """
-            INSERT INTO user_usage_limits 
-              (user_id, ip_address, generations_used, downloads_used, last_reset)
-            VALUES 
-              (NULL, %s, CASE WHEN %s = 'generation' THEN 1 ELSE 0 END, 
-                   CASE WHEN %s = 'download' THEN 1 ELSE 0 END, CURRENT_TIMESTAMP)
-            ON CONFLICT (ip_address) WHERE user_id IS NULL DO UPDATE 
-            SET 
-              generations_used = CASE 
-                WHEN DATE_TRUNC('month', user_usage_limits.last_reset) < DATE_TRUNC('month', NOW())
-                  THEN CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
-                ELSE user_usage_limits.generations_used + CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
-              END,
-              downloads_used = CASE 
-                WHEN DATE_TRUNC('month', user_usage_limits.last_reset) < DATE_TRUNC('month', NOW())
-                  THEN CASE WHEN %s = 'download' THEN 1 ELSE 0 END
-                ELSE user_usage_limits.downloads_used + CASE WHEN %s = 'download' THEN 1 ELSE 0 END
-              END,
-              last_reset = CURRENT_TIMESTAMP
-            """
-            params = (
-                ip_address,
-                action_type, action_type,
-                action_type, action_type,
-                action_type, action_type
-            )
-        else:
-            # For registered users, the unique constraint is on user_id.
-            query = """
-            INSERT INTO user_usage_limits 
-              (user_id, ip_address, generations_used, downloads_used, last_reset)
-            VALUES 
-              (%s, %s, CASE WHEN %s = 'generation' THEN 1 ELSE 0 END, 
-                   CASE WHEN %s = 'download' THEN 1 ELSE 0 END, CURRENT_TIMESTAMP)
-            ON CONFLICT (user_id) DO UPDATE 
-            SET 
-              generations_used = CASE 
-                WHEN DATE_TRUNC('month', user_usage_limits.last_reset) < DATE_TRUNC('month', NOW())
-                  THEN CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
-                ELSE user_usage_limits.generations_used + CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
-              END,
-              downloads_used = CASE 
-                WHEN DATE_TRUNC('month', user_usage_limits.last_reset) < DATE_TRUNC('month', NOW())
-                  THEN CASE WHEN %s = 'download' THEN 1 ELSE 0 END
-                ELSE user_usage_limits.downloads_used + CASE WHEN %s = 'download' THEN 1 ELSE 0 END
-              END,
-              last_reset = CURRENT_TIMESTAMP
-            """
-            params = (
-                user_id, ip_address,
-                action_type, action_type,
-                action_type, action_type,
-                action_type, action_type
-            )
+    logger.info(f"Incrementing {action_type} usage for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
 
+    try:
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(query, params)
+                if user_id is None:
+                    # FIXED: Better upsert logic for anonymous users
+                    cursor.execute("""
+                        INSERT INTO user_usage_limits 
+                          (user_id, ip_address, generations_used, downloads_used, last_reset)
+                        VALUES 
+                          (NULL, %s, 
+                           CASE WHEN %s = 'generation' THEN 1 ELSE 0 END, 
+                           CASE WHEN %s = 'download' THEN 1 ELSE 0 END, 
+                           CURRENT_TIMESTAMP)
+                        ON CONFLICT (ip_address) WHERE user_id IS NULL DO UPDATE 
+                        SET 
+                          generations_used = CASE 
+                            WHEN EXTRACT(MONTH FROM user_usage_limits.last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                              OR EXTRACT(YEAR FROM user_usage_limits.last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                              THEN CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
+                            ELSE user_usage_limits.generations_used + CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
+                          END,
+                          downloads_used = CASE 
+                            WHEN EXTRACT(MONTH FROM user_usage_limits.last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                              OR EXTRACT(YEAR FROM user_usage_limits.last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                              THEN CASE WHEN %s = 'download' THEN 1 ELSE 0 END
+                            ELSE user_usage_limits.downloads_used + CASE WHEN %s = 'download' THEN 1 ELSE 0 END
+                          END,
+                          last_reset = CURRENT_TIMESTAMP
+                    """, (
+                        ip_address,
+                        action_type, action_type,
+                        action_type, action_type,
+                        action_type, action_type
+                    ))
+                else:
+                    # FIXED: Better upsert logic for registered users
+                    cursor.execute("""
+                        INSERT INTO user_usage_limits 
+                          (user_id, ip_address, generations_used, downloads_used, last_reset)
+                        VALUES 
+                          (%s, %s, 
+                           CASE WHEN %s = 'generation' THEN 1 ELSE 0 END, 
+                           CASE WHEN %s = 'download' THEN 1 ELSE 0 END, 
+                           CURRENT_TIMESTAMP)
+                        ON CONFLICT (user_id) WHERE user_id IS NOT NULL DO UPDATE 
+                        SET 
+                          generations_used = CASE 
+                            WHEN EXTRACT(MONTH FROM user_usage_limits.last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                              OR EXTRACT(YEAR FROM user_usage_limits.last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                              THEN CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
+                            ELSE user_usage_limits.generations_used + CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
+                          END,
+                          downloads_used = CASE 
+                            WHEN EXTRACT(MONTH FROM user_usage_limits.last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                              OR EXTRACT(YEAR FROM user_usage_limits.last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                              THEN CASE WHEN %s = 'download' THEN 1 ELSE 0 END
+                            ELSE user_usage_limits.downloads_used + CASE WHEN %s = 'download' THEN 1 ELSE 0 END
+                          END,
+                          last_reset = CURRENT_TIMESTAMP
+                    """, (
+                        user_id, ip_address,
+                        action_type, action_type,
+                        action_type, action_type,
+                        action_type, action_type
+                    ))
+            
             conn.commit()
+            logger.info(f"Successfully incremented {action_type} usage")
     except Exception as e:
         logger.error(f"Error incrementing usage: {e}")
         logger.error(traceback.format_exc())
@@ -139,33 +146,45 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
 
 def check_user_limits(user_id=None, ip_address=None):
     """
-    Check usage limits for a user or IP address with monthly reset logic.
+    Check MONTHLY usage limits for a user or IP address.
     
     Args:
         user_id (int, optional): The user ID to check.
         ip_address (str, optional): The IP address to check.
         
     Returns:
-        dict: A dictionary with keys: can_generate, can_download, generations_left, downloads_left.
+        dict: A dictionary with usage information and limits.
     """
     ip_address = sanitize_ip_address(ip_address)
     if not ip_address:
         raise ValueError("IP address is required")
 
+    logger.info(f"Checking monthly limits for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+
     try:
         with get_db_cursor() as cursor:
+            # FIXED: Proper month comparison using EXTRACT
             query = """
             SELECT 
-              COALESCE(
-                CASE WHEN DATE_TRUNC('month', last_reset) < DATE_TRUNC('month', NOW())
-                  THEN 0 ELSE generations_used END, 0) AS generations_used,
-              COALESCE(
-                CASE WHEN DATE_TRUNC('month', last_reset) < DATE_TRUNC('month', NOW())
-                  THEN 0 ELSE downloads_used END, 0) AS downloads_used,
+              CASE 
+                WHEN EXTRACT(MONTH FROM last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                  OR EXTRACT(YEAR FROM last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                  OR last_reset IS NULL
+                  THEN 0 
+                ELSE COALESCE(generations_used, 0) 
+              END AS current_generations_used,
+              CASE 
+                WHEN EXTRACT(MONTH FROM last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                  OR EXTRACT(YEAR FROM last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                  OR last_reset IS NULL
+                  THEN 0 
+                ELSE COALESCE(downloads_used, 0) 
+              END AS current_downloads_used,
               last_reset
             FROM user_usage_limits
             WHERE 
             """
+            
             if user_id is not None:
                 query += "user_id = %s"
                 params = (user_id,)
@@ -177,25 +196,52 @@ def check_user_limits(user_id=None, ip_address=None):
             usage = cursor.fetchone()
 
             if not usage:
+                # No usage record found - user/IP is within limits
+                logger.info("No usage record found - within limits")
                 return {
                     'can_generate': True,
                     'can_download': True,
-                    'generations_left': DAILY_GENERATION_LIMIT,
-                    'downloads_left': DAILY_DOWNLOAD_LIMIT,
-                    'reset_time': get_monthly_reset_time().isoformat()
+                    'generations_left': MONTHLY_GENERATION_LIMIT,
+                    'downloads_left': MONTHLY_DOWNLOAD_LIMIT,
+                    'reset_time': get_monthly_reset_time().isoformat(),
+                    'current_usage': {
+                        'generations_used': 0,
+                        'downloads_used': 0
+                    }
                 }
 
-            generations_left = max(0, DAILY_GENERATION_LIMIT - (usage.get('generations_used') or 0))
-            downloads_left = max(0, DAILY_DOWNLOAD_LIMIT - (usage.get('downloads_used') or 0))
+            current_generations = usage.get('current_generations_used', 0)
+            current_downloads = usage.get('current_downloads_used', 0)
+            
+            generations_left = max(0, MONTHLY_GENERATION_LIMIT - current_generations)
+            downloads_left = max(0, MONTHLY_DOWNLOAD_LIMIT - current_downloads)
+
+            logger.info(f"Current usage: {current_generations}/{MONTHLY_GENERATION_LIMIT} generations, {current_downloads}/{MONTHLY_DOWNLOAD_LIMIT} downloads")
+            logger.info(f"Remaining: {generations_left} generations, {downloads_left} downloads")
 
             return {
                 'can_generate': generations_left > 0,
                 'can_download': downloads_left > 0,
                 'generations_left': generations_left,
                 'downloads_left': downloads_left,
-                'reset_time': get_monthly_reset_time().isoformat()
+                'reset_time': get_monthly_reset_time().isoformat(),
+                'current_usage': {
+                    'generations_used': current_generations,
+                    'downloads_used': current_downloads
+                }
             }
     except Exception as e:
         logger.error(f"Error checking user limits: {e}")
         logger.error(traceback.format_exc())
-        raise
+        # In case of error, allow the request to prevent blocking users
+        return {
+            'can_generate': True,
+            'can_download': True,
+            'generations_left': MONTHLY_GENERATION_LIMIT,
+            'downloads_left': MONTHLY_DOWNLOAD_LIMIT,
+            'reset_time': get_monthly_reset_time().isoformat(),
+            'current_usage': {
+                'generations_used': 0,
+                'downloads_used': 0
+            }
+        }
