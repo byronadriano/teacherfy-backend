@@ -124,6 +124,64 @@ def create_app():
                 "error": str(e)
             }), 500
             
+    @app.route('/debug/database')
+    def debug_database():
+        """Test database operations directly"""
+        from src.db import get_user_by_email, create_user, log_user_login
+        
+        test_results = {}
+        
+        try:
+            # Test 1: Check if database connection works
+            from src.db.database import test_connection
+            test_results['connection'] = test_connection()
+            
+            # Test 2: Try to get a user (should return None if no user exists)
+            test_email = "test@example.com"
+            existing_user = get_user_by_email(test_email)
+            test_results['existing_user'] = existing_user
+            
+            # Test 3: Try to create a test user
+            try:
+                user_id = create_user(test_email, "Test User", "https://example.com/pic.jpg")
+                test_results['create_user_success'] = True
+                test_results['created_user_id'] = user_id
+                
+                # Test 4: Try to log login for the test user
+                try:
+                    log_user_login(user_id)
+                    test_results['log_login_success'] = True
+                except Exception as e:
+                    test_results['log_login_error'] = str(e)
+                    
+            except Exception as e:
+                test_results['create_user_error'] = str(e)
+            
+            # Test 5: Check if user now exists
+            final_user = get_user_by_email(test_email)
+            test_results['final_user'] = final_user
+            
+        except Exception as e:
+            test_results['general_error'] = str(e)
+            import traceback
+            test_results['traceback'] = traceback.format_exc()
+        
+        return test_results
+
+    @app.route('/debug/session')
+    def debug_session():
+        """Debug route to check session contents"""
+        from flask import session
+        return {
+            'session_keys': list(session.keys()),
+            'has_credentials': 'credentials' in session,
+            'has_user_info': 'user_info' in session,
+            'session_id': request.cookies.get('session'),
+            'development_mode': config.DEVELOPMENT_MODE,
+            'redirect_uri': config.REDIRECT_URI,
+            'session_contents': dict(session) if session else {}
+        }
+            
     @app.before_request
     def handle_preflight():
         if request.method == "OPTIONS":

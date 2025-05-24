@@ -57,25 +57,66 @@ def get_user_by_email(email):
         return cursor.fetchone()
 
 def create_user(email, name, picture_url):
-    """Create or update a user."""
-    with get_db_cursor(commit=True) as cursor:
-        cursor.execute(
-            """
+    """Create or update a user with enhanced debugging."""
+    print(f"🔍 DEBUG: create_user called")
+    print(f"🔍 DEBUG: Parameters - email: '{email}', name: '{name}', picture_url: '{picture_url}'")
+    
+    if not email:
+        print(f"❌ DEBUG: Email is empty or None!")
+        raise ValueError("Email is required")
+    
+    try:
+        print(f"🔍 DEBUG: About to get database cursor")
+        with get_db_cursor(commit=True) as cursor:
+            print(f"🔍 DEBUG: Got database cursor successfully")
+            
+            query = """
             INSERT INTO users (email, name, picture_url)
             VALUES (%s, %s, %s)
             ON CONFLICT (email) DO UPDATE
               SET name = EXCLUDED.name,
                   picture_url = EXCLUDED.picture_url
             RETURNING id
-            """,
-            (email, name, picture_url)
-        )
-        return cursor.fetchone()['id']
+            """
+            
+            print(f"🔍 DEBUG: About to execute SQL query")
+            print(f"🔍 DEBUG: Query: {query}")
+            print(f"🔍 DEBUG: Parameters: ({email}, {name}, {picture_url})")
+            
+            cursor.execute(query, (email, name, picture_url))
+            print(f"🔍 DEBUG: SQL query executed successfully")
+            
+            result = cursor.fetchone()
+            print(f"🔍 DEBUG: Query result: {result}")
+            
+            if result:
+                user_id = result['id']
+                print(f"🔍 DEBUG: User created/updated successfully with ID: {user_id}")
+                return user_id
+            else:
+                print(f"❌ DEBUG: No result returned from query - this shouldn't happen!")
+                raise Exception("No user ID returned from database")
+                
+    except Exception as e:
+        print(f"❌ DEBUG: Exception in create_user: {e}")
+        print(f"❌ DEBUG: Exception type: {type(e)}")
+        import traceback
+        print(f"❌ DEBUG: Full traceback:")
+        print(traceback.format_exc())
+        raise
 
 def log_user_login(user_id):
-    """Log a user login."""
-    with get_db_cursor(commit=True) as cursor:
-        cursor.execute("INSERT INTO user_logins (user_id) VALUES (%s)", (user_id,))
+    """Log a user login with debugging."""
+    print(f"🔍 DEBUG: log_user_login called for user_id: {user_id}")
+    
+    try:
+        with get_db_cursor(commit=True) as cursor:
+            print(f"🔍 DEBUG: About to insert login record")
+            cursor.execute("INSERT INTO user_logins (user_id) VALUES (%s)", (user_id,))
+            print(f"🔍 DEBUG: Login logged successfully")
+    except Exception as e:
+        print(f"❌ DEBUG: Error logging user login: {e}")
+        raise
 
 def log_user_activity(user_id, activity, lesson_data=None):
     """Log a user activity."""

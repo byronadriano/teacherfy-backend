@@ -26,10 +26,13 @@ class BaseConfig:
         # Set OAuth credentials
         self.CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
         self.CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
-        self.REDIRECT_URI = os.environ.get(
-            "GOOGLE_REDIRECT_URI", 
-            "http://localhost:5000/oauth2callback" if self.DEVELOPMENT_MODE else None
-        )
+        
+        # FIXED: Environment-aware redirect URI
+        if self.DEVELOPMENT_MODE:
+            self.REDIRECT_URI = "http://localhost:5000/oauth2callback"
+        else:
+            # Production redirect URI
+            self.REDIRECT_URI = "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net/oauth2callback"
         
         # Initialize external services
         self.openai_client = self._init_openai()
@@ -104,25 +107,49 @@ class BaseConfig:
             return None
 
     def _init_oauth(self) -> Optional[Flow]:
-        """Initialize Google OAuth flow."""
+        """Initialize Google OAuth flow with environment-aware redirect URI."""
+        print("🔍 DEBUG: Initializing OAuth flow")
+        
         try:
+            print(f"🔍 DEBUG: CLIENT_ID: {self.CLIENT_ID}")
+            print(f"🔍 DEBUG: CLIENT_SECRET exists: {bool(self.CLIENT_SECRET)}")
+            print(f"🔍 DEBUG: REDIRECT_URI: {self.REDIRECT_URI}")
+            print(f"🔍 DEBUG: DEVELOPMENT_MODE: {self.DEVELOPMENT_MODE}")
+            
             if not all([self.CLIENT_ID, self.CLIENT_SECRET, self.REDIRECT_URI]):
-                self.logger.warning("Google OAuth credentials are missing!")
+                missing = []
+                if not self.CLIENT_ID: missing.append("CLIENT_ID")
+                if not self.CLIENT_SECRET: missing.append("CLIENT_SECRET") 
+                if not self.REDIRECT_URI: missing.append("REDIRECT_URI")
+                
+                print(f"❌ DEBUG: Missing OAuth credentials: {missing}")
+                self.logger.warning(f"Google OAuth credentials are missing: {missing}")
                 return None
 
-            return Flow.from_client_config(
-                {
-                    "web": {
-                        "client_id": self.CLIENT_ID,
-                        "client_secret": self.CLIENT_SECRET,
-                        "redirect_uris": [self.REDIRECT_URI],
-                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                        "token_uri": "https://oauth2.googleapis.com/token"
-                    }
-                },
-                scopes=SCOPES
-            )
+            oauth_config = {
+                "web": {
+                    "client_id": self.CLIENT_ID,
+                    "client_secret": self.CLIENT_SECRET,
+                    "redirect_uris": [self.REDIRECT_URI],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token"
+                }
+            }
+            
+            print(f"🔍 DEBUG: OAuth config: {oauth_config}")
+            
+            flow = Flow.from_client_config(oauth_config, scopes=SCOPES)
+            flow.redirect_uri = self.REDIRECT_URI
+            
+            print(f"🔍 DEBUG: OAuth flow created successfully")
+            print(f"🔍 DEBUG: Flow redirect_uri: {flow.redirect_uri}")
+            
+            return flow
+            
         except Exception as e:
+            print(f"❌ DEBUG: Google OAuth initialization error: {e}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             self.logger.error(f"Google OAuth initialization error: {e}")
             return None
 
