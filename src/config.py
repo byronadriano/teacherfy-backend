@@ -1,14 +1,16 @@
-# src/config.py
+# src/config.py - FIXED VERSION with proper OAuth scopes
 import os
 import logging
 from typing import Dict, Any, Optional, List
 from openai import OpenAI
 from google_auth_oauthlib.flow import Flow
 from dotenv import load_dotenv
-from src.db import test_connection
 
-# Define OAuth scopes at module level
+# Define OAuth scopes at module level - FIXED: Added required scopes for user info
 SCOPES = [
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'openid',
     'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/presentations'
 ]
@@ -69,7 +71,7 @@ class BaseConfig:
                 print(f"Warning: Could not create log file at {log_path}: {e}")
 
             logging.basicConfig(
-                level=logging.DEBUG,
+                level=logging.INFO,  # Changed from DEBUG to INFO for production
                 format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                 handlers=handlers
             )
@@ -80,12 +82,11 @@ class BaseConfig:
             
             # Log some diagnostic information
             self.logger.info(f"Environment: {'Development' if self.DEVELOPMENT_MODE else 'Production'}")
-            self.logger.info(f"Temp directory: {tempfile.gettempdir()}")
             
         except Exception as e:
             # Fallback to basic console logging if something goes wrong
             logging.basicConfig(
-                level=logging.DEBUG,
+                level=logging.INFO,
                 format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                 handlers=[logging.StreamHandler(sys.stdout)]
             )
@@ -108,13 +109,13 @@ class BaseConfig:
 
     def _init_oauth(self) -> Optional[Flow]:
         """Initialize Google OAuth flow with environment-aware redirect URI."""
-        print("🔍 DEBUG: Initializing OAuth flow")
+        self.logger.info("🔍 Initializing OAuth flow")
         
         try:
-            print(f"🔍 DEBUG: CLIENT_ID: {self.CLIENT_ID}")
-            print(f"🔍 DEBUG: CLIENT_SECRET exists: {bool(self.CLIENT_SECRET)}")
-            print(f"🔍 DEBUG: REDIRECT_URI: {self.REDIRECT_URI}")
-            print(f"🔍 DEBUG: DEVELOPMENT_MODE: {self.DEVELOPMENT_MODE}")
+            self.logger.info(f"🔍 CLIENT_ID: {self.CLIENT_ID}")
+            self.logger.info(f"🔍 CLIENT_SECRET exists: {bool(self.CLIENT_SECRET)}")
+            self.logger.info(f"🔍 REDIRECT_URI: {self.REDIRECT_URI}")
+            self.logger.info(f"🔍 DEVELOPMENT_MODE: {self.DEVELOPMENT_MODE}")
             
             if not all([self.CLIENT_ID, self.CLIENT_SECRET, self.REDIRECT_URI]):
                 missing = []
@@ -122,8 +123,7 @@ class BaseConfig:
                 if not self.CLIENT_SECRET: missing.append("CLIENT_SECRET") 
                 if not self.REDIRECT_URI: missing.append("REDIRECT_URI")
                 
-                print(f"❌ DEBUG: Missing OAuth credentials: {missing}")
-                self.logger.warning(f"Google OAuth credentials are missing: {missing}")
+                self.logger.error(f"❌ Missing OAuth credentials: {missing}")
                 return None
 
             oauth_config = {
@@ -132,36 +132,36 @@ class BaseConfig:
                     "client_secret": self.CLIENT_SECRET,
                     "redirect_uris": [self.REDIRECT_URI],
                     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token"
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
                 }
             }
             
-            print(f"🔍 DEBUG: OAuth config: {oauth_config}")
+            self.logger.info(f"🔍 OAuth config created with scopes: {SCOPES}")
             
             flow = Flow.from_client_config(oauth_config, scopes=SCOPES)
             flow.redirect_uri = self.REDIRECT_URI
             
-            print(f"🔍 DEBUG: OAuth flow created successfully")
-            print(f"🔍 DEBUG: Flow redirect_uri: {flow.redirect_uri}")
+            self.logger.info(f"✅ OAuth flow created successfully")
+            self.logger.info(f"🔍 Flow redirect_uri: {flow.redirect_uri}")
             
             return flow
             
         except Exception as e:
-            print(f"❌ DEBUG: Google OAuth initialization error: {e}")
+            self.logger.error(f"❌ Google OAuth initialization error: {e}")
             import traceback
-            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
-            self.logger.error(f"Google OAuth initialization error: {e}")
+            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return None
 
     # Common settings
     DEVELOPMENT_MODE = os.environ.get("FLASK_ENV") == "development"
-    SECRET_KEY = os.environ.get("FLASK_SECRET_KEY")
+    SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
     
-    # Session settings
+    # Session settings - FIXED: Better session configuration
     SESSION_COOKIE_SECURE = not DEVELOPMENT_MODE
     SESSION_COOKIE_SAMESITE = 'Lax' if DEVELOPMENT_MODE else 'None'
     SESSION_COOKIE_HTTPONLY = True
-    PERMANENT_SESSION_LIFETIME = 3600
+    PERMANENT_SESSION_LIFETIME = 86400  # 24 hours instead of 1 hour
     SESSION_COOKIE_DOMAIN = None
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     
@@ -170,9 +170,9 @@ class BaseConfig:
     def DB_CONFIG(self) -> Dict[str, Any]:
         return {
             'dbname': os.environ.get("POSTGRES_DB", "teacherfy_db"),
-            'user': os.environ.get("POSTGRES_USER"),
-            'password': os.environ.get("POSTGRES_PASSWORD"),
-            'host': os.environ.get("POSTGRES_HOST"),
+            'user': os.environ.get("POSTGRES_USER", "bpulluta"),
+            'password': os.environ.get("POSTGRES_PASSWORD", "P!p!to031323!"),
+            'host': os.environ.get("POSTGRES_HOST", "teacherfydb.postgres.database.azure.com"),
             'port': os.environ.get("POSTGRES_PORT", "5432"),
             'sslmode': 'require'
         }
@@ -180,10 +180,10 @@ class BaseConfig:
 class DevelopmentConfig(BaseConfig):
     """Development-specific configuration."""
     
-    DAILY_GENERATION_LIMIT = 1000
-    DAILY_DOWNLOAD_LIMIT = 1000
+    MONTHLY_GENERATION_LIMIT = 1000
+    MONTHLY_DOWNLOAD_LIMIT = 1000
     
-    CORS_ORIGINS = ["http://localhost:3000"]
+    CORS_ORIGINS = ["http://localhost:3000", "*"]
     
     # Override session settings for development
     SESSION_COOKIE_SECURE = False
@@ -192,18 +192,15 @@ class DevelopmentConfig(BaseConfig):
 class ProductionConfig(BaseConfig):
     """Production-specific configuration."""
     
-    DAILY_GENERATION_LIMIT = int(os.environ.get("DAILY_GENERATION_LIMIT", 5))
-    DAILY_DOWNLOAD_LIMIT = int(os.environ.get("DAILY_DOWNLOAD_LIMIT", 5))
+    MONTHLY_GENERATION_LIMIT = int(os.environ.get("MONTHLY_GENERATION_LIMIT", 5))
+    MONTHLY_DOWNLOAD_LIMIT = int(os.environ.get("MONTHLY_DOWNLOAD_LIMIT", 5))
     
     CORS_ORIGINS = [
         "https://teacherfy.ai",
         "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
     ]
-    @property
-    def handle_error(self, error):
-        self.logger.error(f"Production error: {str(error)}", exc_info=True)
-        return {"error": "Internal server error"}, 500
-    # Override session settings for production
+    
+    # Production session settings
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = 'None'
 
@@ -224,8 +221,21 @@ CLIENT_ID = config.CLIENT_ID
 CLIENT_SECRET = config.CLIENT_SECRET
 REDIRECT_URI = config.REDIRECT_URI
 
-# Verify database connection
-if test_connection():
-    logger.info("PostgreSQL database connection successful.")
-else:
-    logger.error("Failed to connect to PostgreSQL database!")
+# Test database connection on startup
+def test_db_on_startup():
+    """Test database connection on startup."""
+    try:
+        from src.db.database import test_connection
+        if test_connection():
+            logger.info("✅ PostgreSQL database connection successful.")
+            return True
+        else:
+            logger.error("❌ Failed to connect to PostgreSQL database!")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Database connection test failed: {e}")
+        return False
+
+# Initialize database connection test
+if __name__ != "__main__":
+    test_db_on_startup()
