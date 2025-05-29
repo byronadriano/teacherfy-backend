@@ -1,4 +1,4 @@
-# src/slide_processor.py - Updated with Unsplash integration
+# src/slide_processor.py - Enhanced with better image relevance and layout
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN, MSO_VERTICAL_ANCHOR
@@ -99,15 +99,198 @@ def clean_content_list_for_presentation(content_list):
     
     return cleaned_list
 
+def extract_enhanced_search_keywords(structured_content):
+    """
+    Extract highly relevant keywords from slide content for better image search.
+    Focus on concrete, visual concepts that would make good educational images.
+    """
+    # Combine all text content from all slides for better context
+    all_text = []
+    
+    for slide in structured_content:
+        # Add title
+        if slide.get('title'):
+            all_text.append(slide['title'])
+        
+        # Add main content
+        if slide.get('content'):
+            all_text.extend(slide['content'])
+    
+    # Join all text
+    text = ' '.join(all_text).lower()
+    
+    # Enhanced subject-specific keyword mapping for better, more relevant image results
+    subject_keywords = {
+        # Math concepts - more specific and visual
+        'fraction': 'fraction circles pizza mathematics classroom visual',
+        'fractions': 'fraction pie chart mathematics visual colorful',
+        'equivalent': 'equal fractions mathematics visual diagram',
+        'equivalent fractions': 'fraction circles equivalent mathematics classroom',
+        'place value': 'place value chart hundreds tens ones blocks',
+        'powers of 10': 'place value chart mathematics powers ten',
+        'addition': 'addition blocks mathematics hands-on colorful',
+        'subtraction': 'subtraction mathematics visual blocks counting',
+        'multiplication': 'multiplication arrays mathematics grid pattern',
+        'division': 'division mathematics sharing groups visual',
+        'geometry': 'geometric shapes mathematics classroom poster colorful',
+        'measurement': 'ruler measurement mathematics tools classroom',
+        'algebra': 'algebra mathematics equation board variables',
+        'numbers': 'numbers mathematics classroom poster colorful',
+        'counting': 'counting mathematics fingers blocks colorful',
+        'patterns': 'pattern blocks mathematics colorful shapes',
+        'decimals': 'decimal place value mathematics chart',
+        'percentage': 'percentage chart mathematics visual',
+        
+        # Science concepts - more specific and educational
+        'photosynthesis': 'plant photosynthesis diagram science classroom',
+        'solar system': 'solar system planets model classroom educational',
+        'ecosystem': 'ecosystem food chain science diagram poster',
+        'water cycle': 'water cycle evaporation science educational poster',
+        'magnetism': 'magnets horseshoe science experiment classroom',
+        'electricity': 'electric circuit battery science experiment',
+        'weather': 'weather instruments thermometer science classroom',
+        'animals': 'animal classification science chart educational',
+        'plants': 'plant parts science diagram leaves educational',
+        'earth': 'earth science globe classroom model',
+        'volcano': 'volcano science model diagram educational',
+        'rocks': 'rock minerals science collection classroom',
+        'states of matter': 'solid liquid gas science diagram',
+        'force': 'force motion science physics experiment',
+        
+        # Language Arts - more educational focus
+        'reading': 'children reading books library classroom engaged',
+        'writing': 'student writing pencil paper classroom focused',
+        'vocabulary': 'vocabulary words flashcards classroom wall',
+        'grammar': 'grammar chart classroom poster educational',
+        'poetry': 'poetry books classroom reading circle',
+        'story': 'storytelling children books circle time classroom',
+        'letters': 'alphabet letters classroom wall colorful',
+        'words': 'sight words classroom poster educational',
+        'phonics': 'phonics sounds classroom chart letters',
+        'comprehension': 'reading comprehension books students engaged',
+        'spelling': 'spelling words classroom board letters',
+        'literature': 'books literature classroom library reading',
+        
+        # Social Studies - more educational and visual
+        'history': 'history timeline classroom poster educational',
+        'geography': 'world map classroom globe colorful',
+        'community': 'community helpers people jobs educational',
+        'culture': 'cultural diversity classroom multicultural flags',
+        'government': 'government classroom civics poster educational',
+        'map': 'map geography classroom wall educational',
+        'countries': 'world countries map classroom flags',
+        'states': 'united states map classroom educational',
+        'timeline': 'history timeline classroom poster educational',
+        'citizenship': 'citizenship community classroom poster',
+        
+        # General educational terms with better context
+        'learning': 'students learning classroom engaged colorful',
+        'classroom': 'elementary classroom colorful educational bright',
+        'school': 'school classroom learning environment bright',
+        'teacher': 'teacher students classroom interaction engaged',
+        'students': 'students classroom learning together collaborative',
+        'education': 'education classroom learning materials colorful',
+        'lesson': 'classroom lesson teaching materials educational',
+        'practice': 'students practice worksheet classroom focused',
+        'explore': 'students exploring hands-on learning classroom',
+        'discover': 'children discovering learning classroom excited'
+    }
+    
+    # Look for the most specific matches first (longer phrases)
+    sorted_keywords = sorted(subject_keywords.items(), key=lambda x: len(x[0]), reverse=True)
+    
+    for keyword, search_term in sorted_keywords:
+        if keyword in text:
+            logger.info(f"Found specific keyword '{keyword}', using enhanced search term: '{search_term}'")
+            return search_term
+    
+    # Extract key educational nouns if no specific mapping found
+    educational_context = []
+    
+    # Check for grade level indicators to add appropriate context
+    if any(grade in text for grade in ['kindergarten', 'pre-k', 'preschool']):
+        educational_context.append('kindergarten')
+    elif any(grade in text for grade in ['elementary', '1st', '2nd', '3rd', '4th', '5th']):
+        educational_context.append('elementary')
+    elif any(grade in text for grade in ['middle', '6th', '7th', '8th']):
+        educational_context.append('middle school')
+    elif any(grade in text for grade in ['high', '9th', '10th', '11th', '12th']):
+        educational_context.append('high school')
+    
+    # Check for subject indicators with enhanced specificity
+    subject_context = []
+    if any(subj in text for subj in ['math', 'number', 'calculate', 'equation']):
+        subject_context.append('mathematics classroom')
+    if any(subj in text for subj in ['science', 'experiment', 'hypothesis', 'observe']):
+        subject_context.append('science classroom')
+    if any(subj in text for subj in ['reading', 'writing', 'book', 'story', 'letter']):
+        subject_context.append('reading classroom')
+    if any(subj in text for subj in ['history', 'geography', 'social', 'community']):
+        subject_context.append('social studies classroom')
+    
+    # Extract meaningful content words
+    words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
+    
+    # Educational priority words that make good visual searches
+    priority_words = {
+        'learn', 'study', 'practice', 'understand', 'explore', 'discover', 
+        'solve', 'create', 'think', 'analyze', 'compare', 'identify',
+        'numbers', 'letters', 'words', 'books', 'chart', 'diagram',
+        'blocks', 'tools', 'model', 'poster', 'visual', 'hands'
+    }
+    
+    # Common words to avoid in searches
+    stop_words = {
+        'the', 'and', 'but', 'will', 'can', 'are', 'you', 'for', 'how', 'what', 
+        'this', 'that', 'with', 'they', 'have', 'from', 'been', 'than', 'more',
+        'very', 'when', 'much', 'some', 'time', 'way', 'may', 'said', 'each',
+        'which', 'their', 'would', 'there', 'could', 'other', 'able', 'today',
+        'students', 'student', 'lesson', 'class', 'grade'  # Too generic for image search
+    }
+    
+    meaningful_words = []
+    for word in words:
+        word_lower = word.lower()
+        if word_lower in priority_words:
+            meaningful_words.append(word_lower)
+        elif word_lower not in stop_words and len(word) > 4:
+            meaningful_words.append(word_lower)
+    
+    # Build enhanced search term
+    search_parts = []
+    
+    # Add subject context first (most important for relevance)
+    if subject_context:
+        search_parts.extend(subject_context[:1])  # Take the first subject
+    
+    # Add educational context
+    if educational_context:
+        search_parts.extend(educational_context[:1])
+    
+    # Add meaningful content words
+    if meaningful_words:
+        search_parts.extend(meaningful_words[:2])
+    
+    # Always add educational context for better classroom relevance
+    if 'classroom' not in ' '.join(search_parts):
+        search_parts.append('classroom')
+    
+    # Add visual indicator for better educational images
+    search_parts.append('educational')
+    
+    if search_parts:
+        result = ' '.join(search_parts)
+        logger.info(f"Generated enhanced contextual search terms: '{result}'")
+        return result
+    
+    # Fallback to enhanced generic educational image
+    logger.info("No specific keywords found, using enhanced generic education search")
+    return 'elementary classroom learning colorful educational bright'
+
 def add_image_to_slide(slide, image_bytes, lesson_topic=""):
     """
-    Add an image to a content slide with proper positioning and attribution.
-    Designed for content slides, not title/logo slides.
-    
-    Args:
-        slide: PowerPoint slide object
-        image_bytes: Image data as bytes
-        lesson_topic: Topic for attribution context
+    Add an image to a content slide with improved positioning to prevent content overlap.
+    Places image on the right side, leaving clear space for content.
     """
     try:
         # Create a BytesIO object from the image bytes
@@ -117,13 +300,14 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
         with Image.open(image_stream) as img:
             original_width, original_height = img.size
             
-            # Calculate target size for content slides (top-right corner)
+            # Get slide dimensions
             slide_width = Inches(10)  # Standard slide width
             slide_height = Inches(7.5)  # Standard slide height
             
-            # Position image in top-right area, leaving room for title and content
-            target_width = Inches(3.5)  # Smaller for content slides
-            target_height = Inches(2.5)  # Smaller height
+            # Position image on the right side with better proportions
+            # Make content area use left 60% of slide, image uses right 35%
+            target_width = Inches(3.2)   # Slightly smaller for better balance
+            target_height = Inches(2.8)  # Good proportion for educational content
             
             # Calculate aspect ratio and adjust if needed
             img_aspect = original_width / original_height
@@ -138,9 +322,9 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
                 final_height = target_height
                 final_width = target_height * img_aspect
             
-            # Position in top-right area of content slide
-            left = slide_width - final_width - Inches(0.5)  # 0.5" margin from right
-            top = Inches(1.8)  # Below title area, above main content
+            # Position on right side with proper margins
+            left = slide_width - final_width - Inches(0.4)  # 0.4" margin from right edge
+            top = Inches(1.5)  # Below title area, aligned with content start
             
             # Reset image stream position
             image_stream.seek(0)
@@ -154,12 +338,24 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
                 final_height
             )
             
-            # Optional: Add a subtle border or shadow effect
+            # Add subtle styling for professional look
             line = picture.line
-            line.color.rgb = RGBColor(200, 200, 200)  # Light gray border
-            line.width = Pt(0.5)
+            line.color.rgb = RGBColor(220, 220, 220)  # Very light gray border
+            line.width = Pt(0.75)
             
-            logger.info(f"Successfully added image to content slide (size: {final_width} x {final_height})")
+            # Optional: Add subtle shadow effect
+            try:
+                shadow = picture.shadow
+                shadow.inherit = False
+                shadow.style = 'OUTER'
+                shadow.distance = Pt(3)
+                shadow.blur_radius = Pt(4)
+                shadow.color.rgb = RGBColor(128, 128, 128)
+                shadow.transparency = 0.5
+            except:
+                pass  # Shadow effects might not be available in all versions
+            
+            logger.info(f"Successfully added image to slide with improved layout (size: {final_width} x {final_height})")
             return True
             
     except Exception as e:
@@ -169,22 +365,23 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
         if 'image_stream' in locals():
             image_stream.close()
 
-def generate_search_query_from_content(structured_content, fallback="education"):
+def generate_search_query_from_content(structured_content, fallback="elementary classroom educational"):
     """
-    Generate a good search query for Unsplash based on lesson content.
-    Focuses on the first content slide, not title/logo slides.
-    
-    Args:
-        structured_content: List of slide data
-        fallback: Fallback search term if nothing suitable found
-        
-    Returns:
-        Search query string
+    Generate an enhanced search query for Unsplash based on lesson content.
+    Uses the new enhanced keyword extraction for better image relevance.
     """
     try:
         if not structured_content or len(structured_content) == 0:
             return fallback
         
+        # Use the enhanced keyword extraction
+        enhanced_query = extract_enhanced_search_keywords(structured_content)
+        
+        if enhanced_query and enhanced_query != fallback:
+            logger.info(f"Using enhanced search query: '{enhanced_query}'")
+            return enhanced_query
+        
+        # Fallback to original logic if enhanced extraction doesn't find anything
         # Find the first slide with meaningful content (skip title-only slides)
         content_slide = None
         for slide in structured_content:
@@ -212,11 +409,19 @@ def generate_search_query_from_content(structured_content, fallback="education")
         # Combine title and content for analysis
         combined_text = f"{title} {content_text}".strip()
         
-        # Extract subject-related keywords with more comprehensive mapping
+        # Look for specific topics in the title or content with enhanced mapping
+        if 'equivalent' in combined_text and 'fraction' in combined_text:
+            return "mathematics fractions equivalent classroom educational"
+        elif 'place value' in combined_text:
+            return "place value chart mathematics classroom educational"
+        elif 'photosynthesis' in combined_text:
+            return "photosynthesis plant science classroom educational"
+        
+        # Extract subject-related keywords with enhanced comprehensive mapping
         subject_keywords = {
-            'mathematics': ['math', 'mathematics', 'number', 'fraction', 'algebra', 'geometry', 'calculation', 'equation', 'addition', 'subtraction', 'multiplication', 'division'],
-            'science': ['science', 'biology', 'chemistry', 'physics', 'experiment', 'hypothesis', 'molecule', 'atom', 'cell', 'gravity', 'energy'],
-            'reading': ['reading', 'writing', 'literature', 'grammar', 'vocabulary', 'story', 'essay', 'book', 'novel', 'poem'],
+            'mathematics': ['math', 'mathematics', 'number', 'fraction', 'algebra', 'geometry', 'calculation', 'equation', 'addition', 'subtraction', 'multiplication', 'division', 'decimal', 'percentage'],
+            'science': ['science', 'biology', 'chemistry', 'physics', 'experiment', 'hypothesis', 'molecule', 'atom', 'cell', 'gravity', 'energy', 'plant', 'animal'],
+            'reading': ['reading', 'writing', 'literature', 'grammar', 'vocabulary', 'story', 'essay', 'book', 'novel', 'poem', 'letter', 'word'],
             'history': ['history', 'historical', 'ancient', 'civilization', 'war', 'timeline', 'century', 'revolution', 'empire'],
             'geography': ['geography', 'continent', 'country', 'map', 'climate', 'population', 'city', 'ocean', 'mountain'],
             'art': ['art', 'painting', 'drawing', 'color', 'creativity', 'design', 'artistic', 'brush', 'canvas'],
@@ -235,27 +440,23 @@ def generate_search_query_from_content(structured_content, fallback="education")
             
             # Add more specific terms based on content and grade level
             if any(term in combined_text for term in ['kindergarten', 'young', 'children']):
-                return f"{primary_subject} children classroom"
+                return f"{primary_subject} children classroom educational"
             elif any(term in combined_text for term in ['elementary', 'primary']):
-                return f"{primary_subject} elementary school"
+                return f"{primary_subject} elementary school educational"
             elif any(term in combined_text for term in ['middle', 'junior']):
-                return f"{primary_subject} middle school"
+                return f"{primary_subject} middle school educational"
             elif any(term in combined_text for term in ['high', 'secondary']):
-                return f"{primary_subject} high school"
+                return f"{primary_subject} high school educational"
             else:
-                return f"{primary_subject} education classroom"
+                return f"{primary_subject} education classroom colorful"
         
         # If no subjects detected, look for general educational terms
         educational_terms = ['learn', 'teach', 'school', 'class', 'lesson', 'study', 'education', 'student']
         if any(term in combined_text for term in educational_terms):
-            return "classroom learning students"
+            return "classroom learning students educational bright"
         
-        # Look for specific topics in the title or content
-        if 'equivalent' in combined_text and 'fraction' in combined_text:
-            return "mathematics fractions education"
-        
-        # Final fallback
-        return fallback
+        # Final enhanced fallback
+        return "elementary classroom learning educational colorful"
         
     except Exception as e:
         logger.error(f"Error generating search query: {e}")
@@ -297,13 +498,13 @@ def find_content_placeholder(slide):
     return None
 
 def add_text_box_to_slide(slide, content_items, with_image=False):
-    """Add a text box to the slide if no placeholder is available"""
-    # Adjust text box position if image is present
+    """Add a text box to the slide with improved positioning when images are present"""
+    # Adjust text box position and size for better layout with images
     if with_image:
-        # Make text box narrower and positioned to avoid image in top-right
+        # Make text box narrower and positioned to avoid image on the right
         left = Inches(0.5)
         top = Inches(2)
-        width = Inches(6)  # Narrower to leave room for top-right image
+        width = Inches(5.8)  # Narrower to leave clear space for image (60% of slide)
         height = Inches(4.5)
     else:
         # Use more of the slide if no image
@@ -316,6 +517,13 @@ def add_text_box_to_slide(slide, content_items, with_image=False):
     text_frame = textbox.text_frame
     text_frame.clear()
     
+    # Improve text frame properties for better readability
+    text_frame.margin_left = Inches(0.1)
+    text_frame.margin_right = Inches(0.1)
+    text_frame.margin_top = Inches(0.1)
+    text_frame.margin_bottom = Inches(0.1)
+    text_frame.word_wrap = True
+    
     # Use cleaned content
     cleaned_items = clean_content_list_for_presentation(content_items)
     
@@ -325,11 +533,12 @@ def add_text_box_to_slide(slide, content_items, with_image=False):
         p.font.name = STYLE['fonts']['body']
         p.font.size = STYLE['sizes']['body']
         p.font.color.rgb = STYLE['colors']['body']
+        p.space_after = Pt(6)  # Add some space between bullet points
     
     logger.info(f"Added text box to slide ({'with image accommodation' if with_image else 'full width'})")
 
 def create_clean_presentation_with_images(structured_content, include_images=True):
-    """Create a PowerPoint presentation from clean structured content with optional images"""
+    """Create a PowerPoint presentation from clean structured content with enhanced images"""
     # Reset the image tracking flag
     if hasattr(create_clean_presentation_with_images, '_image_added'):
         delattr(create_clean_presentation_with_images, '_image_added')
@@ -365,9 +574,9 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
         try:
             from src.services.unsplash_service import unsplash_service
             
-            # Generate search query from lesson content
+            # Generate enhanced search query from lesson content
             search_query = generate_search_query_from_content(structured_content)
-            logger.info(f"Searching for image with query: '{search_query}'")
+            logger.info(f"Searching for image with enhanced query: '{search_query}'")
             
             # Search for image
             unsplash_photo_data = unsplash_service.search_photo(search_query)
@@ -376,11 +585,11 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
                 # Download image
                 image_bytes = unsplash_service.download_photo(unsplash_photo_data)
                 if image_bytes:
-                    logger.info(f"Successfully retrieved image by {unsplash_photo_data['photographer_name']}")
+                    logger.info(f"Successfully retrieved relevant image by {unsplash_photo_data['photographer_name']} for query '{search_query}'")
                 else:
                     logger.warning("Failed to download image from Unsplash")
             else:
-                logger.warning(f"No suitable image found for query: '{search_query}'")
+                logger.warning(f"No suitable image found for enhanced query: '{search_query}'")
                 
         except Exception as e:
             logger.error(f"Error fetching image from Unsplash: {e}")
@@ -395,7 +604,7 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
         except:
             logger.debug(f"Layout {i}: Unknown layout")
     
-    # Process each slide with clean structure
+    # Process each slide with clean structure and improved layout
     for slide_index, slide_data in enumerate(structured_content):
         try:
             # Try different layouts in order of preference
@@ -417,7 +626,7 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
                 slide = prs.slides.add_slide(prs.slide_layouts[0])
                 logger.warning(f"Using fallback layout 0 for slide {slide_index + 1}")
             
-            # Add image to first content slide (skip logo/title slides)
+            # Add image to first content slide (skip logo/title slides) with enhanced relevance
             has_image = False
             if include_images and image_bytes:
                 # Check if this is the first slide with actual content
@@ -429,7 +638,7 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
                     has_image = add_image_to_slide(slide, image_bytes, slide_data.get('title', ''))
                     # Mark that we've added an image to prevent adding to multiple slides
                     create_clean_presentation_with_images._image_added = True
-                    logger.info(f"Added image to slide {slide_index + 1} (first content slide)")
+                    logger.info(f"Added enhanced relevant image to slide {slide_index + 1} (first content slide)")
             
             # Clean and add title
             title_added = False
@@ -452,7 +661,7 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
                 except Exception as e:
                     logger.warning(f"Failed to add title to slide {slide_index + 1}: {e}")
             
-            # Clean and add content
+            # Clean and add content with improved layout for images
             raw_content_items = slide_data.get('content', [])
             clean_content_items = clean_content_list_for_presentation(raw_content_items)
             
@@ -464,6 +673,12 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
                         text_frame = content_placeholder.text_frame
                         text_frame.clear()
                         
+                        # Adjust text frame properties when image is present
+                        if has_image:
+                            # Reduce right margin to prevent overlap with image
+                            text_frame.margin_right = Inches(0.3)
+                            text_frame.margin_left = Inches(0.1)
+                        
                         for item in clean_content_items:
                             p = text_frame.add_paragraph()
                             p.text = item
@@ -471,6 +686,7 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
                             p.font.size = STYLE['sizes']['body']
                             p.font.color.rgb = STYLE['colors']['body']
                             p.level = 0  # Main bullet level
+                            p.space_after = Pt(6)  # Add spacing between items
                         
                         logger.debug(f"Added {len(clean_content_items)} clean content items to slide {slide_index + 1}")
                     except Exception as e:
@@ -551,7 +767,7 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
         except Exception as e:
             logger.warning(f"Failed to add image attribution: {e}")
     
-    logger.info(f"Created presentation with {len(structured_content)} slides")
+    logger.info(f"Created presentation with {len(structured_content)} slides (images: {'enabled' if include_images else 'disabled'})")
     return prs
 
 # BACKWARD COMPATIBILITY - Keep the old function for existing code
