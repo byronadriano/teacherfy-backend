@@ -1,4 +1,4 @@
-# src/auth_routes.py - FIXED VERSION with insecure transport for development
+# src/auth_routes.py - CORRECTED VERSION for Azure production
 import os
 from flask import Blueprint, request, jsonify, redirect, url_for, session
 from google.oauth2 import id_token
@@ -6,7 +6,7 @@ from google.auth.transport import requests as google_requests
 import traceback
 import json
 
-# CRITICAL FIX: Allow insecure transport for development
+# CRITICAL FIX: Allow insecure transport for development only
 if os.environ.get('FLASK_ENV') == 'development':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -91,6 +91,8 @@ def authorize():
     """Initiate Google OAuth with the proper redirect URI."""
     try:
         logger.info("🔐 Starting OAuth authorization")
+        logger.info(f"🔍 Environment: {os.environ.get('FLASK_ENV', 'unknown')}")
+        logger.info(f"🔍 Development Mode: {config.DEVELOPMENT_MODE}")
         
         if not flow:
             logger.error("❌ OAuth flow not initialized")
@@ -114,11 +116,15 @@ def authorize():
 
 @auth_blueprint.route('/oauth2callback')
 def oauth2callback():
-    """Handle Google OAuth callback with comprehensive debugging."""
+    """Handle Google OAuth callback with Azure-compatible URL handling."""
     try:
         logger.info("🔐 OAuth callback received")
         logger.info(f"🔍 Request URL: {request.url}")
         logger.info(f"🔍 Request args: {dict(request.args)}")
+        logger.info(f"🔍 Environment: {os.environ.get('FLASK_ENV', 'unknown')}")
+        logger.info(f"🔍 Development Mode: {config.DEVELOPMENT_MODE}")
+        logger.info(f"🔍 Request headers - X-Forwarded-Proto: {request.headers.get('X-Forwarded-Proto', 'Not set')}")
+        logger.info(f"🔍 Request is_secure: {request.is_secure}")
         
         # Check for error in callback
         if 'error' in request.args:
@@ -173,30 +179,79 @@ def oauth2callback():
                 </html>
             """
         
-        # Fetch the token
+        # CORRECTED: Handle Azure App Service URL correctly
         try:
             logger.info("🔍 Attempting to fetch token...")
-            logger.info(f"🔍 OAUTHLIB_INSECURE_TRANSPORT: {os.environ.get('OAUTHLIB_INSECURE_TRANSPORT')}")
+            logger.info(f"🔍 Flow redirect_uri: {flow.redirect_uri}")
             
-            flow.fetch_token(authorization_response=request.url)
+            # AZURE FIX: Construct the correct authorization response URL
+            auth_response = request.url
+            
+            # For Azure App Service, check if we need to fix the scheme
+            if not config.DEVELOPMENT_MODE:
+                # Azure App Service uses X-Forwarded-Proto header
+                forwarded_proto = request.headers.get('X-Forwarded-Proto', 'https')
+                
+                # If the request URL is HTTP but should be HTTPS (Azure internal routing)
+                if auth_response.startswith('http://') and forwarded_proto == 'https':
+                    auth_response = auth_response.replace('http://', 'https://', 1)
+                    logger.info(f"🔒 Fixed Azure URL scheme: {auth_response}")
+                
+                # Ensure the host matches the configured redirect URI
+                from urllib.parse import urlparse, urlunparse
+                parsed_auth = urlparse(auth_response)
+                parsed_redirect = urlparse(flow.redirect_uri)
+                
+                # Replace host/scheme if they don't match
+                if parsed_auth.netloc != parsed_redirect.netloc or parsed_auth.scheme != parsed_redirect.scheme:
+                    fixed_auth = parsed_auth._replace(
+                        scheme=parsed_redirect.scheme,
+                        netloc=parsed_redirect.netloc
+                    )
+                    auth_response = urlunparse(fixed_auth)
+                    logger.info(f"🔧 Fixed Azure host/scheme: {auth_response}")
+            
+            logger.info(f"🔍 Final auth_response URL: {auth_response}")
+            
+            # CRITICAL: Clear any existing OAUTHLIB_INSECURE_TRANSPORT in production
+            if not config.DEVELOPMENT_MODE and 'OAUTHLIB_INSECURE_TRANSPORT' in os.environ:
+                del os.environ['OAUTHLIB_INSECURE_TRANSPORT']
+                logger.info("🔒 Removed OAUTHLIB_INSECURE_TRANSPORT for production")
+            
+            flow.fetch_token(authorization_response=auth_response)
             credentials = flow.credentials
             logger.info("✅ Token fetched successfully")
+            
         except Exception as token_error:
             logger.error(f"❌ Token fetch error: {token_error}")
+            logger.error(f"❌ Token error type: {type(token_error).__name__}")
             logger.error(traceback.format_exc())
+            
+            # Provide more specific error information
+            error_details = str(token_error)
+            if "invalid_grant" in error_details.lower():
+                error_msg = "Authentication session expired. Please try signing in again."
+            elif "redirect_uri_mismatch" in error_details.lower():
+                error_msg = "OAuth configuration error. Please contact support."
+                logger.error(f"❌ REDIRECT URI MISMATCH - Flow URI: {flow.redirect_uri}, Request URL: {request.url}")
+            elif "invalid_client" in error_details.lower():
+                error_msg = "Client authentication failed. Please contact support."
+            else:
+                error_msg = f"Authentication failed: {error_details}"
+            
             return f"""
                 <html>
                 <head><title>Authentication Error</title></head>
                 <body>
                     <h2>Authentication Error</h2>
-                    <p>Failed to fetch authentication token</p>
-                    <p>Technical details: {str(token_error)}</p>
+                    <p>{error_msg}</p>
+                    <p><small>Technical details: {error_details}</small></p>
                     <script>
-                        console.error('Token fetch error:', '{str(token_error)}');
+                        console.error('Token fetch error:', '{error_details}');
                         if (window.opener) {{
                             window.opener.postMessage({{
                                 type: 'AUTH_ERROR',
-                                error: 'Failed to get authentication token'
+                                error: '{error_msg}'
                             }}, '*');
                             window.close();
                         }}

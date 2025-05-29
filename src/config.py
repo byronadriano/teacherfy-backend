@@ -135,8 +135,18 @@ class BaseConfig:
             
             self.logger.info(f"🔍 OAuth config created with scopes: {SCOPES}")
             
+            # CRITICAL FIX: Ensure proper OAuth flow initialization for production
             flow = Flow.from_client_config(oauth_config, scopes=SCOPES)
             flow.redirect_uri = self.REDIRECT_URI
+            
+            # PRODUCTION FIX: Ensure OAuth flow uses HTTPS in production
+            if not self.DEVELOPMENT_MODE:
+                # Force HTTPS for token exchanges in production
+                import os
+                # Ensure OAUTHLIB_INSECURE_TRANSPORT is NOT set in production
+                if 'OAUTHLIB_INSECURE_TRANSPORT' in os.environ:
+                    del os.environ['OAUTHLIB_INSECURE_TRANSPORT']
+                    self.logger.info("🔒 Removed OAUTHLIB_INSECURE_TRANSPORT for production")
             
             self.logger.info(f"✅ OAuth flow created successfully")
             self.logger.info(f"🔍 Flow redirect_uri: {flow.redirect_uri}")
@@ -148,7 +158,6 @@ class BaseConfig:
             import traceback
             self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return None
-
     # Common settings
     DEVELOPMENT_MODE = os.environ.get("FLASK_ENV") == "development"
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
