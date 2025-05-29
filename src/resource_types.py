@@ -1,4 +1,4 @@
-# src/resource_types.py
+# src/resource_types.py - Updated with image support
 from enum import Enum, auto
 import logging
 
@@ -49,8 +49,8 @@ class ResourceType(Enum):
         logger.warning(f"Unrecognized resource type: {resource_type_str}, defaulting to PRESENTATION")
         return cls.PRESENTATION
 
-def get_resource_handler(resource_type, structured_content):
-    """Get the appropriate resource handler for the specified type"""
+def get_resource_handler(resource_type, structured_content, **kwargs):
+    """Get the appropriate resource handler for the specified type with optional parameters"""
     from src.resource_handlers import (
         PresentationHandler, 
         LessonPlanHandler,
@@ -76,5 +76,11 @@ def get_resource_handler(resource_type, structured_content):
     # Log which handler is being used
     logger.info(f"Using resource handler: {handler_class.__name__}")
     
-    # Create and return an instance
-    return handler_class(structured_content)
+    # Create and return an instance with optional parameters
+    if handler_class == PresentationHandler:
+        # Pass image preference for presentations
+        include_images = kwargs.get('include_images', True)
+        return handler_class(structured_content, include_images=include_images)
+    else:
+        # Other handlers don't need image support yet
+        return handler_class(structured_content)

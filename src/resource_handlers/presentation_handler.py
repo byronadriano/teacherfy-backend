@@ -1,4 +1,4 @@
-# src/resource_handlers/presentation_handler.py - CLEAN VERSION
+# src/resource_handlers/presentation_handler.py - Updated with image support
 import os
 import logging
 from typing import Dict, Any, List, Optional
@@ -7,7 +7,13 @@ from .base_handler import BaseResourceHandler
 logger = logging.getLogger(__name__)
 
 class PresentationHandler(BaseResourceHandler):
-    """Handler for generating PowerPoint presentations with clean structure"""
+    """Handler for generating PowerPoint presentations with optional image support"""
+    
+    def __init__(self, structured_content: List[Dict[str, Any]], **kwargs):
+        super().__init__(structured_content, **kwargs)
+        # Only presentations support images currently
+        self.include_images = kwargs.get('include_images', True)
+        logger.info(f"PresentationHandler initialized with images: {self.include_images}")
     
     def generate(self) -> str:
         """Generate the presentation file and return the file path"""
@@ -17,9 +23,16 @@ class PresentationHandler(BaseResourceHandler):
         # Import presentation creation function
         from src.slide_processor import create_clean_presentation
         
-        # Create presentation with clean structure
-        logger.info(f"Creating presentation with {len(self.structured_content)} slides")
-        prs = create_clean_presentation(self.structured_content)
+        # Create presentation with clean structure and image preference
+        logger.info(f"Creating presentation with {len(self.structured_content)} slides, images: {self.include_images}")
+        
+        # Use the correct function based on image preference
+        if self.include_images:
+            from src.slide_processor import create_clean_presentation_with_images
+            prs = create_clean_presentation_with_images(self.structured_content, include_images=True)
+        else:
+            from src.slide_processor import create_clean_presentation
+            prs = create_clean_presentation(self.structured_content)
         
         # Save presentation
         logger.info(f"Saving presentation to {temp_file}")
@@ -30,7 +43,7 @@ class PresentationHandler(BaseResourceHandler):
             raise FileNotFoundError(f"Failed to create presentation file at {temp_file}")
             
         file_size = os.path.getsize(temp_file)
-        logger.info(f"Generated presentation file size: {file_size} bytes")
+        logger.info(f"Generated presentation file size: {file_size} bytes (images: {self.include_images})")
         
         if file_size == 0:
             raise ValueError("Generated presentation file is empty")

@@ -156,6 +156,12 @@ def extract_teacher_guidance(content_list):
 class WorksheetHandler(BaseResourceHandler):
     """Handler for generating worksheets as Word documents with multilingual support"""
     
+    def __init__(self, structured_content: List[Dict[str, Any]], **kwargs):
+        super().__init__(structured_content, **kwargs)
+        # Images not supported for worksheets yet
+        if kwargs.get('include_images'):
+            logger.info("Image support requested for worksheet, but not implemented")
+    
     def generate(self) -> str:
         """Generate a worksheet docx file with clean separation of student and teacher content"""
         # Create temp file

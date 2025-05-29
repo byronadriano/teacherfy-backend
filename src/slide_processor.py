@@ -1,4 +1,4 @@
-# src/slide_processor.py - Updated with better text cleaning
+# src/slide_processor.py - Updated with Unsplash integration
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN, MSO_VERTICAL_ANCHOR
@@ -7,6 +7,9 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 import os
 import logging
 import re
+import io
+from PIL import Image
+from pptx.parts.image import Image as PptxImage
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +99,168 @@ def clean_content_list_for_presentation(content_list):
     
     return cleaned_list
 
+def add_image_to_slide(slide, image_bytes, lesson_topic=""):
+    """
+    Add an image to a content slide with proper positioning and attribution.
+    Designed for content slides, not title/logo slides.
+    
+    Args:
+        slide: PowerPoint slide object
+        image_bytes: Image data as bytes
+        lesson_topic: Topic for attribution context
+    """
+    try:
+        # Create a BytesIO object from the image bytes
+        image_stream = io.BytesIO(image_bytes)
+        
+        # Open image with PIL to get dimensions and potentially resize
+        with Image.open(image_stream) as img:
+            original_width, original_height = img.size
+            
+            # Calculate target size for content slides (top-right corner)
+            slide_width = Inches(10)  # Standard slide width
+            slide_height = Inches(7.5)  # Standard slide height
+            
+            # Position image in top-right area, leaving room for title and content
+            target_width = Inches(3.5)  # Smaller for content slides
+            target_height = Inches(2.5)  # Smaller height
+            
+            # Calculate aspect ratio and adjust if needed
+            img_aspect = original_width / original_height
+            target_aspect = target_width / target_height
+            
+            if img_aspect > target_aspect:
+                # Image is wider than target, fit by width
+                final_width = target_width
+                final_height = target_width / img_aspect
+            else:
+                # Image is taller than target, fit by height
+                final_height = target_height
+                final_width = target_height * img_aspect
+            
+            # Position in top-right area of content slide
+            left = slide_width - final_width - Inches(0.5)  # 0.5" margin from right
+            top = Inches(1.8)  # Below title area, above main content
+            
+            # Reset image stream position
+            image_stream.seek(0)
+            
+            # Add image to slide
+            picture = slide.shapes.add_picture(
+                image_stream, 
+                left, 
+                top, 
+                final_width, 
+                final_height
+            )
+            
+            # Optional: Add a subtle border or shadow effect
+            line = picture.line
+            line.color.rgb = RGBColor(200, 200, 200)  # Light gray border
+            line.width = Pt(0.5)
+            
+            logger.info(f"Successfully added image to content slide (size: {final_width} x {final_height})")
+            return True
+            
+    except Exception as e:
+        logger.error(f"Failed to add image to slide: {e}")
+        return False
+    finally:
+        if 'image_stream' in locals():
+            image_stream.close()
+
+def generate_search_query_from_content(structured_content, fallback="education"):
+    """
+    Generate a good search query for Unsplash based on lesson content.
+    Focuses on the first content slide, not title/logo slides.
+    
+    Args:
+        structured_content: List of slide data
+        fallback: Fallback search term if nothing suitable found
+        
+    Returns:
+        Search query string
+    """
+    try:
+        if not structured_content or len(structured_content) == 0:
+            return fallback
+        
+        # Find the first slide with meaningful content (skip title-only slides)
+        content_slide = None
+        for slide in structured_content:
+            content_items = slide.get('content', [])
+            if content_items and len(content_items) > 0:
+                # Check if this slide has real content, not just titles
+                has_real_content = any(
+                    len(item.strip()) > 10 and 
+                    not item.lower().startswith(('students will', 'today we will', 'objectives'))
+                    for item in content_items
+                )
+                if has_real_content:
+                    content_slide = slide
+                    break
+        
+        # If no content slide found, use the first slide
+        if not content_slide:
+            content_slide = structured_content[0]
+        
+        # Get title and content from the selected slide
+        title = content_slide.get('title', '').lower()
+        content_items = content_slide.get('content', [])
+        content_text = ' '.join(content_items).lower() if content_items else ''
+        
+        # Combine title and content for analysis
+        combined_text = f"{title} {content_text}".strip()
+        
+        # Extract subject-related keywords with more comprehensive mapping
+        subject_keywords = {
+            'mathematics': ['math', 'mathematics', 'number', 'fraction', 'algebra', 'geometry', 'calculation', 'equation', 'addition', 'subtraction', 'multiplication', 'division'],
+            'science': ['science', 'biology', 'chemistry', 'physics', 'experiment', 'hypothesis', 'molecule', 'atom', 'cell', 'gravity', 'energy'],
+            'reading': ['reading', 'writing', 'literature', 'grammar', 'vocabulary', 'story', 'essay', 'book', 'novel', 'poem'],
+            'history': ['history', 'historical', 'ancient', 'civilization', 'war', 'timeline', 'century', 'revolution', 'empire'],
+            'geography': ['geography', 'continent', 'country', 'map', 'climate', 'population', 'city', 'ocean', 'mountain'],
+            'art': ['art', 'painting', 'drawing', 'color', 'creativity', 'design', 'artistic', 'brush', 'canvas'],
+            'music': ['music', 'song', 'rhythm', 'instrument', 'melody', 'sound', 'musical', 'note', 'piano']
+        }
+        
+        # Find matching subjects
+        detected_subjects = []
+        for subject, keywords in subject_keywords.items():
+            if any(keyword in combined_text for keyword in keywords):
+                detected_subjects.append(subject)
+        
+        # Generate query based on detected subjects
+        if detected_subjects:
+            primary_subject = detected_subjects[0]
+            
+            # Add more specific terms based on content and grade level
+            if any(term in combined_text for term in ['kindergarten', 'young', 'children']):
+                return f"{primary_subject} children classroom"
+            elif any(term in combined_text for term in ['elementary', 'primary']):
+                return f"{primary_subject} elementary school"
+            elif any(term in combined_text for term in ['middle', 'junior']):
+                return f"{primary_subject} middle school"
+            elif any(term in combined_text for term in ['high', 'secondary']):
+                return f"{primary_subject} high school"
+            else:
+                return f"{primary_subject} education classroom"
+        
+        # If no subjects detected, look for general educational terms
+        educational_terms = ['learn', 'teach', 'school', 'class', 'lesson', 'study', 'education', 'student']
+        if any(term in combined_text for term in educational_terms):
+            return "classroom learning students"
+        
+        # Look for specific topics in the title or content
+        if 'equivalent' in combined_text and 'fraction' in combined_text:
+            return "mathematics fractions education"
+        
+        # Final fallback
+        return fallback
+        
+    except Exception as e:
+        logger.error(f"Error generating search query: {e}")
+        return fallback
+
 def find_content_placeholder(slide):
     """Find a suitable content placeholder on the slide"""
     # Try to find placeholders in order of preference
@@ -131,13 +296,21 @@ def find_content_placeholder(slide):
     
     return None
 
-def add_text_box_to_slide(slide, content_items):
+def add_text_box_to_slide(slide, content_items, with_image=False):
     """Add a text box to the slide if no placeholder is available"""
-    # Create a text box
-    left = Inches(1)
-    top = Inches(2)
-    width = Inches(8)
-    height = Inches(5)
+    # Adjust text box position if image is present
+    if with_image:
+        # Make text box narrower and positioned to avoid image in top-right
+        left = Inches(0.5)
+        top = Inches(2)
+        width = Inches(6)  # Narrower to leave room for top-right image
+        height = Inches(4.5)
+    else:
+        # Use more of the slide if no image
+        left = Inches(1)
+        top = Inches(2)
+        width = Inches(8)
+        height = Inches(5)
     
     textbox = slide.shapes.add_textbox(left, top, width, height)
     text_frame = textbox.text_frame
@@ -153,10 +326,14 @@ def add_text_box_to_slide(slide, content_items):
         p.font.size = STYLE['sizes']['body']
         p.font.color.rgb = STYLE['colors']['body']
     
-    logger.info("Added text box to slide due to missing placeholders")
+    logger.info(f"Added text box to slide ({'with image accommodation' if with_image else 'full width'})")
 
-def create_clean_presentation(structured_content):
-    """Create a PowerPoint presentation from clean structured content"""
+def create_clean_presentation_with_images(structured_content, include_images=True):
+    """Create a PowerPoint presentation from clean structured content with optional images"""
+    # Reset the image tracking flag
+    if hasattr(create_clean_presentation_with_images, '_image_added'):
+        delattr(create_clean_presentation_with_images, '_image_added')
+    
     template_path = os.path.join(os.path.dirname(__file__), 'templates', 'base_template_finalv4.pptx')
     
     # Check if template exists, use fallback if not
@@ -179,6 +356,35 @@ def create_clean_presentation(structured_content):
     except Exception as e:
         logger.warning(f"Could not load template: {e}. Creating blank presentation.")
         prs = Presentation()
+    
+    # Initialize Unsplash service if images are requested
+    unsplash_photo_data = None
+    image_bytes = None
+    
+    if include_images:
+        try:
+            from src.services.unsplash_service import unsplash_service
+            
+            # Generate search query from lesson content
+            search_query = generate_search_query_from_content(structured_content)
+            logger.info(f"Searching for image with query: '{search_query}'")
+            
+            # Search for image
+            unsplash_photo_data = unsplash_service.search_photo(search_query)
+            
+            if unsplash_photo_data:
+                # Download image
+                image_bytes = unsplash_service.download_photo(unsplash_photo_data)
+                if image_bytes:
+                    logger.info(f"Successfully retrieved image by {unsplash_photo_data['photographer_name']}")
+                else:
+                    logger.warning("Failed to download image from Unsplash")
+            else:
+                logger.warning(f"No suitable image found for query: '{search_query}'")
+                
+        except Exception as e:
+            logger.error(f"Error fetching image from Unsplash: {e}")
+            include_images = False  # Disable images for this generation
     
     # Log available slide layouts for debugging
     logger.info(f"Available slide layouts: {len(prs.slide_layouts)}")
@@ -210,6 +416,20 @@ def create_clean_presentation(structured_content):
                 # Fallback to the first available layout
                 slide = prs.slides.add_slide(prs.slide_layouts[0])
                 logger.warning(f"Using fallback layout 0 for slide {slide_index + 1}")
+            
+            # Add image to first content slide (skip logo/title slides)
+            has_image = False
+            if include_images and image_bytes:
+                # Check if this is the first slide with actual content
+                slide_content = slide_data.get('content', [])
+                clean_content = clean_content_list_for_presentation(slide_content)
+                
+                # Add image to first slide that has meaningful content
+                if clean_content and not hasattr(create_clean_presentation_with_images, '_image_added'):
+                    has_image = add_image_to_slide(slide, image_bytes, slide_data.get('title', ''))
+                    # Mark that we've added an image to prevent adding to multiple slides
+                    create_clean_presentation_with_images._image_added = True
+                    logger.info(f"Added image to slide {slide_index + 1} (first content slide)")
             
             # Clean and add title
             title_added = False
@@ -256,11 +476,11 @@ def create_clean_presentation(structured_content):
                     except Exception as e:
                         logger.warning(f"Failed to add content to placeholder on slide {slide_index + 1}: {e}")
                         # Fallback to text box
-                        add_text_box_to_slide(slide, clean_content_items)
+                        add_text_box_to_slide(slide, clean_content_items, has_image)
                 else:
                     # No suitable placeholder found, create a text box
                     logger.warning(f"No content placeholder found on slide {slide_index + 1}, using text box")
-                    add_text_box_to_slide(slide, clean_content_items)
+                    add_text_box_to_slide(slide, clean_content_items, has_image)
                     
                     # If we couldn't add a title through placeholder, add it as text box too
                     if not title_added and clean_title:
@@ -296,11 +516,40 @@ def create_clean_presentation(structured_content):
                 # Add content as text box
                 content_items = slide_data.get('content', [])
                 if content_items:
-                    add_text_box_to_slide(slide, content_items)
+                    add_text_box_to_slide(slide, content_items, False)
                 
                 logger.info(f"Created fallback slide {slide_index + 1} with text boxes")
             except Exception as fallback_error:
                 logger.error(f"Failed to create fallback slide {slide_index + 1}: {fallback_error}")
+    
+    # Add attribution for image if used
+    if include_images and unsplash_photo_data and image_bytes:
+        try:
+            # Add a final slide with attribution or add it to the last slide
+            if len(prs.slides) > 0:
+                last_slide = prs.slides[-1]
+                
+                # Add small attribution text at bottom
+                attribution_text = f"Image: {unsplash_photo_data['photographer_name']} on Unsplash"
+                
+                # Add attribution as small text box at bottom
+                attr_box = last_slide.shapes.add_textbox(
+                    Inches(0.5), 
+                    Inches(7), 
+                    Inches(9), 
+                    Inches(0.3)
+                )
+                attr_frame = attr_box.text_frame
+                attr_para = attr_frame.add_paragraph()
+                attr_para.text = attribution_text
+                attr_para.font.size = Pt(8)
+                attr_para.font.color.rgb = RGBColor(128, 128, 128)  # Gray color
+                attr_para.alignment = PP_ALIGN.RIGHT
+                
+                logger.info(f"Added attribution: {attribution_text}")
+                
+        except Exception as e:
+            logger.warning(f"Failed to add image attribution: {e}")
     
     logger.info(f"Created presentation with {len(structured_content)} slides")
     return prs
@@ -331,7 +580,11 @@ def create_presentation(structured_content, resource_type="PRESENTATION"):
         
         clean_content.append(clean_slide)
     
-    return create_clean_presentation(clean_content)
+    return create_clean_presentation_with_images(clean_content, include_images=True)
+
+def create_clean_presentation(structured_content):
+    """Create a PowerPoint presentation from clean structured content without images"""
+    return create_clean_presentation_with_images(structured_content, include_images=False)
 
 def parse_outline_to_structured_content(outline_text, resource_type="PRESENTATION"):
     """Parse outline text into clean structured content"""

@@ -10,6 +10,12 @@ logger = logging.getLogger(__name__)
 class LessonPlanHandler(BaseResourceHandler):
     """Handler for generating lesson plans as Word documents"""
 
+    def __init__(self, structured_content: List[Dict[str, Any]], **kwargs):
+        super().__init__(structured_content, **kwargs)
+        # Images not supported for lesson plans yet
+        if kwargs.get('include_images'):
+            logger.info("Image support requested for lesson plan, but not implemented")
+
     def generate(self) -> str:
         """Generate the lesson plan docx file and return the file path"""
         # Create temp file

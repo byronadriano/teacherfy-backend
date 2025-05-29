@@ -155,7 +155,13 @@ def extract_teacher_guidance(content_list):
 
 class QuizHandler(BaseResourceHandler):
     """Handler for generating quizzes as Word documents with multilingual support"""
-    
+
+    def __init__(self, structured_content: List[Dict[str, Any]], **kwargs):
+        super().__init__(structured_content, **kwargs)
+        # Images not supported for quizzes yet
+        if kwargs.get('include_images'):
+            logger.info("Image support requested for quiz, but not implemented")
+
     def generate(self) -> str:
         """Generate a quiz docx file with properly separated questions and answers"""
         # Create temp file

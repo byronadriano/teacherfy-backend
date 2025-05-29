@@ -1,8 +1,9 @@
-# src/history_routes.py
+# src/history_routes.py - FIXED VERSION
 from functools import wraps
 from flask import Blueprint, request, jsonify, session
 from src.config import logger
 from src.db.database import get_db_cursor, get_db_connection, get_user_by_email
+from psycopg2.extras import RealDictCursor  # Import this directly
 import traceback
 import json
 from datetime import datetime, timedelta
@@ -70,7 +71,8 @@ def get_user_history():
         # If user is logged in, fetch history from user_activities table
         if user_email:
             with get_db_connection() as conn:
-                with conn.cursor(cursor_factory=get_db_cursor().cursor_factory) as cursor:
+                # FIXED: Use RealDictCursor directly
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                     # Check which timestamp column exists
                     cursor.execute("""
                         SELECT column_name 
@@ -250,7 +252,8 @@ def save_history_item():
             user_id = user["id"]
             
             with get_db_connection() as conn:
-                with conn.cursor(cursor_factory=get_db_cursor().cursor_factory) as cursor:
+                # FIXED: Use RealDictCursor directly
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                     # Check which timestamp column exists
                     cursor.execute("""
                         SELECT column_name 

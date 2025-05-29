@@ -1,17 +1,15 @@
-# src/resource_routes.py
+# src/resource_routes.py - Updated with image support
 from flask import Blueprint, request, jsonify, send_file
 from src.config import logger
 from src.resource_types import ResourceType, get_resource_handler
-# Remove the usage decorator for download endpoints
 import os
 import traceback
 
 resource_blueprint = Blueprint("resource_blueprint", __name__)
 
 @resource_blueprint.route("/generate/<resource_type>", methods=["POST", "OPTIONS"])
-# No usage limit decorator - downloads are unlimited once content is generated
 def generate_resource_endpoint(resource_type):
-    """Generate a resource file based on the specified resource type - NO USAGE LIMITS."""
+    """Generate a resource file based on the specified resource type with optional image support."""
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
 
@@ -24,19 +22,20 @@ def generate_resource_endpoint(resource_type):
         data = request.form.to_dict()
     
     structured_content = data.get('structured_content')
+    include_images = data.get('include_images', True)  # Default to True for backward compatibility
     
     if not structured_content:
         logger.error("No structured content provided")
         return jsonify({"error": "No structured content provided"}), 400
     
-    logger.info(f"Processing resource generation request for: {resource_type} with {len(structured_content)} items")
+    logger.info(f"Processing resource generation request for: {resource_type} with {len(structured_content)} items (images: {include_images})")
     
     try:
         # Normalize resource type - strip all non-alphanumeric chars
         normalized_resource_type = resource_type.lower().replace('-', '_').replace(' ', '_')
         
         # Log the received and normalized resource type
-        logger.info(f"Resource type received: '{resource_type}', normalized to: '{normalized_resource_type}'")
+        logger.info(f"Resource type received: '{resource_type}', normalized to: '{normalized_resource_type}', images: {include_images}")
         
         # Better resource type normalization with improved mapping
         if "quiz" in normalized_resource_type or "test" in normalized_resource_type:
@@ -53,8 +52,8 @@ def generate_resource_endpoint(resource_type):
         # Get the appropriate handler using the resource_types module
         from src.resource_types import get_resource_handler
         
-        # Create the handler instance
-        handler = get_resource_handler(handler_type, structured_content)
+        # Create the handler instance with image preference
+        handler = get_resource_handler(handler_type, structured_content, include_images=include_images)
         
         # Generate the resource
         file_path = handler.generate()
@@ -105,9 +104,8 @@ def generate_resource_endpoint(resource_type):
 # For backward compatibility - maintain the original /generate endpoint 
 # that defaults to presentation type
 @resource_blueprint.route("/generate", methods=["POST", "OPTIONS"])
-# No usage limit decorator - downloads are unlimited once content is generated
 def generate_presentation_endpoint():
-    """Generate a PowerPoint presentation (.pptx) for download - NO USAGE LIMITS."""
+    """Generate a PowerPoint presentation (.pptx) for download with optional image support."""
     # Handle preflight requests
     if request.method == "OPTIONS":
         return jsonify({"status": "OK"}), 200
@@ -129,11 +127,12 @@ def generate_presentation_endpoint():
     # Extract and validate the data
     resource_type = data.get('resource_type', 'presentation').lower()
     structured_content = data.get('structured_content')
+    include_images = data.get('include_images', True)  # Default to True
     
     if not structured_content:
         logger.error("No structured content provided")
         return jsonify({"error": "No structured content provided"}), 400
     
-    logger.info(f"Processing generate request with {len(structured_content)} items for resource type: {resource_type}")
+    logger.info(f"Processing generate request with {len(structured_content)} items for resource type: {resource_type} (images: {include_images})")
     
     return generate_resource_endpoint(resource_type)
