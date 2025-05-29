@@ -1,9 +1,14 @@
-# src/auth_routes.py - FIXED VERSION with better error handling and debugging
+# src/auth_routes.py - FIXED VERSION with insecure transport for development
+import os
 from flask import Blueprint, request, jsonify, redirect, url_for, session
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 import traceback
 import json
+
+# CRITICAL FIX: Allow insecure transport for development
+if os.environ.get('FLASK_ENV') == 'development':
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 from src.config import logger, flow, CLIENT_ID, config
 from src.db import get_user_by_email, create_user, log_user_login, log_user_activity
@@ -17,7 +22,7 @@ def check_auth():
         logger.info("🔍 DEBUG: /auth/check route called")
         logger.info(f"🔍 DEBUG: Session keys: {list(session.keys())}")
         
-        # Check if we have user info in session (simplified approach)
+        # Check if we have user info in session
         user_info = session.get('user_info')
         if not user_info:
             logger.info("🔍 DEBUG: No user_info in session")
@@ -43,7 +48,7 @@ def check_auth():
                         "email": user_info.get('email'),
                         "name": user_info.get('name'),
                         "picture": user_info.get('picture'),
-                        "is_premium": False  # You can extend this based on your user tiers
+                        "is_premium": False
                     },
                     "usage_limits": {
                         "generations_left": usage['generations_left'],
@@ -81,7 +86,31 @@ def check_auth():
             "error": str(e)
         }), 500
 
-# Enhanced OAuth callback for debugging - Add this to your auth_routes.py
+@auth_blueprint.route('/authorize')
+def authorize():
+    """Initiate Google OAuth with the proper redirect URI."""
+    try:
+        logger.info("🔐 Starting OAuth authorization")
+        
+        if not flow:
+            logger.error("❌ OAuth flow not initialized")
+            return jsonify({"error": "OAuth not configured"}), 500
+            
+        logger.info(f"🔍 Flow redirect URI: {flow.redirect_uri}")
+        
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent'
+        )
+        session['state'] = state
+        logger.info(f"🔗 Redirecting to: {authorization_url}")
+        
+        return redirect(authorization_url)
+    except Exception as e:
+        logger.error(f"❌ Error during OAuth authorization: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 @auth_blueprint.route('/oauth2callback')
 def oauth2callback():
@@ -90,8 +119,6 @@ def oauth2callback():
         logger.info("🔐 OAuth callback received")
         logger.info(f"🔍 Request URL: {request.url}")
         logger.info(f"🔍 Request args: {dict(request.args)}")
-        logger.info(f"🔍 Request method: {request.method}")
-        logger.info(f"🔍 Request headers: {dict(request.headers)}")
         
         # Check for error in callback
         if 'error' in request.args:
@@ -140,10 +167,6 @@ def oauth2callback():
                                 error: 'No authorization code received'
                             }, '*');
                             window.close();
-                        } else {
-                            setTimeout(() => {
-                                window.location.href = '/';
-                            }, 3000);
                         }
                     </script>
                 </body>
@@ -153,10 +176,11 @@ def oauth2callback():
         # Fetch the token
         try:
             logger.info("🔍 Attempting to fetch token...")
+            logger.info(f"🔍 OAUTHLIB_INSECURE_TRANSPORT: {os.environ.get('OAUTHLIB_INSECURE_TRANSPORT')}")
+            
             flow.fetch_token(authorization_response=request.url)
             credentials = flow.credentials
             logger.info("✅ Token fetched successfully")
-            logger.info(f"🔍 Token expires at: {credentials.expiry}")
         except Exception as token_error:
             logger.error(f"❌ Token fetch error: {token_error}")
             logger.error(traceback.format_exc())
@@ -166,19 +190,15 @@ def oauth2callback():
                 <body>
                     <h2>Authentication Error</h2>
                     <p>Failed to fetch authentication token</p>
-                    <p>Error: {str(token_error)}</p>
+                    <p>Technical details: {str(token_error)}</p>
                     <script>
                         console.error('Token fetch error:', '{str(token_error)}');
                         if (window.opener) {{
                             window.opener.postMessage({{
                                 type: 'AUTH_ERROR',
-                                error: 'Failed to get authentication token: {str(token_error)}'
+                                error: 'Failed to get authentication token'
                             }}, '*');
                             window.close();
-                        }} else {{
-                            setTimeout(() => {{
-                                window.location.href = '/';
-                            }}, 3000);
                         }}
                     </script>
                 </body>
@@ -206,7 +226,6 @@ def oauth2callback():
                 clock_skew_in_seconds=300
             )
             logger.info(f"✅ Token verified for user: {id_info.get('email')}")
-            logger.info(f"🔍 User info from token: {id_info}")
         except Exception as verify_error:
             logger.error(f"❌ Token verification error: {verify_error}")
             logger.error(traceback.format_exc())
@@ -216,19 +235,14 @@ def oauth2callback():
                 <body>
                     <h2>Authentication Error</h2>
                     <p>Failed to verify authentication token</p>
-                    <p>Error: {str(verify_error)}</p>
                     <script>
                         console.error('Token verification error:', '{str(verify_error)}');
                         if (window.opener) {{
                             window.opener.postMessage({{
                                 type: 'AUTH_ERROR',
-                                error: 'Failed to verify authentication token: {str(verify_error)}'
+                                error: 'Failed to verify authentication token'
                             }}, '*');
                             window.close();
-                        }} else {{
-                            setTimeout(() => {{
-                                window.location.href = '/';
-                            }}, 3000);
                         }}
                     </script>
                 </body>
@@ -242,29 +256,18 @@ def oauth2callback():
             'picture': id_info.get('picture', '')
         }
         session['user_info'] = user_info
-        session.permanent = True  # Make session persistent
+        session.permanent = True
         logger.info("💾 User info stored in session")
-        logger.info(f"🔍 Session keys after storing user info: {list(session.keys())}")
 
         # Create/update user in database and log login
         user_id = None
         try:
             logger.info(f"🔍 Creating/updating user in database: {user_info['email']}")
-            user_result = create_user(user_info['email'], user_info['name'], user_info['picture'])
-            
-            if isinstance(user_result, int):
-                user_id = user_result
-            elif isinstance(user_result, dict) and 'id' in user_result:
-                user_id = user_result['id']
-            else:
-                logger.warning("⚠️ Unexpected user creation result format")
-                user_id = None
+            user_id = create_user(user_info['email'], user_info['name'], user_info['picture'])
             
             if user_id:
                 log_user_login(user_id)
                 logger.info(f"✅ User login logged for ID: {user_id}")
-                
-                # Store user ID in session for easier access
                 session['user_id'] = user_id
             else:
                 logger.warning("⚠️ Could not get user ID for login logging")
@@ -272,25 +275,62 @@ def oauth2callback():
         except Exception as db_error:
             logger.error(f"❌ Database error during OAuth: {db_error}")
             logger.error(traceback.format_exc())
-            # Continue with OAuth even if DB logging fails - don't break the login
         
         logger.info(f"✅ Successfully authenticated user: {user_info['email']}")
         
-        # Return success page with comprehensive messaging
+        # Return success page that communicates with parent window
         return f"""
             <html>
             <head>
                 <title>Authentication Successful</title>
                 <style>
-                    body {{ font-family: Arial, sans-serif; padding: 20px; text-align: center; }}
-                    .success {{ color: green; }}
-                    .info {{ color: blue; }}
+                    body {{ 
+                        font-family: Arial, sans-serif; 
+                        padding: 20px; 
+                        text-align: center;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        min-height: 100vh;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                    }}
+                    .success {{ 
+                        background: white;
+                        color: #2d5fcf;
+                        padding: 30px;
+                        border-radius: 15px;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                        max-width: 400px;
+                    }}
+                    .checkmark {{
+                        font-size: 3rem;
+                        margin-bottom: 20px;
+                    }}
+                    .loading {{
+                        display: inline-block;
+                        width: 20px;
+                        height: 20px;
+                        border: 3px solid #f3f3f3;
+                        border-top: 3px solid #2d5fcf;
+                        border-radius: 50%;
+                        animation: spin 1s linear infinite;
+                        margin-left: 10px;
+                    }}
+                    @keyframes spin {{
+                        0% {{ transform: rotate(0deg); }}
+                        100% {{ transform: rotate(360deg); }}
+                    }}
                 </style>
             </head>
             <body>
-                <h2 class="success">✅ Authentication Successful!</h2>
-                <p class="info">Welcome, {user_info.get('name', user_info['email'])}!</p>
-                <p>This window will close automatically...</p>
+                <div class="success">
+                    <div class="checkmark">✅</div>
+                    <h2>Authentication Successful!</h2>
+                    <p>Welcome, {user_info.get('name', user_info['email'])}!</p>
+                    <p>Redirecting back to the app<span class="loading"></span></p>
+                </div>
                 
                 <script>
                     console.log('🎉 OAuth success! User authenticated:', {{
@@ -299,9 +339,11 @@ def oauth2callback():
                         user_id: {user_id or 'null'}
                     }});
                     
+                    // Send success message to parent window
                     try {{
                         if (window.opener) {{
                             console.log('📨 Sending success message to parent window...');
+                            
                             window.opener.postMessage({{
                                 type: 'AUTH_SUCCESS',
                                 user: {{
@@ -312,11 +354,10 @@ def oauth2callback():
                                 }}
                             }}, '*');
                             
-                            // Close after a short delay to ensure message is sent
+                            console.log('✅ Success message sent, closing popup...');
                             setTimeout(() => {{
-                                console.log('🔒 Closing OAuth popup...');
                                 window.close();
-                            }}, 1000);
+                            }}, 2000);
                         }} else {{
                             console.log('ℹ️ No opener window, redirecting to home...');
                             setTimeout(() => {{
@@ -325,9 +366,8 @@ def oauth2callback():
                         }}
                     }} catch (error) {{
                         console.error('❌ Error in OAuth callback script:', error);
-                        // Fallback - just redirect
                         setTimeout(() => {{
-                            window.location.href = '/';
+                            window.close();
                         }}, 3000);
                     }}
                 </script>
@@ -343,7 +383,6 @@ def oauth2callback():
             <body>
                 <h2>Authentication Error</h2>
                 <p>An unexpected error occurred during authentication</p>
-                <p>Error: {str(e)}</p>
                 <script>
                     console.error('OAuth callback error:', '{str(e)}');
                     if (window.opener) {{
@@ -352,41 +391,11 @@ def oauth2callback():
                             error: 'Authentication failed: {str(e)}'
                         }}, '*');
                         window.close();
-                    }} else {{
-                        setTimeout(() => {{
-                            window.location.href = '/';
-                        }}, 3000);
                     }}
                 </script>
             </body>
             </html>
         """
-        
-@auth_blueprint.route('/authorize')
-def authorize():
-    """Initiate Google OAuth with the proper redirect URI."""
-    try:
-        logger.info("🔐 Starting OAuth authorization")
-        
-        if not flow:
-            logger.error("❌ OAuth flow not initialized")
-            return jsonify({"error": "OAuth not configured"}), 500
-            
-        logger.info(f"🔍 Flow redirect URI: {flow.redirect_uri}")
-        
-        authorization_url, state = flow.authorization_url(
-            access_type='offline',
-            include_granted_scopes='true',
-            prompt='consent'  # Force consent screen to ensure we get refresh token
-        )
-        session['state'] = state
-        logger.info(f"🔗 Redirecting to: {authorization_url}")
-        
-        return redirect(authorization_url)
-    except Exception as e:
-        logger.error(f"❌ Error during OAuth authorization: {e}")
-        logger.error(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
 
 @auth_blueprint.route('/logout')
 def logout():
@@ -401,46 +410,4 @@ def logout():
         return jsonify({"message": "Logged out successfully"})
     except Exception as e:
         logger.error(f"❌ Logout error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-# Add a debug route to check session and OAuth config
-@auth_blueprint.route('/debug/oauth')
-def debug_oauth():
-    """Debug route to check OAuth configuration."""
-    try:
-        return jsonify({
-            "flow_initialized": flow is not None,
-            "client_id_exists": bool(CLIENT_ID),
-            "redirect_uri": flow.redirect_uri if flow else None,
-            "scopes": flow.scopes if flow else None,
-            "session_keys": list(session.keys()),
-            "has_user_info": 'user_info' in session,
-            "user_email": session.get('user_info', {}).get('email', 'No email'),
-            "development_mode": config.DEVELOPMENT_MODE
-        })
-    except Exception as e:
-        logger.error(f"❌ Debug OAuth error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@auth_blueprint.route('/debug/database')
-def debug_database():
-    """Debug route to test database operations."""
-    try:
-        from src.db.database import test_connection
-        
-        results = {
-            "connection_test": test_connection()
-        }
-        
-        # Try to get a test user
-        try:
-            test_user = get_user_by_email("test@example.com")
-            results["test_user_query"] = "success"
-            results["test_user_exists"] = test_user is not None
-        except Exception as e:
-            results["test_user_query"] = f"error: {str(e)}"
-        
-        return jsonify(results)
-    except Exception as e:
-        logger.error(f"❌ Debug database error: {e}")
         return jsonify({"error": str(e)}), 500

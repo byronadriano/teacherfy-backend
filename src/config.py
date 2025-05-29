@@ -1,4 +1,4 @@
-# src/config.py - FIXED VERSION with proper OAuth scopes
+# src/config.py - FIXED VERSION with correct OAuth setup
 import os
 import logging
 from typing import Dict, Any, Optional, List
@@ -6,13 +6,11 @@ from openai import OpenAI
 from google_auth_oauthlib.flow import Flow
 from dotenv import load_dotenv
 
-# Define OAuth scopes at module level - FIXED: Added required scopes for user info
+# Define OAuth scopes at module level
 SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
-    'openid',
-    'https://www.googleapis.com/auth/drive.file',
-    'https://www.googleapis.com/auth/presentations'
+    'openid'
 ]
 
 class BaseConfig:
@@ -71,7 +69,7 @@ class BaseConfig:
                 print(f"Warning: Could not create log file at {log_path}: {e}")
 
             logging.basicConfig(
-                level=logging.INFO,  # Changed from DEBUG to INFO for production
+                level=logging.INFO,
                 format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                 handlers=handlers
             )
@@ -79,8 +77,6 @@ class BaseConfig:
             # Set up this class's logger
             self.logger = logging.getLogger(__name__)
             self.logger.info(f"Logging initialized. Log file: {log_path if len(handlers) > 1 else 'stdout only'}")
-            
-            # Log some diagnostic information
             self.logger.info(f"Environment: {'Development' if self.DEVELOPMENT_MODE else 'Production'}")
             
         except Exception as e:
@@ -157,11 +153,11 @@ class BaseConfig:
     DEVELOPMENT_MODE = os.environ.get("FLASK_ENV") == "development"
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
     
-    # Session settings - FIXED: Better session configuration
+    # Session settings
     SESSION_COOKIE_SECURE = not DEVELOPMENT_MODE
     SESSION_COOKIE_SAMESITE = 'Lax' if DEVELOPMENT_MODE else 'None'
     SESSION_COOKIE_HTTPONLY = True
-    PERMANENT_SESSION_LIFETIME = 86400  # 24 hours instead of 1 hour
+    PERMANENT_SESSION_LIFETIME = 86400  # 24 hours
     SESSION_COOKIE_DOMAIN = None
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     
