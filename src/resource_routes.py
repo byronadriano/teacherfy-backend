@@ -127,7 +127,7 @@ def generate_presentation_endpoint():
     # Extract and validate the data
     resource_type = data.get('resource_type', 'presentation').lower()
     structured_content = data.get('structured_content')
-    include_images = data.get('include_images', True)  # Default to True
+    include_images = data.get('include_images', False)  # Default to True
     
     if not structured_content:
         logger.error("No structured content provided")

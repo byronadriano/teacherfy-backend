@@ -1,169 +1,22 @@
-# src/resource_handlers/worksheet_handler.py - ROBUST MULTILINGUAL VERSION
+# src/resource_handlers/worksheet_handler.py - CLEANED VERSION
 import os
 import logging
 import docx
-import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from .base_handler import BaseResourceHandler
 
 logger = logging.getLogger(__name__)
 
-def clean_text_for_worksheet(text):
-    """Clean up text specifically for worksheet generation"""
-    if not text:
-        return ""
-    
-    # Remove markdown formatting
-    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **bold** -> bold
-    text = re.sub(r'\*([^*]+)\*', r'\1', text)      # *italic* -> italic
-    text = re.sub(r'__([^_]+)__', r'\1', text)      # __bold__ -> bold
-    text = re.sub(r'_([^_]+)_', r'\1', text)        # _italic_ -> italic
-    
-    # Remove section markers and dividers
-    text = re.sub(r'^---+$', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^\*\*Section \d+:', 'Section', text, flags=re.MULTILINE)
-    
-    # Clean up bullet points but preserve structure
-    text = re.sub(r'^[-•*]\s*', '', text, flags=re.MULTILINE)
-    
-    # Clean up multiple spaces and normalize whitespace
-    text = ' '.join(text.split())
-    
-    return text.strip()
-
-def extract_question_and_answer(text):
-    """Extract question and answer from text, handling multiple languages"""
-    if not text or not isinstance(text, str):
-        return text, None
-    
-    cleaned_text = clean_text_for_worksheet(text)
-    
-    # Look for multiple answer patterns (English and common translations)
-    answer_patterns = [
-        r'\(Answer:\s*([^)]+)\)',      # English: (Answer: ...)
-        r'\(Respuesta:\s*([^)]+)\)',   # Spanish: (Respuesta: ...)
-        r'\(Réponse:\s*([^)]+)\)',     # French: (Réponse: ...)
-        r'\(Antwort:\s*([^)]+)\)',     # German: (Antwort: ...)
-        r'\(Risposta:\s*([^)]+)\)',    # Italian: (Risposta: ...)
-        r'\(答案:\s*([^)]+)\)',         # Chinese: (答案: ...)
-        r'\(回答:\s*([^)]+)\)',         # Japanese: (回答: ...)
-        r'\(답:\s*([^)]+)\)',          # Korean: (답: ...)
-        r'\(Jawaban:\s*([^)]+)\)',     # Indonesian: (Jawaban: ...)
-        r'\(Câu trả lời:\s*([^)]+)\)', # Vietnamese: (Câu trả lời: ...)
-    ]
-    
-    for pattern in answer_patterns:
-        answer_match = re.search(pattern, cleaned_text, re.IGNORECASE)
-        if answer_match:
-            answer = answer_match.group(1).strip()
-            # Remove the answer from the question
-            question = re.sub(pattern, '', cleaned_text, flags=re.IGNORECASE).strip()
-            return question, answer
-    
-    return cleaned_text, None
-
-def extract_questions_from_content(content_list):
-    """Extract and separate questions from content, filtering out teacher notes"""
-    questions = []
-    answers = []
-    
-    for item in content_list:
-        if not item.strip():
-            continue
-        
-        # Skip teacher guidance content (check for multiple languages)
-        item_lower = item.lower()
-        teacher_keywords = [
-            'differentiation tip:', 'teacher note:', 'teacher action:', 
-            'assessment check:', 'instructions:',
-            # Spanish
-            'consejo de diferenciación:', 'nota del maestro:', 'acción del maestro:',
-            # French  
-            'conseil de différenciation:', 'note de l\'enseignant:', 'action de l\'enseignant:',
-            # German
-            'differenzierungstipp:', 'lehrernotiz:', 'lehreraktion:',
-            # Add more as needed
-        ]
-        
-        if any(keyword in item_lower for keyword in teacher_keywords):
-            continue
-            
-        # Skip section headers and content labels
-        if (item_lower.startswith(('content:', 'questions:', 'section', 'contenido:', 'preguntas:')) or 
-            item in ['---', '', 'Content']):
-            continue
-        
-        question, answer = extract_question_and_answer(item)
-        if question:
-            questions.append(question)
-            if answer:
-                answers.append(answer)
-    
-    return questions, answers
-
-def extract_teacher_guidance(content_list):
-    """Extract teacher notes and differentiation tips from content (multilingual)"""
-    teacher_notes = []
-    differentiation_tips = []
-    
-    for item in content_list:
-        if not item or not isinstance(item, str):
-            continue
-            
-        item_clean = clean_text_for_worksheet(item)
-        item_lower = item_clean.lower()
-        
-        # Check for differentiation tips in multiple languages
-        diff_patterns = [
-            (r'^differentiation tip:\s*(.+)', 'differentiation tip:'),
-            (r'^consejo de diferenciación:\s*(.+)', 'consejo de diferenciación:'),
-            (r'^conseil de différenciation:\s*(.+)', 'conseil de différenciation:'),
-            (r'^differenzierungstipp:\s*(.+)', 'differenzierungstipp:'),
-        ]
-        
-        # Check for teacher notes in multiple languages
-        note_patterns = [
-            (r'^teacher note:\s*(.+)', 'teacher note:'),
-            (r'^teacher action:\s*(.+)', 'teacher action:'),
-            (r'^nota del maestro:\s*(.+)', 'nota del maestro:'),
-            (r'^acción del maestro:\s*(.+)', 'acción del maestro:'),
-            (r'^note de l\'enseignant:\s*(.+)', 'note de l\'enseignant:'),
-            (r'^action de l\'enseignant:\s*(.+)', 'action de l\'enseignant:'),
-            (r'^lehrernotiz:\s*(.+)', 'lehrernotiz:'),
-            (r'^lehreraktion:\s*(.+)', 'lehreraktion:'),
-        ]
-        
-        # Check differentiation patterns
-        for pattern, keyword in diff_patterns:
-            match = re.search(pattern, item_lower)
-            if match:
-                tip = item_clean.replace(keyword, '').replace(keyword.title(), '').strip()
-                if tip:
-                    differentiation_tips.append(tip)
-                break
-        
-        # Check teacher note patterns
-        for pattern, keyword in note_patterns:
-            match = re.search(pattern, item_lower)
-            if match:
-                note = item_clean.replace(keyword, '').replace(keyword.title(), '').strip()
-                if note:
-                    teacher_notes.append(note)
-                break
-    
-    return teacher_notes, differentiation_tips
-
 class WorksheetHandler(BaseResourceHandler):
-    """Handler for generating worksheets as Word documents with multilingual support"""
+    """Handler for generating worksheets as Word documents with multilingual support."""
     
     def __init__(self, structured_content: List[Dict[str, Any]], **kwargs):
         super().__init__(structured_content, **kwargs)
-        # Images not supported for worksheets yet
         if kwargs.get('include_images'):
             logger.info("Image support requested for worksheet, but not implemented")
     
     def generate(self) -> str:
-        """Generate a worksheet docx file with clean separation of student and teacher content"""
+        """Generate a worksheet docx file with clean separation of student and teacher content."""
         # Create temp file
         temp_file = self.create_temp_file("docx")
         
@@ -174,7 +27,7 @@ class WorksheetHandler(BaseResourceHandler):
         worksheet_title = "Worksheet"
         if self.structured_content and len(self.structured_content) > 0:
             raw_title = self.structured_content[0].get('title', 'Worksheet')
-            worksheet_title = clean_text_for_worksheet(raw_title)
+            worksheet_title = self.clean_markdown_and_formatting(raw_title)
         
         doc.add_heading(worksheet_title, 0)
         
@@ -203,22 +56,30 @@ class WorksheetHandler(BaseResourceHandler):
         all_teacher_data = []  # Collect all teacher guidance for the answer key
         
         for section_idx, section in enumerate(self.structured_content):
-            section_title = clean_text_for_worksheet(section.get('title', f'Section {section_idx + 1}'))
+            section_title = self.clean_markdown_and_formatting(section.get('title', f'Section {section_idx + 1}'))
             
             # Skip if this is just a title section with no content
             if not section.get('content'):
                 continue
             
             # Extract questions, answers, and teacher guidance
-            questions, answers = extract_questions_from_content(section.get('content', []))
-            teacher_notes, differentiation_tips = extract_teacher_guidance(section.get('content', []))
+            questions, answers = self.extract_questions_from_content(section.get('content', []))
+            teacher_notes, differentiation_tips = self.extract_teacher_guidance(section.get('content', []))
             
-            # Add any teacher_notes from the structured content
-            if section.get('teacher_notes'):
-                for note in section.get('teacher_notes'):
-                    clean_note = clean_text_for_worksheet(note)
-                    if clean_note and not any(keyword in clean_note.lower() for keyword in ['differentiation', 'teacher']):
-                        teacher_notes.append(clean_note)
+            # Add any additional notes from the content itself
+            content_items = section.get('content', [])
+            for item in content_items:
+                clean_item = self.clean_markdown_and_formatting(item)
+                # Look for teacher guidance within the content
+                if any(keyword in clean_item.lower() for keyword in ['teacher note:', 'differentiation tip:']):
+                    if 'differentiation tip:' in clean_item.lower():
+                        tip = clean_item.split('differentiation tip:', 1)[1].strip()
+                        if tip:
+                            differentiation_tips.append(tip)
+                    elif 'teacher note:' in clean_item.lower():
+                        note = clean_item.split('teacher note:', 1)[1].strip()
+                        if note:
+                            teacher_notes.append(note)
             
             # Store teacher data for later use
             all_teacher_data.append({

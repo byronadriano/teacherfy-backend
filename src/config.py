@@ -1,12 +1,12 @@
-# src/config.py - UPDATED VERSION with DeepSeek API support
+# src/config.py - CLEANED VERSION
 import os
 import logging
-from typing import Dict, Any, Optional, List
-from openai import OpenAI  # We'll use the OpenAI SDK with DeepSeek's compatible API
+from typing import Dict, Any, List
+from openai import OpenAI
 from google_auth_oauthlib.flow import Flow
 from dotenv import load_dotenv
 
-# Define OAuth scopes at module level
+# OAuth scopes
 SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
@@ -20,6 +20,9 @@ class BaseConfig:
         # Load environment variables
         load_dotenv()
         
+        # Set environment mode
+        self.DEVELOPMENT_MODE = os.environ.get("FLASK_ENV") == "development"
+        
         # Configure logging
         self._setup_logging()
         
@@ -27,15 +30,14 @@ class BaseConfig:
         self.CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
         self.CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
         
-        # FIXED: Environment-aware redirect URI
+        # Environment-aware redirect URI
         if self.DEVELOPMENT_MODE:
             self.REDIRECT_URI = "http://localhost:5000/oauth2callback"
         else:
-            # Production redirect URI
             self.REDIRECT_URI = "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net/oauth2callback"
         
         # Initialize external services
-        self.openai_client = self._init_deepseek()  # Changed from OpenAI to DeepSeek
+        self.deepseek_client = self._init_deepseek()
         self.oauth_flow = self._init_oauth()
 
     def _setup_logging(self) -> None:
@@ -45,21 +47,15 @@ class BaseConfig:
         
         # Determine log file location
         if self.DEVELOPMENT_MODE:
-            # In development, use local logs directory
             log_dir = "logs"
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir, exist_ok=True)
             log_path = os.path.join(log_dir, "app.log")
         else:
-            # In Azure/production, use temp directory
             log_path = os.path.join(tempfile.gettempdir(), "app.log")
 
         try:
-            # Configure root logger
-            handlers = [
-                # Always log to stdout for Azure logging
-                logging.StreamHandler(sys.stdout)
-            ]
+            handlers = [logging.StreamHandler(sys.stdout)]
             
             # Try to add file handler if possible
             try:
@@ -74,13 +70,10 @@ class BaseConfig:
                 handlers=handlers
             )
             
-            # Set up this class's logger
             self.logger = logging.getLogger(__name__)
-            self.logger.info(f"Logging initialized. Log file: {log_path if len(handlers) > 1 else 'stdout only'}")
-            self.logger.info(f"Environment: {'Development' if self.DEVELOPMENT_MODE else 'Production'}")
+            self.logger.info(f"Logging initialized. Environment: {'Development' if self.DEVELOPMENT_MODE else 'Production'}")
             
         except Exception as e:
-            # Fallback to basic console logging if something goes wrong
             logging.basicConfig(
                 level=logging.INFO,
                 format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -89,44 +82,36 @@ class BaseConfig:
             self.logger = logging.getLogger(__name__)
             self.logger.error(f"Failed to initialize logging: {str(e)}. Falling back to console logging only.")
 
-    def _init_deepseek(self) -> Optional[OpenAI]:
-        """Initialize DeepSeek client using OpenAI SDK with DeepSeek's compatible API."""
+    def _init_deepseek(self) -> OpenAI:
+        """Initialize DeepSeek client using OpenAI SDK."""
         try:
-            # Get API key from environment variables
             deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
             
             if not deepseek_api_key:
                 raise ValueError("Missing DEEPSEEK_API_KEY environment variable!")
             
-            # Create OpenAI client configured for DeepSeek API
             client = OpenAI(
                 api_key=deepseek_api_key,
-                base_url="https://api.deepseek.com"  # DeepSeek's OpenAI-compatible endpoint
+                base_url="https://api.deepseek.com"
             )
             
-            self.logger.info("DeepSeek client initialized successfully using OpenAI SDK.")
+            self.logger.info("DeepSeek client initialized successfully.")
             return client
+            
         except Exception as e:
             self.logger.error(f"DeepSeek initialization error: {e}")
             return None
 
-    def _init_oauth(self) -> Optional[Flow]:
-        """Initialize Google OAuth flow with environment-aware redirect URI."""
-        self.logger.info("🔍 Initializing OAuth flow")
-        
+    def _init_oauth(self) -> Flow:
+        """Initialize Google OAuth flow."""
         try:
-            self.logger.info(f"🔍 CLIENT_ID: {self.CLIENT_ID}")
-            self.logger.info(f"🔍 CLIENT_SECRET exists: {bool(self.CLIENT_SECRET)}")
-            self.logger.info(f"🔍 REDIRECT_URI: {self.REDIRECT_URI}")
-            self.logger.info(f"🔍 DEVELOPMENT_MODE: {self.DEVELOPMENT_MODE}")
-            
             if not all([self.CLIENT_ID, self.CLIENT_SECRET, self.REDIRECT_URI]):
                 missing = []
                 if not self.CLIENT_ID: missing.append("CLIENT_ID")
                 if not self.CLIENT_SECRET: missing.append("CLIENT_SECRET") 
                 if not self.REDIRECT_URI: missing.append("REDIRECT_URI")
                 
-                self.logger.error(f"❌ Missing OAuth credentials: {missing}")
+                self.logger.error(f"Missing OAuth credentials: {missing}")
                 return None
 
             oauth_config = {
@@ -140,47 +125,34 @@ class BaseConfig:
                 }
             }
             
-            self.logger.info(f"🔍 OAuth config created with scopes: {SCOPES}")
-            
-            # CRITICAL FIX: Ensure proper OAuth flow initialization for production
             flow = Flow.from_client_config(oauth_config, scopes=SCOPES)
             flow.redirect_uri = self.REDIRECT_URI
             
-            # PRODUCTION FIX: Ensure OAuth flow uses HTTPS in production
+            # Ensure proper HTTPS in production
             if not self.DEVELOPMENT_MODE:
-                # Force HTTPS for token exchanges in production
-                import os
-                # Ensure OAUTHLIB_INSECURE_TRANSPORT is NOT set in production
                 if 'OAUTHLIB_INSECURE_TRANSPORT' in os.environ:
                     del os.environ['OAUTHLIB_INSECURE_TRANSPORT']
-                    self.logger.info("🔒 Removed OAUTHLIB_INSECURE_TRANSPORT for production")
+                    self.logger.info("Removed OAUTHLIB_INSECURE_TRANSPORT for production")
             
-            self.logger.info(f"✅ OAuth flow created successfully")
-            self.logger.info(f"🔍 Flow redirect_uri: {flow.redirect_uri}")
-            
+            self.logger.info("OAuth flow created successfully")
             return flow
             
         except Exception as e:
-            self.logger.error(f"❌ Google OAuth initialization error: {e}")
-            import traceback
-            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            self.logger.error(f"Google OAuth initialization error: {e}")
             return None
     
     # Common settings
-    DEVELOPMENT_MODE = os.environ.get("FLASK_ENV") == "development"
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
     
     # Session settings
-    SESSION_COOKIE_SECURE = not DEVELOPMENT_MODE
-    SESSION_COOKIE_SAMESITE = 'Lax' if DEVELOPMENT_MODE else 'None'
     SESSION_COOKIE_HTTPONLY = True
     PERMANENT_SESSION_LIFETIME = 86400  # 24 hours
     SESSION_COOKIE_DOMAIN = None
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     
-    # Database settings
     @property
     def DB_CONFIG(self) -> Dict[str, Any]:
+        """Database configuration."""
         return {
             'dbname': os.environ.get("POSTGRES_DB", "teacherfy_db"),
             'user': os.environ.get("POSTGRES_USER", "bpulluta"),
@@ -193,29 +165,29 @@ class BaseConfig:
 class DevelopmentConfig(BaseConfig):
     """Development-specific configuration."""
     
-    MONTHLY_GENERATION_LIMIT = 1000
-    MONTHLY_DOWNLOAD_LIMIT = 1000
-    
-    CORS_ORIGINS = ["http://localhost:3000", "*"]
-    
-    # Override session settings for development
-    SESSION_COOKIE_SECURE = False
-    SESSION_COOKIE_SAMESITE = 'Lax'
-    
+    def __init__(self):
+        super().__init__()
+        # Development session settings
+        self.SESSION_COOKIE_SECURE = False
+        self.SESSION_COOKIE_SAMESITE = 'Lax'
+        
+        # Development CORS origins
+        self.CORS_ORIGINS = ["http://localhost:3000", "*"]
+
 class ProductionConfig(BaseConfig):
     """Production-specific configuration."""
     
-    MONTHLY_GENERATION_LIMIT = int(os.environ.get("MONTHLY_GENERATION_LIMIT", 5))
-    MONTHLY_DOWNLOAD_LIMIT = int(os.environ.get("MONTHLY_DOWNLOAD_LIMIT", 5))
-    
-    CORS_ORIGINS = [
-        "https://teacherfy.ai",
-        "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
-    ]
-    
-    # Production session settings
-    SESSION_COOKIE_SECURE = True
-    SESSION_COOKIE_SAMESITE = 'None'
+    def __init__(self):
+        super().__init__()
+        # Production session settings
+        self.SESSION_COOKIE_SECURE = True
+        self.SESSION_COOKIE_SAMESITE = 'None'
+        
+        # Production CORS origins
+        self.CORS_ORIGINS = [
+            "https://teacherfy.ai",
+            "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net"
+        ]
 
 def get_config():
     """Get the appropriate configuration based on environment."""
@@ -228,7 +200,7 @@ config = get_config()
 
 # Export commonly used instances and settings
 logger = config.logger
-client = config.openai_client  # This is now the DeepSeek client
+client = config.deepseek_client  # This is the DeepSeek client
 flow = config.oauth_flow
 CLIENT_ID = config.CLIENT_ID
 CLIENT_SECRET = config.CLIENT_SECRET

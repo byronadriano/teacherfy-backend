@@ -16,7 +16,7 @@ class ResourceType(Enum):
         """Convert string to ResourceType enum"""
         if not resource_type_str:
             return cls.PRESENTATION  # Default
-        
+            
         # Normalize the string (lowercase, remove spaces)
         normalized = resource_type_str.lower().replace(" ", "_").replace("/", "_")
         

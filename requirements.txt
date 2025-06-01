@@ -1,17 +1,30 @@
+# Core framework
 flask
-openai
-python-pptx
 flask-cors
-flask-talisman
-flask-limiter
+
+# API clients  
+openai
+requests
+
+# Document generation
+python-pptx
+python-docx
+Pillow
+
+# Authentication
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
-requests
-python-dotenv
-gunicorn
-pytest
+
+# Database
 psycopg2-binary
-python-docx
-Pillow
+
+# Environment and configuration
+python-dotenv
+
+# Production server
+gunicorn
+
+# Testing
+pytest

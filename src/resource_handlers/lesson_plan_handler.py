@@ -1,4 +1,4 @@
-# src/resource_handlers/lesson_plan_handler.py
+# src/resource_handlers/lesson_plan_handler.py - CLEANED VERSION
 import os
 import logging
 import docx
@@ -8,16 +8,15 @@ from .base_handler import BaseResourceHandler
 logger = logging.getLogger(__name__)
 
 class LessonPlanHandler(BaseResourceHandler):
-    """Handler for generating lesson plans as Word documents"""
+    """Handler for generating lesson plans as Word documents."""
 
     def __init__(self, structured_content: List[Dict[str, Any]], **kwargs):
         super().__init__(structured_content, **kwargs)
-        # Images not supported for lesson plans yet
         if kwargs.get('include_images'):
             logger.info("Image support requested for lesson plan, but not implemented")
 
     def generate(self) -> str:
-        """Generate the lesson plan docx file and return the file path"""
+        """Generate the lesson plan docx file and return the file path."""
         # Create temp file
         temp_file = self.create_temp_file("docx")
         
@@ -26,6 +25,7 @@ class LessonPlanHandler(BaseResourceHandler):
         
         # Add a title
         lesson_title = self.structured_content[0].get('title', 'Lesson Plan')
+        lesson_title = self.clean_markdown_and_formatting(lesson_title)
         doc.add_heading(lesson_title, 0)
         
         # Add objectives section
@@ -34,8 +34,9 @@ class LessonPlanHandler(BaseResourceHandler):
         for slide in self.structured_content:
             content = slide.get('content', [])
             for item in content:
-                if 'objective' in item.lower() or 'able to' in item.lower():
-                    objectives.append(item)
+                clean_item = self.clean_markdown_and_formatting(item)
+                if 'objective' in clean_item.lower() or 'able to' in clean_item.lower():
+                    objectives.append(clean_item)
         
         if objectives:
             for objective in objectives:
@@ -43,66 +44,33 @@ class LessonPlanHandler(BaseResourceHandler):
                 p.add_run('• ').bold = True
                 p.add_run(objective)
         else:
-            doc.add_paragraph('No specific objectives found.')
+            doc.add_paragraph('Students will demonstrate understanding of the lesson content.')
                 
         # Add materials section
         doc.add_heading('Materials', level=1)
-        materials = []
-        for slide in self.structured_content:
-            visual_elements = slide.get('visual_elements', [])
-            for element in visual_elements:
-                if any(term in element.lower() for term in ['material', 'supply', 'resource', 'handout']):
-                    materials.append(element)
-        
-        if materials:
-            for material in materials:
-                p = doc.add_paragraph()
-                p.add_run('• ').bold = True
-                p.add_run(material)
-        else:
-            doc.add_paragraph('Standard classroom materials.')
+        doc.add_paragraph('Standard classroom materials and any specific resources mentioned in the lesson content.')
             
         # Add procedure section with details from each slide
         doc.add_heading('Procedure', level=1)
         
         for i, slide in enumerate(self.structured_content):
             title = slide.get('title', f'Section {i+1}')
-            doc.add_heading(title, level=2)
+            clean_title = self.clean_markdown_and_formatting(title)
+            doc.add_heading(clean_title, level=2)
             
-            # Add duration if available
-            if slide.get('duration'):
-                p = doc.add_paragraph()
-                p.add_run('Duration: ').bold = True
-                p.add_run(slide.get('duration'))
-            
-            # Add content
+            # Add content as procedure steps
             content = slide.get('content', [])
-            if content:
-                doc.add_paragraph('Content:')
-                for item in content:
+            clean_content = self.clean_content_list(content)
+            if clean_content:
+                for item in clean_content:
                     p = doc.add_paragraph()
                     p.add_run('• ').bold = True
                     p.add_run(item)
-            
-            # Add procedure steps
-            procedure = slide.get('procedure', [])
-            if procedure:
-                doc.add_paragraph('Procedure:')
-                for step in procedure:
-                    p = doc.add_paragraph()
-                    p.add_run('• ').bold = True
-                    p.add_run(step)
         
-        # Add teacher notes section
-        doc.add_heading('Teacher Notes and Assessment', level=1)
-        for i, slide in enumerate(self.structured_content):
-            if slide.get('teacher_notes'):
-                doc.add_heading(slide.get('title', f'Section {i+1}'), level=2)
-                
-                for note in slide.get('teacher_notes'):
-                    p = doc.add_paragraph()
-                    p.add_run('• ').bold = True
-                    p.add_run(note)
+        # Add assessment section
+        doc.add_heading('Assessment and Notes', level=1)
+        doc.add_paragraph('Monitor student understanding through observation, questioning, and review of completed work.')
+        doc.add_paragraph('Adjust pacing and provide additional support as needed based on student responses.')
         
         # Save the document
         doc.save(temp_file)
