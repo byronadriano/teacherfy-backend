@@ -144,6 +144,7 @@ class UnsplashService:
     def _clean_search_query(self, query: str) -> str:
         """
         Clean and optimize search query for better Unsplash results.
+        Removes duplicates and ensures proper formatting.
         
         Args:
             query: Raw search query
@@ -157,41 +158,41 @@ class UnsplashService:
         # Convert to lowercase for processing
         clean_query = query.lower().strip()
         
-        # Map educational terms to better search terms
+        # Split into words and remove duplicates while preserving order
+        words = clean_query.split()
+        seen = set()
+        unique_words = []
+        
+        for word in words:
+            if word not in seen:
+                seen.add(word)
+                unique_words.append(word)
+        
+        # Rejoin unique words
+        clean_query = ' '.join(unique_words)
+        
+        # Map educational terms to better search terms (avoiding duplicates)
         educational_mappings = {
             # Subjects
-            'math': 'mathematics classroom',
-            'mathematics': 'mathematics education',
-            'science': 'science education',
-            'english': 'reading books',
-            'language arts': 'reading writing',
-            'social studies': 'geography history',
-            'history': 'historical education',
-            'geography': 'world map',
-            'art': 'art classroom',
-            'music': 'music education',
+            'math mathematics': 'mathematics education',
+            'mathematics classroom': 'mathematics education classroom',
+            'science classroom': 'science education classroom',
+            'reading classroom': 'reading education classroom',
+            'history classroom': 'history education classroom',
             
-            # Grade levels - make more specific
-            'kindergarten': 'children learning',
-            'elementary': 'elementary school',
-            'middle school': 'students learning',
-            'high school': 'high school students',
-            
-            # General terms
-            'lesson': 'classroom learning',
-            'teaching': 'teacher classroom',
-            'learning': 'students studying',
-            'education': 'classroom education',
-            'school': 'school classroom'
+            # Remove redundant combinations
+            'classroom education classroom': 'classroom education',
+            'education classroom education': 'classroom education',
+            'mathematics classroom education classroomematics': 'mathematics education classroom',
         }
         
-        # Check for direct mappings
-        for key, value in educational_mappings.items():
-            if key in clean_query:
-                clean_query = clean_query.replace(key, value)
+        # Apply mappings to clean up redundant terms
+        for redundant, clean in educational_mappings.items():
+            if redundant in clean_query:
+                clean_query = clean_query.replace(redundant, clean)
         
         # Remove common words that don't help with image search
-        stop_words = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by']
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
         words = clean_query.split()
         filtered_words = [word for word in words if word not in stop_words]
         
@@ -201,13 +202,25 @@ class UnsplashService:
         
         result = ' '.join(filtered_words)
         
-        # Add "education" to make it more classroom-appropriate
+        # Ensure we have educational context without duplication
         if 'education' not in result and 'classroom' not in result and 'learning' not in result:
             result += ' education'
         
+        # Final cleanup - remove any remaining duplicates
+        final_words = result.split()
+        seen = set()
+        final_unique_words = []
+        
+        for word in final_words:
+            if word not in seen:
+                seen.add(word)
+                final_unique_words.append(word)
+        
+        result = ' '.join(final_unique_words)
+        
         logger.debug(f"Cleaned search query: '{query}' -> '{result}'")
         return result
-    
+
     def generate_attribution(self, photo_data: Dict[str, Any]) -> str:
         """
         Generate proper attribution text for Unsplash photo.

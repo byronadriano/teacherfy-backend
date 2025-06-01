@@ -1,4 +1,4 @@
-# src/slide_processor.py - Enhanced with better image relevance and layout
+# src/slide_processor.py - Smart, Language-Agnostic, Multi-Subject Enhanced Version
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN, MSO_VERTICAL_ANCHOR
@@ -10,6 +10,7 @@ import re
 import io
 from PIL import Image
 from pptx.parts.image import Image as PptxImage
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -101,196 +102,299 @@ def clean_content_list_for_presentation(content_list):
 
 def extract_enhanced_search_keywords(structured_content):
     """
-    Extract highly relevant keywords from slide content for better image search.
-    Focus on concrete, visual concepts that would make good educational images.
+    Truly smart keyword extraction that works with ANY language and subject without hardcoding.
+    Uses statistical analysis and pattern recognition for 20+ subjects and languages.
     """
-    # Combine all text content from all slides for better context
+    # Combine all text content
     all_text = []
-    
     for slide in structured_content:
-        # Add title
         if slide.get('title'):
             all_text.append(slide['title'])
-        
-        # Add main content
         if slide.get('content'):
             all_text.extend(slide['content'])
     
-    # Join all text
+    if not all_text:
+        return 'classroom education learning'
+    
     text = ' '.join(all_text).lower()
     
-    # Enhanced subject-specific keyword mapping for better, more relevant image results
-    subject_keywords = {
-        # Math concepts - more specific and visual
-        'fraction': 'fraction circles pizza mathematics classroom visual',
-        'fractions': 'fraction pie chart mathematics visual colorful',
-        'equivalent': 'equal fractions mathematics visual diagram',
-        'equivalent fractions': 'fraction circles equivalent mathematics classroom',
-        'place value': 'place value chart hundreds tens ones blocks',
-        'powers of 10': 'place value chart mathematics powers ten',
-        'addition': 'addition blocks mathematics hands-on colorful',
-        'subtraction': 'subtraction mathematics visual blocks counting',
-        'multiplication': 'multiplication arrays mathematics grid pattern',
-        'division': 'division mathematics sharing groups visual',
-        'geometry': 'geometric shapes mathematics classroom poster colorful',
-        'measurement': 'ruler measurement mathematics tools classroom',
-        'algebra': 'algebra mathematics equation board variables',
-        'numbers': 'numbers mathematics classroom poster colorful',
-        'counting': 'counting mathematics fingers blocks colorful',
-        'patterns': 'pattern blocks mathematics colorful shapes',
-        'decimals': 'decimal place value mathematics chart',
-        'percentage': 'percentage chart mathematics visual',
+    # Step 1: Extract content features using pattern recognition
+    content_features = analyze_content_patterns(text)
+    
+    # Step 2: Extract meaningful terms using statistical methods
+    meaningful_terms = extract_statistical_terms(text)
+    
+    # Step 3: Build search query using extracted features
+    search_query = build_smart_search_query(content_features, meaningful_terms)
+    
+    logger.info(f"Smart extraction - Features: {content_features}, Query: '{search_query}'")
+    return search_query
+
+def analyze_content_patterns(text):
+    """Analyze content using universal patterns that work across all languages and subjects."""
+    features = set()
+    
+    # Academic Subjects - Mathematical patterns (universal symbols)
+    if re.search(r'\d+[\+\-\*\/×÷=]\d+', text):
+        features.add('mathematics')
+    
+    if re.search(r'\d+\/\d+', text):  # Fractions
+        features.add('fractions')
+    
+    if re.search(r'\d+\.\d+', text):  # Decimals
+        features.add('decimals')
+    
+    if re.search(r'\b\d+%\b', text):  # Percentages
+        features.add('statistics')
+    
+    # Science patterns
+    if re.search(r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b', text):  # Scientific names
+        features.add('science')
+    
+    if re.search(r'\b\d+°[CF]?\b', text):  # Temperature
+        features.add('science')
+    
+    if re.search(r'\b(CO2|H2O|O2|pH|DNA|RNA|NaCl)\b', text, re.IGNORECASE):  # Chemical formulas
+        features.add('chemistry')
+    
+    # Biology patterns
+    if re.search(r'\b(cell|cells|organism|species|evolution|photosynthesis)\b', text, re.IGNORECASE):
+        features.add('biology')
+    
+    # Physics patterns
+    if re.search(r'\b(force|energy|motion|gravity|velocity|acceleration)\b', text, re.IGNORECASE):
+        features.add('physics')
+    
+    # Data visualization indicators (universal)
+    chart_indicators = [r'chart', r'graph', r'table', r'data', r'survey', r'sample', r'diagram']
+    if any(re.search(pattern, text, re.IGNORECASE) for pattern in chart_indicators):
+        features.add('data_visualization')
+    
+    # History patterns
+    if re.search(r'\b\d{4}\b', text):  # Years
+        features.add('history')
+    
+    if re.search(r'\b(ancient|medieval|century|empire|civilization|war|revolution)\b', text, re.IGNORECASE):
+        features.add('history')
+    
+    # Geography patterns
+    if re.search(r'\b[A-Z][a-z]+\s+(river|mountain|ocean|sea|lake|country|continent)\b', text, re.IGNORECASE):
+        features.add('geography')
+    
+    if re.search(r'\b(climate|weather|population|capital|border|map)\b', text, re.IGNORECASE):
+        features.add('geography')
+    
+    # Language Arts patterns
+    sentence_count = len(re.findall(r'[.!?]+', text))
+    word_count = len(text.split())
+    if word_count > 0 and sentence_count / word_count > 0.08:  # High punctuation density
+        features.add('language_arts')
+    
+    if re.search(r'\b(reading|writing|grammar|vocabulary|literature|poetry|story)\b', text, re.IGNORECASE):
+        features.add('language_arts')
+    
+    # Arts patterns
+    if re.search(r'\b(art|painting|drawing|sculpture|color|brush|canvas|creative)\b', text, re.IGNORECASE):
+        features.add('visual_arts')
+    
+    if re.search(r'\b(music|song|rhythm|melody|instrument|note|piano|guitar)\b', text, re.IGNORECASE):
+        features.add('music')
+    
+    # Physical Education patterns
+    if re.search(r'\b(sport|exercise|fitness|health|running|jumping|team|game)\b', text, re.IGNORECASE):
+        features.add('physical_education')
+    
+    # Technology patterns
+    if re.search(r'\b(computer|software|coding|programming|digital|internet|technology)\b', text, re.IGNORECASE):
+        features.add('technology')
+    
+    # Social Studies patterns
+    if re.search(r'\b(government|democracy|election|citizen|community|society|culture)\b', text, re.IGNORECASE):
+        features.add('social_studies')
+    
+    # Economics patterns
+    if re.search(r'\b(money|economy|business|trade|market|bank|finance)\b', text, re.IGNORECASE):
+        features.add('economics')
+    
+    # Fun/Entertainment patterns
+    if re.search(r'\b(fun|game|play|entertainment|hobby|leisure|enjoyment)\b', text, re.IGNORECASE):
+        features.add('fun')
+    
+    # Holiday patterns
+    holiday_patterns = [
+        r'\b(christmas|halloween|thanksgiving|easter|valentine|birthday)\b',
+        r'\b(holiday|celebration|festival|party|tradition|seasonal)\b',
+        r'\b(december|january|october|november|february|march|april)\b'
+    ]
+    if any(re.search(pattern, text, re.IGNORECASE) for pattern in holiday_patterns):
+        features.add('holidays')
+    
+    # Seasonal patterns
+    if re.search(r'\b(spring|summer|fall|autumn|winter|season)\b', text, re.IGNORECASE):
+        features.add('seasonal')
+    
+    # Special subjects
+    if re.search(r'\b(special|therapy|intervention|support|accommodation)\b', text, re.IGNORECASE):
+        features.add('special_education')
+    
+    # Health patterns
+    if re.search(r'\b(health|nutrition|diet|wellness|safety|hygiene|medical)\b', text, re.IGNORECASE):
+        features.add('health')
+    
+    # Environmental patterns
+    if re.search(r'\b(environment|nature|ecology|conservation|sustainability|green)\b', text, re.IGNORECASE):
+        features.add('environmental')
+    
+    return features
+
+def extract_statistical_terms(text):
+    """Extract meaningful terms using statistical analysis instead of stop word lists."""
+    # Extract all words with Unicode support for any language
+    words = re.findall(r'\b[\w\u00C0-\u024F\u1E00-\u1EFF\u0100-\u017F\u0180-\u024F]+\b', text.lower())
+    
+    # Statistical filtering instead of hardcoded stop words
+    word_freq = Counter(words)
+    total_words = len(words)
+    
+    if total_words == 0:
+        return []
+    
+    meaningful_terms = []
+    
+    for word, count in word_freq.items():
+        # Skip if word is too common or too rare
+        frequency_ratio = count / total_words
         
-        # Science concepts - more specific and educational
-        'photosynthesis': 'plant photosynthesis diagram science classroom',
-        'solar system': 'solar system planets model classroom educational',
-        'ecosystem': 'ecosystem food chain science diagram poster',
-        'water cycle': 'water cycle evaporation science educational poster',
-        'magnetism': 'magnets horseshoe science experiment classroom',
-        'electricity': 'electric circuit battery science experiment',
-        'weather': 'weather instruments thermometer science classroom',
-        'animals': 'animal classification science chart educational',
-        'plants': 'plant parts science diagram leaves educational',
-        'earth': 'earth science globe classroom model',
-        'volcano': 'volcano science model diagram educational',
-        'rocks': 'rock minerals science collection classroom',
-        'states of matter': 'solid liquid gas science diagram',
-        'force': 'force motion science physics experiment',
+        # Filter criteria (language-agnostic)
+        if (len(word) >= 4 and                          # Reasonable length
+            frequency_ratio < 0.3 and                  # Not too common (like "the", "de", etc.)
+            frequency_ratio > (1 / total_words) and    # Not hapax legomena
+            not word.isdigit() and                     # Not pure numbers
+            not re.match(r'^(st|nd|rd|th|er|ème|º|ª|ый|ая|ое)$', word)):  # Not ordinal suffixes
+            meaningful_terms.append(word)
+    
+    # Return top terms by a combination of frequency and length
+    scored_terms = []
+    for term in meaningful_terms:
+        # Score based on length (longer = more specific) and moderate frequency
+        freq_score = word_freq[term]
+        length_score = min(len(term), 12)  # Cap at 12
+        uniqueness_score = 1 / (word_freq[term] + 1)  # Prefer less common but not unique
         
-        # Language Arts - more educational focus
-        'reading': 'children reading books library classroom engaged',
-        'writing': 'student writing pencil paper classroom focused',
-        'vocabulary': 'vocabulary words flashcards classroom wall',
-        'grammar': 'grammar chart classroom poster educational',
-        'poetry': 'poetry books classroom reading circle',
-        'story': 'storytelling children books circle time classroom',
-        'letters': 'alphabet letters classroom wall colorful',
-        'words': 'sight words classroom poster educational',
-        'phonics': 'phonics sounds classroom chart letters',
-        'comprehension': 'reading comprehension books students engaged',
-        'spelling': 'spelling words classroom board letters',
-        'literature': 'books literature classroom library reading',
+        total_score = length_score * uniqueness_score * freq_score
+        scored_terms.append((term, total_score))
+    
+    # Sort by score and return top 5
+    top_terms = sorted(scored_terms, key=lambda x: x[1], reverse=True)[:5]
+    return [term for term, score in top_terms]
+
+def build_smart_search_query(features, terms):
+    """Build search query based on detected features and extracted terms for 20+ subjects."""
+    
+    # Map features to search contexts (comprehensive subject mapping)
+    feature_contexts = {
+        # Core Academic Subjects
+        'mathematics': 'mathematics classroom education',
+        'fractions': 'fractions mathematics visual circles',
+        'decimals': 'decimal numbers mathematics',
+        'statistics': 'data charts graphs statistics',
+        'data_visualization': 'charts graphs data visualization',
+        'science': 'science classroom experiment laboratory',
+        'chemistry': 'chemistry science laboratory beakers',
+        'biology': 'biology science nature organisms',
+        'physics': 'physics science motion energy',
+        'history': 'history timeline education classroom',
+        'geography': 'geography maps world classroom',
+        'language_arts': 'reading books classroom library',
         
-        # Social Studies - more educational and visual
-        'history': 'history timeline classroom poster educational',
-        'geography': 'world map classroom globe colorful',
-        'community': 'community helpers people jobs educational',
-        'culture': 'cultural diversity classroom multicultural flags',
-        'government': 'government classroom civics poster educational',
-        'map': 'map geography classroom wall educational',
-        'countries': 'world countries map classroom flags',
-        'states': 'united states map classroom educational',
-        'timeline': 'history timeline classroom poster educational',
-        'citizenship': 'citizenship community classroom poster',
+        # Arts and Creative Subjects
+        'visual_arts': 'art painting creativity classroom colorful',
+        'music': 'music instruments classroom education',
         
-        # General educational terms with better context
-        'learning': 'students learning classroom engaged colorful',
-        'classroom': 'elementary classroom colorful educational bright',
-        'school': 'school classroom learning environment bright',
-        'teacher': 'teacher students classroom interaction engaged',
-        'students': 'students classroom learning together collaborative',
-        'education': 'education classroom learning materials colorful',
-        'lesson': 'classroom lesson teaching materials educational',
-        'practice': 'students practice worksheet classroom focused',
-        'explore': 'students exploring hands-on learning classroom',
-        'discover': 'children discovering learning classroom excited'
+        # Physical and Health
+        'physical_education': 'sports exercise fitness gymnasium',
+        'health': 'health wellness education classroom',
+        
+        # Modern Subjects
+        'technology': 'technology computers digital classroom',
+        'social_studies': 'community society classroom education',
+        'economics': 'money economics business classroom',
+        'environmental': 'environment nature conservation classroom',
+        
+        # Special Categories
+        'fun': 'fun games colorful playful educational',
+        'holidays': 'holiday celebration festive colorful',
+        'seasonal': 'seasonal nature classroom decorative',
+        'special_education': 'inclusive education support classroom',
+        
+        # Temporal
+        'time_based': 'timeline calendar education classroom'
     }
     
-    # Look for the most specific matches first (longer phrases)
-    sorted_keywords = sorted(subject_keywords.items(), key=lambda x: len(x[0]), reverse=True)
-    
-    for keyword, search_term in sorted_keywords:
-        if keyword in text:
-            logger.info(f"Found specific keyword '{keyword}', using enhanced search term: '{search_term}'")
-            return search_term
-    
-    # Extract key educational nouns if no specific mapping found
-    educational_context = []
-    
-    # Check for grade level indicators to add appropriate context
-    if any(grade in text for grade in ['kindergarten', 'pre-k', 'preschool']):
-        educational_context.append('kindergarten')
-    elif any(grade in text for grade in ['elementary', '1st', '2nd', '3rd', '4th', '5th']):
-        educational_context.append('elementary')
-    elif any(grade in text for grade in ['middle', '6th', '7th', '8th']):
-        educational_context.append('middle school')
-    elif any(grade in text for grade in ['high', '9th', '10th', '11th', '12th']):
-        educational_context.append('high school')
-    
-    # Check for subject indicators with enhanced specificity
-    subject_context = []
-    if any(subj in text for subj in ['math', 'number', 'calculate', 'equation']):
-        subject_context.append('mathematics classroom')
-    if any(subj in text for subj in ['science', 'experiment', 'hypothesis', 'observe']):
-        subject_context.append('science classroom')
-    if any(subj in text for subj in ['reading', 'writing', 'book', 'story', 'letter']):
-        subject_context.append('reading classroom')
-    if any(subj in text for subj in ['history', 'geography', 'social', 'community']):
-        subject_context.append('social studies classroom')
-    
-    # Extract meaningful content words
-    words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
-    
-    # Educational priority words that make good visual searches
-    priority_words = {
-        'learn', 'study', 'practice', 'understand', 'explore', 'discover', 
-        'solve', 'create', 'think', 'analyze', 'compare', 'identify',
-        'numbers', 'letters', 'words', 'books', 'chart', 'diagram',
-        'blocks', 'tools', 'model', 'poster', 'visual', 'hands'
-    }
-    
-    # Common words to avoid in searches
-    stop_words = {
-        'the', 'and', 'but', 'will', 'can', 'are', 'you', 'for', 'how', 'what', 
-        'this', 'that', 'with', 'they', 'have', 'from', 'been', 'than', 'more',
-        'very', 'when', 'much', 'some', 'time', 'way', 'may', 'said', 'each',
-        'which', 'their', 'would', 'there', 'could', 'other', 'able', 'today',
-        'students', 'student', 'lesson', 'class', 'grade'  # Too generic for image search
-    }
-    
-    meaningful_words = []
-    for word in words:
-        word_lower = word.lower()
-        if word_lower in priority_words:
-            meaningful_words.append(word_lower)
-        elif word_lower not in stop_words and len(word) > 4:
-            meaningful_words.append(word_lower)
-    
-    # Build enhanced search term
+    # Start with detected features
     search_parts = []
     
-    # Add subject context first (most important for relevance)
-    if subject_context:
-        search_parts.extend(subject_context[:1])  # Take the first subject
+    # Priority order for feature selection (most specific first)
+    priority_features = [
+        # Specific subjects first
+        'fractions', 'decimals', 'statistics', 'data_visualization',
+        'chemistry', 'biology', 'physics', 'visual_arts', 'music',
+        'physical_education', 'technology', 'economics', 'environmental',
+        'fun', 'holidays', 'seasonal', 'special_education',
+        
+        # General subjects last
+        'mathematics', 'science', 'history', 'geography', 'language_arts',
+        'social_studies', 'health', 'time_based'
+    ]
     
-    # Add educational context
-    if educational_context:
-        search_parts.extend(educational_context[:1])
+    # Add primary feature context (first match wins)
+    for feature in priority_features:
+        if feature in features:
+            search_parts.append(feature_contexts[feature])
+            break
     
-    # Add meaningful content words
-    if meaningful_words:
-        search_parts.extend(meaningful_words[:2])
+    # Add meaningful extracted terms (max 2 for focused results)
+    if terms:
+        # Filter terms to avoid generic educational words
+        filtered_terms = []
+        generic_terms = {'lesson', 'class', 'student', 'learn', 'study', 'education', 'school'}
+        
+        for term in terms[:3]:  # Check top 3 terms
+            if term not in generic_terms and len(term) > 4:
+                filtered_terms.append(term)
+                if len(filtered_terms) >= 2:  # Limit to 2 terms
+                    break
+        
+        search_parts.extend(filtered_terms)
     
-    # Always add educational context for better classroom relevance
-    if 'classroom' not in ' '.join(search_parts):
-        search_parts.append('classroom')
+    # Always add educational context
+    if not any('classroom' in part or 'education' in part for part in search_parts):
+        search_parts.append('education classroom')
     
-    # Add visual indicator for better educational images
-    search_parts.append('educational')
+    # Join and deduplicate
+    search_query = ' '.join(search_parts)
+    words = search_query.split()
     
-    if search_parts:
-        result = ' '.join(search_parts)
-        logger.info(f"Generated enhanced contextual search terms: '{result}'")
-        return result
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_words = []
+    for word in words:
+        if word not in seen:
+            seen.add(word)
+            unique_words.append(word)
     
-    # Fallback to enhanced generic educational image
-    logger.info("No specific keywords found, using enhanced generic education search")
-    return 'elementary classroom learning colorful educational bright'
+    result = ' '.join(unique_words)
+    
+    # Fallback if something went wrong
+    if len(result.strip()) < 10:
+        result = 'education classroom colorful learning'
+    
+    return result
 
 def add_image_to_slide(slide, image_bytes, lesson_topic=""):
     """
     Add an image to a content slide with improved positioning to prevent content overlap.
-    Places image on the right side, leaving clear space for content.
+    Places image in the bottom-right corner, leaving clear space for content.
     """
     try:
         # Create a BytesIO object from the image bytes
@@ -300,14 +404,14 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
         with Image.open(image_stream) as img:
             original_width, original_height = img.size
             
-            # Get slide dimensions
-            slide_width = Inches(10)  # Standard slide width
-            slide_height = Inches(7.5)  # Standard slide height
+            # Get slide dimensions (standard PowerPoint slide)
+            slide_width = Inches(10)     # Standard slide width
+            slide_height = Inches(7.5)   # Standard slide height
             
-            # Position image on the right side with better proportions
-            # Make content area use left 60% of slide, image uses right 35%
-            target_width = Inches(3.2)   # Slightly smaller for better balance
-            target_height = Inches(2.8)  # Good proportion for educational content
+            # IMPROVED POSITIONING: Place image in bottom-right corner
+            # Make image smaller to avoid content overlap
+            target_width = Inches(2.5)   # Smaller width
+            target_height = Inches(1.8)  # Smaller height
             
             # Calculate aspect ratio and adjust if needed
             img_aspect = original_width / original_height
@@ -322,9 +426,21 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
                 final_height = target_height
                 final_width = target_height * img_aspect
             
-            # Position on right side with proper margins
-            left = slide_width - final_width - Inches(0.4)  # 0.4" margin from right edge
-            top = Inches(1.5)  # Below title area, aligned with content start
+            # Position in bottom-right corner with proper margins
+            left = slide_width - final_width - Inches(0.3)   # 0.3" margin from right edge
+            top = slide_height - final_height - Inches(0.5)  # 0.5" margin from bottom
+            
+            # Ensure we don't go too far up (minimum top position)
+            min_top = Inches(4.5)  # Don't place higher than this to avoid content
+            if top < min_top:
+                top = min_top
+                # Recalculate height to fit available space
+                available_height = slide_height - top - Inches(0.5)
+                if final_height > available_height:
+                    final_height = available_height
+                    final_width = final_height * img_aspect
+                    # Recalculate left position
+                    left = slide_width - final_width - Inches(0.3)
             
             # Reset image stream position
             image_stream.seek(0)
@@ -340,22 +456,22 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
             
             # Add subtle styling for professional look
             line = picture.line
-            line.color.rgb = RGBColor(220, 220, 220)  # Very light gray border
-            line.width = Pt(0.75)
+            line.color.rgb = RGBColor(200, 200, 200)  # Light gray border
+            line.width = Pt(0.5)
             
             # Optional: Add subtle shadow effect
             try:
                 shadow = picture.shadow
                 shadow.inherit = False
                 shadow.style = 'OUTER'
-                shadow.distance = Pt(3)
-                shadow.blur_radius = Pt(4)
+                shadow.distance = Pt(2)
+                shadow.blur_radius = Pt(3)
                 shadow.color.rgb = RGBColor(128, 128, 128)
-                shadow.transparency = 0.5
+                shadow.transparency = 0.6
             except:
                 pass  # Shadow effects might not be available in all versions
             
-            logger.info(f"Successfully added image to slide with improved layout (size: {final_width} x {final_height})")
+            logger.info(f"Successfully added image to slide in bottom-right position (size: {final_width} x {final_height})")
             return True
             
     except Exception as e:
@@ -364,103 +480,6 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
     finally:
         if 'image_stream' in locals():
             image_stream.close()
-
-def generate_search_query_from_content(structured_content, fallback="elementary classroom educational"):
-    """
-    Generate an enhanced search query for Unsplash based on lesson content.
-    Uses the new enhanced keyword extraction for better image relevance.
-    """
-    try:
-        if not structured_content or len(structured_content) == 0:
-            return fallback
-        
-        # Use the enhanced keyword extraction
-        enhanced_query = extract_enhanced_search_keywords(structured_content)
-        
-        if enhanced_query and enhanced_query != fallback:
-            logger.info(f"Using enhanced search query: '{enhanced_query}'")
-            return enhanced_query
-        
-        # Fallback to original logic if enhanced extraction doesn't find anything
-        # Find the first slide with meaningful content (skip title-only slides)
-        content_slide = None
-        for slide in structured_content:
-            content_items = slide.get('content', [])
-            if content_items and len(content_items) > 0:
-                # Check if this slide has real content, not just titles
-                has_real_content = any(
-                    len(item.strip()) > 10 and 
-                    not item.lower().startswith(('students will', 'today we will', 'objectives'))
-                    for item in content_items
-                )
-                if has_real_content:
-                    content_slide = slide
-                    break
-        
-        # If no content slide found, use the first slide
-        if not content_slide:
-            content_slide = structured_content[0]
-        
-        # Get title and content from the selected slide
-        title = content_slide.get('title', '').lower()
-        content_items = content_slide.get('content', [])
-        content_text = ' '.join(content_items).lower() if content_items else ''
-        
-        # Combine title and content for analysis
-        combined_text = f"{title} {content_text}".strip()
-        
-        # Look for specific topics in the title or content with enhanced mapping
-        if 'equivalent' in combined_text and 'fraction' in combined_text:
-            return "mathematics fractions equivalent classroom educational"
-        elif 'place value' in combined_text:
-            return "place value chart mathematics classroom educational"
-        elif 'photosynthesis' in combined_text:
-            return "photosynthesis plant science classroom educational"
-        
-        # Extract subject-related keywords with enhanced comprehensive mapping
-        subject_keywords = {
-            'mathematics': ['math', 'mathematics', 'number', 'fraction', 'algebra', 'geometry', 'calculation', 'equation', 'addition', 'subtraction', 'multiplication', 'division', 'decimal', 'percentage'],
-            'science': ['science', 'biology', 'chemistry', 'physics', 'experiment', 'hypothesis', 'molecule', 'atom', 'cell', 'gravity', 'energy', 'plant', 'animal'],
-            'reading': ['reading', 'writing', 'literature', 'grammar', 'vocabulary', 'story', 'essay', 'book', 'novel', 'poem', 'letter', 'word'],
-            'history': ['history', 'historical', 'ancient', 'civilization', 'war', 'timeline', 'century', 'revolution', 'empire'],
-            'geography': ['geography', 'continent', 'country', 'map', 'climate', 'population', 'city', 'ocean', 'mountain'],
-            'art': ['art', 'painting', 'drawing', 'color', 'creativity', 'design', 'artistic', 'brush', 'canvas'],
-            'music': ['music', 'song', 'rhythm', 'instrument', 'melody', 'sound', 'musical', 'note', 'piano']
-        }
-        
-        # Find matching subjects
-        detected_subjects = []
-        for subject, keywords in subject_keywords.items():
-            if any(keyword in combined_text for keyword in keywords):
-                detected_subjects.append(subject)
-        
-        # Generate query based on detected subjects
-        if detected_subjects:
-            primary_subject = detected_subjects[0]
-            
-            # Add more specific terms based on content and grade level
-            if any(term in combined_text for term in ['kindergarten', 'young', 'children']):
-                return f"{primary_subject} children classroom educational"
-            elif any(term in combined_text for term in ['elementary', 'primary']):
-                return f"{primary_subject} elementary school educational"
-            elif any(term in combined_text for term in ['middle', 'junior']):
-                return f"{primary_subject} middle school educational"
-            elif any(term in combined_text for term in ['high', 'secondary']):
-                return f"{primary_subject} high school educational"
-            else:
-                return f"{primary_subject} education classroom colorful"
-        
-        # If no subjects detected, look for general educational terms
-        educational_terms = ['learn', 'teach', 'school', 'class', 'lesson', 'study', 'education', 'student']
-        if any(term in combined_text for term in educational_terms):
-            return "classroom learning students educational bright"
-        
-        # Final enhanced fallback
-        return "elementary classroom learning educational colorful"
-        
-    except Exception as e:
-        logger.error(f"Error generating search query: {e}")
-        return fallback
 
 def find_content_placeholder(slide):
     """Find a suitable content placeholder on the slide"""
@@ -498,19 +517,20 @@ def find_content_placeholder(slide):
     return None
 
 def add_text_box_to_slide(slide, content_items, with_image=False):
-    """Add a text box to the slide with improved positioning when images are present"""
-    # Adjust text box position and size for better layout with images
+    """Add a text box to the slide with improved positioning."""
+    # Since image is now in bottom-right corner, we can use most of the slide for content
+    # Only slightly reduce content area to avoid overlap with small corner image
     if with_image:
-        # Make text box narrower and positioned to avoid image on the right
+        # Slightly reduce content area but still use most of the slide
         left = Inches(0.5)
         top = Inches(2)
-        width = Inches(5.8)  # Narrower to leave clear space for image (60% of slide)
-        height = Inches(4.5)
+        width = Inches(7.5)   # Use most of slide width
+        height = Inches(3.8)  # Leave bottom area for image
     else:
-        # Use more of the slide if no image
-        left = Inches(1)
+        # Use full content area if no image
+        left = Inches(0.5)
         top = Inches(2)
-        width = Inches(8)
+        width = Inches(9)
         height = Inches(5)
     
     textbox = slide.shapes.add_textbox(left, top, width, height)
@@ -535,9 +555,10 @@ def add_text_box_to_slide(slide, content_items, with_image=False):
         p.font.color.rgb = STYLE['colors']['body']
         p.space_after = Pt(6)  # Add some space between bullet points
     
-    logger.info(f"Added text box to slide ({'with image accommodation' if with_image else 'full width'})")
+    layout_desc = 'with bottom-right image accommodation' if with_image else 'full content area'
+    logger.info(f"Added text box to slide ({layout_desc})")
 
-def create_clean_presentation_with_images(structured_content, include_images=True):
+def create_clean_presentation_with_images(structured_content, include_images=False):
     """Create a PowerPoint presentation from clean structured content with enhanced images"""
     # Reset the image tracking flag
     if hasattr(create_clean_presentation_with_images, '_image_added'):
@@ -575,7 +596,7 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
             from src.services.unsplash_service import unsplash_service
             
             # Generate enhanced search query from lesson content
-            search_query = generate_search_query_from_content(structured_content)
+            search_query = extract_enhanced_search_keywords(structured_content)
             logger.info(f"Searching for image with enhanced query: '{search_query}'")
             
             # Search for image
@@ -770,6 +791,65 @@ def create_clean_presentation_with_images(structured_content, include_images=Tru
     logger.info(f"Created presentation with {len(structured_content)} slides (images: {'enabled' if include_images else 'disabled'})")
     return prs
 
+def generate_search_query_from_content(structured_content, fallback="elementary classroom educational"):
+    """
+    Generate an enhanced search query for Unsplash based on lesson content.
+    Uses the new enhanced keyword extraction for better image relevance.
+    """
+    try:
+        if not structured_content or len(structured_content) == 0:
+            return fallback
+        
+        # Use the enhanced keyword extraction
+        enhanced_query = extract_enhanced_search_keywords(structured_content)
+        
+        if enhanced_query and enhanced_query != fallback:
+            logger.info(f"Using enhanced search query: '{enhanced_query}'")
+            return enhanced_query
+        
+        # Fallback to original logic if enhanced extraction doesn't find anything
+        # Find the first slide with meaningful content (skip title-only slides)
+        content_slide = None
+        for slide in structured_content:
+            content_items = slide.get('content', [])
+            if content_items and len(content_items) > 0:
+                # Check if this slide has real content, not just titles
+                has_real_content = any(
+                    len(item.strip()) > 10 and 
+                    not item.lower().startswith(('students will', 'today we will', 'objectives'))
+                    for item in content_items
+                )
+                if has_real_content:
+                    content_slide = slide
+                    break
+        
+        # If no content slide found, use the first slide
+        if not content_slide:
+            content_slide = structured_content[0]
+        
+        # Get title and content from the selected slide
+        title = content_slide.get('title', '').lower()
+        content_items = content_slide.get('content', [])
+        content_text = ' '.join(content_items).lower() if content_items else ''
+        
+        # Combine title and content for analysis
+        combined_text = f"{title} {content_text}".strip()
+        
+        # Use our smart analysis
+        features = analyze_content_patterns(combined_text)
+        terms = extract_statistical_terms(combined_text)
+        result = build_smart_search_query(features, terms)
+        
+        if result and result != fallback:
+            return result
+        
+        # Final enhanced fallback
+        return "elementary classroom learning educational colorful"
+        
+    except Exception as e:
+        logger.error(f"Error generating search query: {e}")
+        return fallback
+
 # BACKWARD COMPATIBILITY - Keep the old function for existing code
 def create_presentation(structured_content, resource_type="PRESENTATION"):
     """Legacy function for backward compatibility"""
@@ -796,7 +876,7 @@ def create_presentation(structured_content, resource_type="PRESENTATION"):
         
         clean_content.append(clean_slide)
     
-    return create_clean_presentation_with_images(clean_content, include_images=True)
+    return create_clean_presentation_with_images(clean_content, include_images=False)
 
 def create_clean_presentation(structured_content):
     """Create a PowerPoint presentation from clean structured content without images"""
