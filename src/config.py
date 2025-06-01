@@ -1,8 +1,8 @@
-# src/config.py - FIXED VERSION with correct OAuth setup
+# src/config.py - UPDATED VERSION with DeepSeek API support
 import os
 import logging
 from typing import Dict, Any, Optional, List
-from openai import OpenAI
+from openai import OpenAI  # We'll use the OpenAI SDK with DeepSeek's compatible API
 from google_auth_oauthlib.flow import Flow
 from dotenv import load_dotenv
 
@@ -35,7 +35,7 @@ class BaseConfig:
             self.REDIRECT_URI = "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net/oauth2callback"
         
         # Initialize external services
-        self.openai_client = self._init_openai()
+        self.openai_client = self._init_deepseek()  # Changed from OpenAI to DeepSeek
         self.oauth_flow = self._init_oauth()
 
     def _setup_logging(self) -> None:
@@ -89,18 +89,25 @@ class BaseConfig:
             self.logger = logging.getLogger(__name__)
             self.logger.error(f"Failed to initialize logging: {str(e)}. Falling back to console logging only.")
 
-    def _init_openai(self) -> Optional[OpenAI]:
-        """Initialize OpenAI client."""
+    def _init_deepseek(self) -> Optional[OpenAI]:
+        """Initialize DeepSeek client using OpenAI SDK with DeepSeek's compatible API."""
         try:
-            openai_api_key = os.environ.get("OPENAI_API_KEY")
-            if not openai_api_key:
-                raise ValueError("Missing OpenAI API key!")
+            # Get API key from environment variables
+            deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY")
             
-            client = OpenAI(api_key=openai_api_key)
-            self.logger.info("OpenAI client initialized successfully.")
+            if not deepseek_api_key:
+                raise ValueError("Missing DEEPSEEK_API_KEY environment variable!")
+            
+            # Create OpenAI client configured for DeepSeek API
+            client = OpenAI(
+                api_key=deepseek_api_key,
+                base_url="https://api.deepseek.com"  # DeepSeek's OpenAI-compatible endpoint
+            )
+            
+            self.logger.info("DeepSeek client initialized successfully using OpenAI SDK.")
             return client
         except Exception as e:
-            self.logger.error(f"OpenAI initialization error: {e}")
+            self.logger.error(f"DeepSeek initialization error: {e}")
             return None
 
     def _init_oauth(self) -> Optional[Flow]:
@@ -158,6 +165,7 @@ class BaseConfig:
             import traceback
             self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return None
+    
     # Common settings
     DEVELOPMENT_MODE = os.environ.get("FLASK_ENV") == "development"
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
@@ -220,7 +228,7 @@ config = get_config()
 
 # Export commonly used instances and settings
 logger = config.logger
-client = config.openai_client
+client = config.openai_client  # This is now the DeepSeek client
 flow = config.oauth_flow
 CLIENT_ID = config.CLIENT_ID
 CLIENT_SECRET = config.CLIENT_SECRET

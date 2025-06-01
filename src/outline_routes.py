@@ -1,4 +1,4 @@
-# src/outline_routes.py - Updated with proper limit checking
+# src/outline_routes.py - Updated with DeepSeek API support
 import os
 import re
 from flask import Blueprint, request, jsonify
@@ -59,14 +59,14 @@ def is_example_request(data):
          data.get("language", "").lower().strip() == "english")
     )
 
-# Test data that doesn't call OpenAI
+# Test data that doesn't call DeepSeek API
 TEST_OUTLINE_DATA = {
     "title": "Test Lesson Plan",
     "messages": [
         """Slide 1: Test Topic Introduction
 Content:
 - This is a test slide for limit testing
-- No OpenAI API calls were made
+- No DeepSeek API calls were made
 - This tests the usage limits system
 
 Slide 2: Test Content
@@ -81,7 +81,7 @@ Content:
             "layout": "TITLE_AND_CONTENT",
             "content": [
                 "This is a test slide for limit testing",
-                "No OpenAI API calls were made",
+                "No DeepSeek API calls were made",
                 "This tests the usage limits system"
             ]
         },
@@ -105,7 +105,6 @@ def is_test_request(request_data):
         request_data.get("customPrompt", "").lower().find("test request for limit testing") != -1
     )
 
-  
 def generate_outline_title(form_data, structured_content=None):
     """Generate a meaningful title for the outline based on form data and content."""
     try:
@@ -452,7 +451,7 @@ def parse_outline_to_clean_structure(outline_text, resource_type="PRESENTATION")
 @outline_blueprint.route("/outline", methods=["POST", "OPTIONS"])
 @check_usage_limits(action_type='generation')  # This will check and increment generation limits
 def get_outline():
-    """Generate a lesson outline using OpenAI - UNIFIED ENDPOINT"""
+    """Generate a lesson outline using DeepSeek API - UNIFIED ENDPOINT"""
     logger.info(f"Received outline generation request: {request.method}")
     
     if request.method == "OPTIONS":
@@ -473,16 +472,16 @@ def get_outline():
             logger.info("Returning example outline - no usage increment")
             return jsonify(EXAMPLE_OUTLINE_DATA)
 
-        # NEW: Check for test request (counts against limits but doesn't call OpenAI)
+        # NEW: Check for test request (counts against limits but doesn't call DeepSeek)
         if is_test_request(data):
-            logger.info("Returning test outline - usage incremented but no OpenAI call")
+            logger.info("Returning test outline - usage incremented but no DeepSeek call")
             # Generate a unique title for the test
             test_title = f"Test Lesson - {data.get('lessonTopic', 'Generic Test')}"
             test_data = TEST_OUTLINE_DATA.copy()
             test_data["title"] = test_title
             return jsonify(test_data)
 
-        # Validate and set default values for real OpenAI requests
+        # Validate and set default values for real DeepSeek requests
         resource_type = data.get('resourceType', 'Presentation')
         subject_focus = data.get('subjectFocus', 'General Learning')
         grade_level = data.get('gradeLevel', 'Not Specified')
@@ -499,11 +498,11 @@ def get_outline():
                 "details": "Subject, grade level, language, and lesson topic are required."
             }), 400
 
-        # Validate OpenAI client
+        # Validate DeepSeek client
         if not client:
-            return jsonify({"error": "OpenAI client not initialized"}), 500
+            return jsonify({"error": "DeepSeek client not initialized"}), 500
 
-        logger.info("Making real OpenAI API call for non-test request...")
+        logger.info("Making real DeepSeek API call for non-test request...")
 
         # Build requirements
         item_word = "slides" if resource_type.lower() == "presentation" else "sections"
@@ -534,12 +533,13 @@ def get_outline():
         {custom_prompt}
         """
 
-        # Make the API call
+        # Make the DeepSeek API call using the deepseek-chat model
         response = client.chat.completions.create(
-            model="gpt-4-0125-preview",
+            model="deepseek-chat",  # Using DeepSeek's chat model
             messages=[system_instructions, {"role": "user", "content": user_prompt}],
             max_tokens=4000,
-            temperature=0.7
+            temperature=0.7,
+            stream=False
         )
 
         outline_text = response.choices[0].message.content.strip()
