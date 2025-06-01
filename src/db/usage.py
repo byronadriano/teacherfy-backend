@@ -20,6 +20,10 @@ def sanitize_ip_address(ip_address):
         ip_address = ip_address[0]
 
     ip_address = str(ip_address).strip()
+    
+    # Handle IP addresses that come with port numbers (e.g., "192.168.1.1:8080")
+    if ':' in ip_address:
+        ip_address = ip_address.split(':')[0]
 
     try:
         import ipaddress

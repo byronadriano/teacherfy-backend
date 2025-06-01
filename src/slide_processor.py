@@ -134,18 +134,30 @@ def analyze_content_patterns(text):
     """Analyze content using universal patterns that work across all languages and subjects."""
     features = set()
     
-    # Academic Subjects - Mathematical patterns (universal symbols)
+    # Enhanced Math patterns - more comprehensive decimal detection
     if re.search(r'\d+[\+\-\*\/×÷=]\d+', text):
         features.add('mathematics')
     
     if re.search(r'\d+\/\d+', text):  # Fractions
         features.add('fractions')
+        features.add('mathematics')
     
     if re.search(r'\d+\.\d+', text):  # Decimals
         features.add('decimals')
+        features.add('mathematics')
+    
+    # Enhanced decimal and place value detection
+    if re.search(r'\b(decimal|decimals|tenths|hundredths|thousandths)\b', text, re.IGNORECASE):
+        features.add('decimals')
+        features.add('mathematics')
+    
+    if re.search(r'\b(powers?\s+of\s+10|place\s+value|place\s+values)\b', text, re.IGNORECASE):
+        features.add('place_value')
+        features.add('mathematics')
     
     if re.search(r'\b\d+%\b', text):  # Percentages
         features.add('statistics')
+        features.add('mathematics')
     
     # Science patterns
     if re.search(r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b', text):  # Scientific names
@@ -156,14 +168,17 @@ def analyze_content_patterns(text):
     
     if re.search(r'\b(CO2|H2O|O2|pH|DNA|RNA|NaCl)\b', text, re.IGNORECASE):  # Chemical formulas
         features.add('chemistry')
+        features.add('science')
     
     # Biology patterns
     if re.search(r'\b(cell|cells|organism|species|evolution|photosynthesis)\b', text, re.IGNORECASE):
         features.add('biology')
+        features.add('science')
     
     # Physics patterns
     if re.search(r'\b(force|energy|motion|gravity|velocity|acceleration)\b', text, re.IGNORECASE):
         features.add('physics')
+        features.add('science')
     
     # Data visualization indicators (universal)
     chart_indicators = [r'chart', r'graph', r'table', r'data', r'survey', r'sample', r'diagram']
@@ -291,44 +306,47 @@ def extract_statistical_terms(text):
 def build_smart_search_query(features, terms):
     """Build search query based on detected features and extracted terms for 20+ subjects."""
     
-    # Map features to search contexts (comprehensive subject mapping)
+    # Map features to search contexts (comprehensive subject mapping with better math contexts)
     feature_contexts = {
+        # Enhanced Math Subjects
+        'decimals': 'decimal numbers mathematics place value classroom',
+        'place_value': 'place value chart mathematics tens hundreds classroom',
+        'fractions': 'fractions mathematics visual circles pie charts',
+        'mathematics': 'mathematics classroom education numbers calculations',
+        'statistics': 'data charts graphs statistics mathematics',
+        'data_visualization': 'charts graphs data visualization classroom',
+        
         # Core Academic Subjects
-        'mathematics': 'mathematics classroom education',
-        'fractions': 'fractions mathematics visual circles',
-        'decimals': 'decimal numbers mathematics',
-        'statistics': 'data charts graphs statistics',
-        'data_visualization': 'charts graphs data visualization',
-        'science': 'science classroom experiment laboratory',
-        'chemistry': 'chemistry science laboratory beakers',
-        'biology': 'biology science nature organisms',
-        'physics': 'physics science motion energy',
-        'history': 'history timeline education classroom',
-        'geography': 'geography maps world classroom',
-        'language_arts': 'reading books classroom library',
+        'science': 'science classroom experiment laboratory education',
+        'chemistry': 'chemistry science laboratory beakers molecules',
+        'biology': 'biology science nature organisms cells',
+        'physics': 'physics science motion energy forces',
+        'history': 'history timeline education classroom historical',
+        'geography': 'geography maps world classroom globe',
+        'language_arts': 'reading books classroom library education',
         
         # Arts and Creative Subjects
-        'visual_arts': 'art painting creativity classroom colorful',
-        'music': 'music instruments classroom education',
+        'visual_arts': 'art painting creativity classroom colorful artistic',
+        'music': 'music instruments classroom education musical',
         
         # Physical and Health
-        'physical_education': 'sports exercise fitness gymnasium',
-        'health': 'health wellness education classroom',
+        'physical_education': 'sports exercise fitness gymnasium education',
+        'health': 'health wellness education classroom medical',
         
         # Modern Subjects
-        'technology': 'technology computers digital classroom',
-        'social_studies': 'community society classroom education',
-        'economics': 'money economics business classroom',
-        'environmental': 'environment nature conservation classroom',
+        'technology': 'technology computers digital classroom programming',
+        'social_studies': 'community society classroom education civic',
+        'economics': 'money economics business classroom finance',
+        'environmental': 'environment nature conservation classroom green',
         
         # Special Categories
-        'fun': 'fun games colorful playful educational',
-        'holidays': 'holiday celebration festive colorful',
-        'seasonal': 'seasonal nature classroom decorative',
-        'special_education': 'inclusive education support classroom',
+        'fun': 'fun games colorful playful educational activities',
+        'holidays': 'holiday celebration festive colorful seasonal',
+        'seasonal': 'seasonal nature classroom decorative calendar',
+        'special_education': 'inclusive education support classroom diverse',
         
         # Temporal
-        'time_based': 'timeline calendar education classroom'
+        'time_based': 'timeline calendar education classroom chronological'
     }
     
     # Start with detected features
@@ -336,38 +354,45 @@ def build_smart_search_query(features, terms):
     
     # Priority order for feature selection (most specific first)
     priority_features = [
-        # Specific subjects first
-        'fractions', 'decimals', 'statistics', 'data_visualization',
-        'chemistry', 'biology', 'physics', 'visual_arts', 'music',
-        'physical_education', 'technology', 'economics', 'environmental',
-        'fun', 'holidays', 'seasonal', 'special_education',
+        # Very specific math subjects first (for better relevance)
+        'decimals', 'place_value', 'fractions', 'statistics', 'data_visualization',
         
-        # General subjects last
+        # Specific science subjects
+        'chemistry', 'biology', 'physics',
+        
+        # Creative and special subjects
+        'visual_arts', 'music', 'physical_education', 'technology', 
+        'economics', 'environmental', 'fun', 'holidays', 'seasonal', 'special_education',
+        
+        # General subjects last (fallback)
         'mathematics', 'science', 'history', 'geography', 'language_arts',
         'social_studies', 'health', 'time_based'
     ]
     
-    # Add primary feature context (first match wins)
+    # Add primary feature context (first match wins for specificity)
     for feature in priority_features:
         if feature in features:
             search_parts.append(feature_contexts[feature])
+            logger.debug(f"Selected primary feature: {feature}")
             break
     
     # Add meaningful extracted terms (max 2 for focused results)
     if terms:
         # Filter terms to avoid generic educational words
-        filtered_terms = []
-        generic_terms = {'lesson', 'class', 'student', 'learn', 'study', 'education', 'school'}
+        generic_terms = {'lesson', 'class', 'student', 'learn', 'study', 'education', 'school', 'today', 'will'}
         
+        filtered_terms = []
         for term in terms[:3]:  # Check top 3 terms
             if term not in generic_terms and len(term) > 4:
                 filtered_terms.append(term)
                 if len(filtered_terms) >= 2:  # Limit to 2 terms
                     break
         
-        search_parts.extend(filtered_terms)
+        if filtered_terms:
+            search_parts.extend(filtered_terms)
+            logger.debug(f"Added extracted terms: {filtered_terms}")
     
-    # Always add educational context
+    # Always add educational context if not present
     if not any('classroom' in part or 'education' in part for part in search_parts):
         search_parts.append('education classroom')
     
@@ -387,14 +412,15 @@ def build_smart_search_query(features, terms):
     
     # Fallback if something went wrong
     if len(result.strip()) < 10:
-        result = 'education classroom colorful learning'
+        result = 'education classroom colorful learning mathematics'
     
+    logger.debug(f"Final search query: '{result}'")
     return result
 
 def add_image_to_slide(slide, image_bytes, lesson_topic=""):
     """
-    Add an image to a content slide with improved positioning to prevent content overlap.
-    Places image in the bottom-right corner, leaving clear space for content.
+    Add an image to a content slide with improved positioning.
+    Places image on the right side, centered vertically with text content.
     """
     try:
         # Create a BytesIO object from the image bytes
@@ -408,10 +434,9 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
             slide_width = Inches(10)     # Standard slide width
             slide_height = Inches(7.5)   # Standard slide height
             
-            # IMPROVED POSITIONING: Place image in bottom-right corner
-            # Make image smaller to avoid content overlap
-            target_width = Inches(2.5)   # Smaller width
-            target_height = Inches(1.8)  # Smaller height
+            # IMPROVED POSITIONING: Place image on right side, larger and centered
+            target_width = Inches(3.8)   # Larger width (about 38% of slide)
+            target_height = Inches(3.2)  # Larger height
             
             # Calculate aspect ratio and adjust if needed
             img_aspect = original_width / original_height
@@ -426,21 +451,23 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
                 final_height = target_height
                 final_width = target_height * img_aspect
             
-            # Position in bottom-right corner with proper margins
-            left = slide_width - final_width - Inches(0.3)   # 0.3" margin from right edge
-            top = slide_height - final_height - Inches(0.5)  # 0.5" margin from bottom
+            # Position on right side, centered vertically with content area
+            left = slide_width - final_width - Inches(0.4)   # 0.4" margin from right edge
             
-            # Ensure we don't go too far up (minimum top position)
-            min_top = Inches(4.5)  # Don't place higher than this to avoid content
+            # Center vertically in the content area (below title)
+            content_start = Inches(2.0)  # Where content typically starts
+            content_height = Inches(4.5)  # Typical content area height
+            content_center = content_start + (content_height / 2)
+            top = content_center - (final_height / 2)  # Center the image in content area
+            
+            # Ensure image doesn't go too high or too low
+            min_top = Inches(1.8)  # Don't overlap with title
+            max_top = slide_height - final_height - Inches(0.3)  # Don't go off bottom
+            
             if top < min_top:
                 top = min_top
-                # Recalculate height to fit available space
-                available_height = slide_height - top - Inches(0.5)
-                if final_height > available_height:
-                    final_height = available_height
-                    final_width = final_height * img_aspect
-                    # Recalculate left position
-                    left = slide_width - final_width - Inches(0.3)
+            elif top > max_top:
+                top = max_top
             
             # Reset image stream position
             image_stream.seek(0)
@@ -457,21 +484,21 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
             # Add subtle styling for professional look
             line = picture.line
             line.color.rgb = RGBColor(200, 200, 200)  # Light gray border
-            line.width = Pt(0.5)
+            line.width = Pt(0.75)
             
             # Optional: Add subtle shadow effect
             try:
                 shadow = picture.shadow
                 shadow.inherit = False
                 shadow.style = 'OUTER'
-                shadow.distance = Pt(2)
-                shadow.blur_radius = Pt(3)
+                shadow.distance = Pt(3)
+                shadow.blur_radius = Pt(4)
                 shadow.color.rgb = RGBColor(128, 128, 128)
-                shadow.transparency = 0.6
+                shadow.transparency = 0.5
             except:
                 pass  # Shadow effects might not be available in all versions
             
-            logger.info(f"Successfully added image to slide in bottom-right position (size: {final_width} x {final_height})")
+            logger.info(f"Successfully added centered image to slide (size: {final_width} x {final_height}, position: right-center)")
             return True
             
     except Exception as e:
@@ -480,6 +507,48 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
     finally:
         if 'image_stream' in locals():
             image_stream.close()
+
+def add_text_box_to_slide(slide, content_items, with_image=False):
+    """Add a text box to the slide with improved positioning for better image/text balance."""
+    if with_image:
+        # Text takes up left 55% of slide, leaving right 40% for image + margins
+        left = Inches(0.6)    # Increased left margin
+        top = Inches(2.1)     # Slightly lower to avoid title overlap
+        width = Inches(5.2)   # Slightly reduced width
+        height = Inches(4.3)  # Slightly reduced height
+    else:
+        # Use full content area if no image
+        left = Inches(0.5)
+        top = Inches(2.0)
+        width = Inches(9.0)
+        height = Inches(5.0)
+    
+    textbox = slide.shapes.add_textbox(left, top, width, height)
+    text_frame = textbox.text_frame
+    text_frame.clear()
+    
+    # Improve text frame properties for better readability
+    text_frame.margin_left = Inches(0.1)
+    text_frame.margin_right = Inches(0.3)  # More margin on right when image present
+    text_frame.margin_top = Inches(0.15)
+    text_frame.margin_bottom = Inches(0.1)
+    text_frame.word_wrap = True
+    text_frame.auto_size = None  # Disable auto-sizing to prevent overlap
+    
+    # Use cleaned content
+    cleaned_items = clean_content_list_for_presentation(content_items)
+    
+    for item in cleaned_items:
+        p = text_frame.add_paragraph()
+        p.text = f"• {item}"
+        p.font.name = STYLE['fonts']['body']
+        p.font.size = STYLE['sizes']['body']
+        p.font.color.rgb = STYLE['colors']['body']
+        p.space_after = Pt(8)  # Consistent spacing
+        p.line_spacing = 1.2   # Better line spacing
+    
+    layout_desc = 'with right-side image accommodation' if with_image else 'full content area'
+    logger.info(f"Added text box to slide ({layout_desc})")
 
 def find_content_placeholder(slide):
     """Find a suitable content placeholder on the slide"""
@@ -515,48 +584,6 @@ def find_content_placeholder(slide):
             continue
     
     return None
-
-def add_text_box_to_slide(slide, content_items, with_image=False):
-    """Add a text box to the slide with improved positioning."""
-    # Since image is now in bottom-right corner, we can use most of the slide for content
-    # Only slightly reduce content area to avoid overlap with small corner image
-    if with_image:
-        # Slightly reduce content area but still use most of the slide
-        left = Inches(0.5)
-        top = Inches(2)
-        width = Inches(7.5)   # Use most of slide width
-        height = Inches(3.8)  # Leave bottom area for image
-    else:
-        # Use full content area if no image
-        left = Inches(0.5)
-        top = Inches(2)
-        width = Inches(9)
-        height = Inches(5)
-    
-    textbox = slide.shapes.add_textbox(left, top, width, height)
-    text_frame = textbox.text_frame
-    text_frame.clear()
-    
-    # Improve text frame properties for better readability
-    text_frame.margin_left = Inches(0.1)
-    text_frame.margin_right = Inches(0.1)
-    text_frame.margin_top = Inches(0.1)
-    text_frame.margin_bottom = Inches(0.1)
-    text_frame.word_wrap = True
-    
-    # Use cleaned content
-    cleaned_items = clean_content_list_for_presentation(content_items)
-    
-    for item in cleaned_items:
-        p = text_frame.add_paragraph()
-        p.text = f"• {item}"
-        p.font.name = STYLE['fonts']['body']
-        p.font.size = STYLE['sizes']['body']
-        p.font.color.rgb = STYLE['colors']['body']
-        p.space_after = Pt(6)  # Add some space between bullet points
-    
-    layout_desc = 'with bottom-right image accommodation' if with_image else 'full content area'
-    logger.info(f"Added text box to slide ({layout_desc})")
 
 def create_clean_presentation_with_images(structured_content, include_images=False):
     """Create a PowerPoint presentation from clean structured content with enhanced images"""
@@ -682,41 +709,14 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
                 except Exception as e:
                     logger.warning(f"Failed to add title to slide {slide_index + 1}: {e}")
             
-            # Clean and add content with improved layout for images
+            # Clean and add content with improved layout for images - FIXED VERSION
             raw_content_items = slide_data.get('content', [])
             clean_content_items = clean_content_list_for_presentation(raw_content_items)
             
             if clean_content_items:
-                content_placeholder = find_content_placeholder(slide)
-                
-                if content_placeholder:
-                    try:
-                        text_frame = content_placeholder.text_frame
-                        text_frame.clear()
-                        
-                        # Adjust text frame properties when image is present
-                        if has_image:
-                            # Reduce right margin to prevent overlap with image
-                            text_frame.margin_right = Inches(0.3)
-                            text_frame.margin_left = Inches(0.1)
-                        
-                        for item in clean_content_items:
-                            p = text_frame.add_paragraph()
-                            p.text = item
-                            p.font.name = STYLE['fonts']['body']
-                            p.font.size = STYLE['sizes']['body']
-                            p.font.color.rgb = STYLE['colors']['body']
-                            p.level = 0  # Main bullet level
-                            p.space_after = Pt(6)  # Add spacing between items
-                        
-                        logger.debug(f"Added {len(clean_content_items)} clean content items to slide {slide_index + 1}")
-                    except Exception as e:
-                        logger.warning(f"Failed to add content to placeholder on slide {slide_index + 1}: {e}")
-                        # Fallback to text box
-                        add_text_box_to_slide(slide, clean_content_items, has_image)
-                else:
-                    # No suitable placeholder found, create a text box
-                    logger.warning(f"No content placeholder found on slide {slide_index + 1}, using text box")
+                # ALWAYS use text box when image is present for better control
+                if has_image:
+                    logger.info(f"Using text box for slide {slide_index + 1} (image present)")
                     add_text_box_to_slide(slide, clean_content_items, has_image)
                     
                     # If we couldn't add a title through placeholder, add it as text box too
@@ -731,6 +731,30 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
                         title_para.font.bold = True
                         title_para.alignment = PP_ALIGN.CENTER
                         logger.debug(f"Added title as text box to slide {slide_index + 1}")
+                else:
+                    # Try placeholder first when no image
+                    content_placeholder = find_content_placeholder(slide)
+                    if content_placeholder:
+                        try:
+                            text_frame = content_placeholder.text_frame
+                            text_frame.clear()
+                            
+                            for item in clean_content_items:
+                                p = text_frame.add_paragraph()
+                                p.text = item
+                                p.font.name = STYLE['fonts']['body']
+                                p.font.size = STYLE['sizes']['body']
+                                p.font.color.rgb = STYLE['colors']['body']
+                                p.level = 0  # Main bullet level
+                                p.space_after = Pt(6)  # Add spacing between items
+                            
+                            logger.debug(f"Added {len(clean_content_items)} clean content items to placeholder on slide {slide_index + 1}")
+                        except Exception as e:
+                            logger.warning(f"Placeholder failed on slide {slide_index + 1}, using text box: {e}")
+                            add_text_box_to_slide(slide, clean_content_items, has_image)
+                    else:
+                        logger.info(f"No placeholder found on slide {slide_index + 1}, using text box")
+                        add_text_box_to_slide(slide, clean_content_items, has_image)
         
         except Exception as e:
             logger.error(f"Error creating slide {slide_index + 1}: {e}")
