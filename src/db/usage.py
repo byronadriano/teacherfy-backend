@@ -1,4 +1,4 @@
-# src/db/usage.py - FIXED VERSION with proper monthly limits
+# src/db/usage.py - FIXED VERSION with correct tier limits
 import os
 import logging
 import traceback
@@ -8,21 +8,24 @@ from src.config import logger
 
 logger = logging.getLogger(__name__)
 
-# DEVELOPMENT: Use higher limits for testing
-def get_generation_limit():
-    """Get generation limit based on environment"""
-    if os.getenv('FLASK_ENV') == 'development':
-        return int(os.getenv('MONTHLY_GENERATION_LIMIT', 15))  # Higher limit for dev
-    return int(os.getenv('MONTHLY_GENERATION_LIMIT', 5))  # Production limit
+# FIXED: Correct limits as requested
+def get_generation_limit(tier='free'):
+    """Get generation limit based on tier"""
+    if tier == 'premium':
+        return -1  # Unlimited
+    return 10  # Free tier: 10 per month
 
-def get_download_limit():
-    """Get download limit based on environment"""
-    if os.getenv('FLASK_ENV') == 'development':
-        return int(os.getenv('MONTHLY_DOWNLOAD_LIMIT', 15))  # Higher limit for dev
-    return int(os.getenv('MONTHLY_DOWNLOAD_LIMIT', 5))  # Production limit
+def get_download_limit(tier='free'):
+    """Get download limit based on tier"""
+    if tier == 'premium':
+        return -1  # Unlimited
+    return 10  # Free tier: 10 per month
 
-MONTHLY_GENERATION_LIMIT = get_generation_limit()
-MONTHLY_DOWNLOAD_LIMIT = get_download_limit()
+# FIXED: Correct hourly limits as requested
+HOURLY_LIMITS = {
+    'free': 3,      # Free users: 3 generations per hour
+    'premium': 10   # Premium users: 10 generations per hour
+}
 
 def sanitize_ip_address(ip_address):
     """Sanitize the IP address input."""
@@ -34,7 +37,6 @@ def sanitize_ip_address(ip_address):
 
     ip_address = str(ip_address).strip()
     
-    # Handle IP addresses that come with port numbers (e.g., "192.168.1.1:8080")
     if ':' in ip_address:
         ip_address = ip_address.split(':')[0]
 
@@ -46,41 +48,62 @@ def sanitize_ip_address(ip_address):
         logger.warning(f"Invalid IP address format: {ip_address}")
         return ip_address
 
-def is_new_month(last_reset_time):
-    """Check if we're in a new month compared to the last reset time."""
-    if not last_reset_time:
-        return True
+def get_user_subscription_tier(user_id, user_email=None):
+    """
+    Get user's subscription tier. Returns 'free' or 'premium'.
+    """
+    from src.db.database import get_db_cursor
+    
+    # Default to free for anonymous users
+    if not user_id and not user_email:
+        return 'free'
+    
+    try:
+        with get_db_cursor() as cursor:
+            # FIXED: Check the users table for subscription info
+            if user_id:
+                cursor.execute("""
+                    SELECT subscription_tier, subscription_status 
+                    FROM users 
+                    WHERE id = %s
+                """, (user_id,))
+                
+                result = cursor.fetchone()
+                if result:
+                    tier = result.get('subscription_tier', 'free')
+                    status = result.get('subscription_status', 'inactive')
+                    
+                    if tier == 'premium' and status == 'active':
+                        logger.info(f"User {user_id} has active premium subscription")
+                        return 'premium'
+            
+            # Check by email if we have it
+            if user_email:
+                cursor.execute("""
+                    SELECT subscription_tier, subscription_status 
+                    FROM users 
+                    WHERE email = %s
+                """, (user_email,))
+                
+                result = cursor.fetchone()
+                if result:
+                    tier = result.get('subscription_tier', 'free')
+                    status = result.get('subscription_status', 'inactive')
+                    
+                    if tier == 'premium' and status == 'active':
+                        logger.info(f"User {user_email} has active premium subscription")
+                        return 'premium'
         
-    now = datetime.now()
-    
-    # FIXED: More robust month comparison
-    if hasattr(last_reset_time, 'tzinfo') and last_reset_time.tzinfo:
-        last_reset_time = last_reset_time.replace(tzinfo=None)
-    
-    # If different year OR different month, it's a new month
-    return (now.year != last_reset_time.year or 
-            now.month != last_reset_time.month)
-
-def get_monthly_reset_time():
-    """Get the timestamp for when limits will reset (first day of next month)."""
-    now = datetime.now()
-    
-    # Calculate first day of next month
-    if now.month == 12:
-        next_month = datetime(now.year + 1, 1, 1)
-    else:
-        next_month = datetime(now.year, now.month + 1, 1)
-    
-    return next_month
+        logger.debug(f"User {'ID ' + str(user_id) if user_id else 'email ' + str(user_email)} has free subscription")
+        return 'free'
+        
+    except Exception as e:
+        logger.error(f"Error checking subscription tier: {e}")
+        return 'free'
 
 def increment_usage(ip_address=None, user_id=None, action_type='generation'):
     """
-    Increment the usage count for a user or IP address with MONTHLY limits.
-    
-    Args:
-        ip_address (str, optional): The IP address to track.
-        user_id (int, optional): The user ID to track.
-        action_type (str, optional): Type of action ('generation' or 'download').
+    Increment the usage count for a user or IP address with tier-aware MONTHLY limits.
     """
     ip_address = sanitize_ip_address(ip_address)
     if not ip_address:
@@ -89,10 +112,18 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
     logger.info(f"Incrementing {action_type} usage for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
 
     try:
+        # Get user's subscription tier
+        user_tier = get_user_subscription_tier(user_id, None)
+        logger.info(f"User tier: {user_tier}")
+        
+        # For premium users with unlimited generations, don't track monthly limits
+        if user_tier == 'premium' and action_type == 'generation':
+            logger.info("Premium user - skipping monthly generation limit tracking")
+            # Still track for analytics but don't enforce limits
+        
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
                 if user_id is None:
-                    # FIXED: Better upsert logic for anonymous users
                     cursor.execute("""
                         INSERT INTO user_usage_limits 
                           (user_id, ip_address, generations_used, downloads_used, last_reset)
@@ -123,7 +154,6 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
                         action_type, action_type
                     ))
                 else:
-                    # FIXED: Better upsert logic for registered users
                     cursor.execute("""
                         INSERT INTO user_usage_limits 
                           (user_id, ip_address, generations_used, downloads_used, last_reset)
@@ -155,7 +185,7 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
                     ))
             
             conn.commit()
-            logger.info(f"Successfully incremented {action_type} usage")
+            logger.info(f"Successfully incremented {action_type} usage for {user_tier} user")
     except Exception as e:
         logger.error(f"Error incrementing usage: {e}")
         logger.error(traceback.format_exc())
@@ -163,24 +193,18 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
 
 def check_user_limits(user_id=None, ip_address=None):
     """
-    Check MONTHLY usage limits for a user or IP address.
-    
-    Args:
-        user_id (int, optional): The user ID to check.
-        ip_address (str, optional): The IP address to check.
-        
-    Returns:
-        dict: A dictionary with usage information and limits.
+    Check usage limits for a user or IP address with tier awareness.
     """
     ip_address = sanitize_ip_address(ip_address)
     if not ip_address:
         raise ValueError("IP address is required")
 
-    logger.info(f"Checking monthly limits for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+    # Get user's subscription tier
+    user_tier = get_user_subscription_tier(user_id, None)
+    logger.info(f"Checking limits for {user_tier} user {'ID ' + str(user_id) if user_id else 'IP ' + ip_address}")
 
     try:
         with get_db_cursor() as cursor:
-            # FIXED: Proper month comparison using EXTRACT
             query = """
             SELECT 
               CASE 
@@ -212,71 +236,84 @@ def check_user_limits(user_id=None, ip_address=None):
             cursor.execute(query, params)
             usage = cursor.fetchone()
 
+            # Get limits based on tier
+            gen_limit = get_generation_limit(user_tier)
+            dl_limit = get_download_limit(user_tier)
+
             if not usage:
-                # No usage record found - user/IP is within limits
+                # No usage record found
                 logger.info("No usage record found - within limits")
-                gen_limit = get_generation_limit()
-                dl_limit = get_download_limit()
                 return {
                     'can_generate': True,
                     'can_download': True,
-                    'generations_left': gen_limit,
-                    'downloads_left': dl_limit,
-                    'reset_time': get_monthly_reset_time().isoformat(),
+                    'generations_left': gen_limit if gen_limit > 0 else 999999,
+                    'downloads_left': dl_limit if dl_limit > 0 else 999999,
+                    'reset_time': datetime(2025, 2, 1).isoformat(),
                     'current_usage': {
                         'generations_used': 0,
                         'downloads_used': 0
-                    }
+                    },
+                    'user_tier': user_tier,
+                    'is_premium': user_tier == 'premium'
                 }
 
             current_generations = usage.get('current_generations_used', 0)
             current_downloads = usage.get('current_downloads_used', 0)
             
-            generations_left = max(0, MONTHLY_GENERATION_LIMIT - current_generations)
-            downloads_left = max(0, MONTHLY_DOWNLOAD_LIMIT - current_downloads)
+            # Calculate remaining limits
+            if gen_limit == -1:  # Unlimited for premium
+                generations_left = 999999
+                can_generate = True
+            else:
+                generations_left = max(0, gen_limit - current_generations)
+                can_generate = generations_left > 0
+            
+            if dl_limit == -1:  # Unlimited for premium
+                downloads_left = 999999
+                can_download = True
+            else:
+                downloads_left = max(0, dl_limit - current_downloads)
+                can_download = downloads_left > 0
 
-            logger.info(f"Current usage: {current_generations}/{MONTHLY_GENERATION_LIMIT} generations, {current_downloads}/{MONTHLY_DOWNLOAD_LIMIT} downloads")
-            logger.info(f"Remaining: {generations_left} generations, {downloads_left} downloads")
+            logger.info(f"Current usage: {current_generations}/{gen_limit if gen_limit > 0 else 'unlimited'} generations, {current_downloads}/{dl_limit if dl_limit > 0 else 'unlimited'} downloads")
 
             return {
-                'can_generate': generations_left > 0,
-                'can_download': downloads_left > 0,
+                'can_generate': can_generate,
+                'can_download': can_download,
                 'generations_left': generations_left,
                 'downloads_left': downloads_left,
-                'reset_time': get_monthly_reset_time().isoformat(),
+                'reset_time': datetime(2025, 2, 1).isoformat(),
                 'current_usage': {
                     'generations_used': current_generations,
                     'downloads_used': current_downloads
-                }
+                },
+                'user_tier': user_tier,
+                'is_premium': user_tier == 'premium'
             }
     except Exception as e:
         logger.error(f"Error checking user limits: {e}")
         logger.error(traceback.format_exc())
-        # In case of error, allow the request to prevent blocking users
+        # Default to allowing requests on error
         return {
             'can_generate': True,
             'can_download': True,
-            'generations_left': MONTHLY_GENERATION_LIMIT,
-            'downloads_left': MONTHLY_DOWNLOAD_LIMIT,
-            'reset_time': get_monthly_reset_time().isoformat(),
+            'generations_left': 10,
+            'downloads_left': 10,
+            'reset_time': datetime(2025, 2, 1).isoformat(),
             'current_usage': {
                 'generations_used': 0,
                 'downloads_used': 0
-            }
+            },
+            'user_tier': 'free',
+            'is_premium': False
         }
 
 def check_and_reset_hourly_limits(user_id, ip_address):
-    """
-    Check if hourly limits need to be reset and return current hourly usage.
-    FIXED: Handle timezone-aware and timezone-naive datetime objects properly.
-    """
-    from src.db.database import get_db_cursor
-    
+    """Check and reset hourly limits, return current hourly usage."""
     try:
         with get_db_cursor(commit=True) as cursor:
             now = datetime.now()
             
-            # Get current usage record
             if user_id:
                 cursor.execute("""
                     SELECT hourly_generations, last_hourly_reset 
@@ -293,21 +330,16 @@ def check_and_reset_hourly_limits(user_id, ip_address):
             result = cursor.fetchone()
             
             if not result:
-                # No record exists yet, will be created by existing increment_usage function
                 return 0
             
             hourly_generations = result.get('hourly_generations', 0)
             last_hourly_reset = result.get('last_hourly_reset')
             
-            # FIXED: Handle timezone-aware datetime properly
             if last_hourly_reset:
-                # Convert timezone-aware datetime to naive if needed
                 if hasattr(last_hourly_reset, 'tzinfo') and last_hourly_reset.tzinfo:
                     last_hourly_reset = last_hourly_reset.replace(tzinfo=None)
                 
-                # Check if we need to reset hourly counter (if more than 1 hour has passed)
                 if now - last_hourly_reset >= timedelta(hours=1):
-                    # Reset hourly counter
                     if user_id:
                         cursor.execute("""
                             UPDATE user_usage_limits 
@@ -331,12 +363,7 @@ def check_and_reset_hourly_limits(user_id, ip_address):
         return 0
       
 def increment_hourly_usage(user_id, ip_address):
-    """
-    Increment hourly usage counter. 
-    This works alongside the existing increment_usage function.
-    """
-    from src.db.database import get_db_cursor
-    
+    """Increment hourly usage counter."""
     try:
         with get_db_cursor(commit=True) as cursor:
             now = datetime.now()
@@ -358,68 +385,3 @@ def increment_hourly_usage(user_id, ip_address):
                 
     except Exception as e:
         logger.error(f"Error incrementing hourly usage: {e}")
-
-# Simple rate limit configuration (we'll make this more sophisticated later)
-HOURLY_LIMITS = {
-    'free': 3,      # Free users: 3 generations per hour
-    'premium': 15   # Premium users: 15 generations per hour (we'll add subscription detection later)
-}
-
-# Add this to your existing src/db/usage.py file
-
-def get_user_subscription_tier(user_id, user_email=None):
-    """
-    Get user's subscription tier. Returns 'free' or 'premium'.
-    This is a simple version - we'll enhance it later with Stripe integration.
-    """
-    from src.db.database import get_db_cursor
-    
-    # Default to free for anonymous users
-    if not user_id and not user_email:
-        return 'free'
-    
-    try:
-        with get_db_cursor() as cursor:
-            # Check by user_id first
-            if user_id:
-                cursor.execute("""
-                    SELECT subscription_status 
-                    FROM user_subscriptions 
-                    WHERE user_id = %s 
-                    ORDER BY created_at DESC 
-                    LIMIT 1
-                """, (user_id,))
-                
-                result = cursor.fetchone()
-                if result and result['subscription_status'] == 'premium':
-                    logger.info(f"User {user_id} has premium subscription")
-                    return 'premium'
-            
-            # Check by email if we have it
-            if user_email:
-                cursor.execute("""
-                    SELECT subscription_status 
-                    FROM user_subscriptions 
-                    WHERE email = %s 
-                    ORDER BY created_at DESC 
-                    LIMIT 1
-                """, (user_email,))
-                
-                result = cursor.fetchone()
-                if result and result['subscription_status'] == 'premium':
-                    logger.info(f"User {user_email} has premium subscription")
-                    return 'premium'
-        
-        logger.debug(f"User {'ID ' + str(user_id) if user_id else 'email ' + str(user_email)} has free subscription")
-        return 'free'
-        
-    except Exception as e:
-        logger.error(f"Error checking subscription tier: {e}")
-        # Default to free on error
-        return 'free'
-
-# Update the hourly limits for premium users
-HOURLY_LIMITS = {
-    'free': 3,      # Free users: 3 generations per hour
-    'premium': 20   # Premium users: 20 generations per hour
-}

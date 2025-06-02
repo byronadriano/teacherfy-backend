@@ -1,4 +1,4 @@
-# src/utils/decorators.py - Step 2 Version
+# src/utils/decorators.py - FIXED to ensure regeneration counts as generation
 from functools import wraps
 from flask import request, jsonify, session
 from src.db.usage import check_user_limits, increment_usage, check_and_reset_hourly_limits, increment_hourly_usage, HOURLY_LIMITS, get_user_subscription_tier
@@ -82,7 +82,7 @@ def is_test_request(request_data):
 
 def check_usage_limits(action_type='generation', skip_increment=False):
     """
-    ENHANCED: Decorator with subscription tier detection and proper rate limiting.
+    FIXED: Decorator that properly counts regeneration as generation and enforces tier limits.
     """
     def decorator(f):
         @wraps(f)
@@ -96,7 +96,10 @@ def check_usage_limits(action_type='generation', skip_increment=False):
             if ip_address:
                 ip_address = ip_address.split(',')[0].strip()
             
-            logger.info(f"Checking {action_type} limits for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+            # FIXED: Use a different variable name to avoid shadowing the parameter
+            effective_action_type = action_type
+            
+            logger.info(f"Checking {effective_action_type} limits for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
             
             try:
                 # Get request data
@@ -105,20 +108,31 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                 # CRITICAL: Check if this is an example request BEFORE checking limits
                 if is_example_request(request_data):
                     logger.info("EXAMPLE REQUEST DETECTED - Bypassing usage limits and API calls")
-                    # Call the original function without checking or incrementing limits
                     return f(*args, **kwargs)
+                
+                # FIXED: Check for regeneration flag - regeneration should count as generation
+                is_regeneration = (
+                    request_data.get('regeneration') or 
+                    request_data.get('regenerationCount', 0) > 0 or
+                    request_data.get('previous_outline') or
+                    'regenerate' in request.path.lower()
+                )
+                
+                if is_regeneration:
+                    logger.info("REGENERATION REQUEST DETECTED - Will count as generation")
+                    effective_action_type = 'generation'  # Force regeneration to count as generation
                 
                 # Check if this is a test request (counts against limits but noted for logging)
                 is_test = is_test_request(request_data)
                 if is_test:
                     logger.info("TEST REQUEST DETECTED - Will count against limits but avoid expensive API calls")
                 
-                # NEW: Check hourly limits with real subscription detection (Step 2)
-                current_hourly_usage = check_and_reset_hourly_limits(user_id, ip_address)
-                
                 # Get user's actual subscription tier
                 user_email = user_info.get('email') if user_info else None
                 user_tier = get_user_subscription_tier(user_id, user_email)
+                
+                # Check hourly limits first
+                current_hourly_usage = check_and_reset_hourly_limits(user_id, ip_address)
                 hourly_limit = HOURLY_LIMITS.get(user_tier, 3)
                 
                 logger.info(f"User tier: {user_tier}, hourly limit: {hourly_limit}, current usage: {current_hourly_usage}")
@@ -135,52 +149,60 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                         "user_tier": user_tier,
                         "reset_time": "1 hour",
                         "message": f"You've reached your hourly limit of {hourly_limit} generations. {'Upgrade to premium for higher limits!' if user_tier == 'free' else 'Please wait an hour before generating more content.'}"
-                    }), 429  # Use 429 for rate limiting
+                    }), 429
                 
-                # Continue with existing monthly check...
-                usage = check_user_limits(user_id, ip_address)
-                
-                # For generation endpoints, check generation limits
-                if action_type == 'generation' and not usage['can_generate']:
-                    logger.warning(f"Generation limit reached for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                # Check monthly limits (only for free users)
+                if user_tier == 'free' and effective_action_type == 'generation':
+                    usage = check_user_limits(user_id, ip_address)
                     
-                    return jsonify({
-                        "error": "Monthly generation limit reached",
-                        "limit_reached": True,
-                        "require_upgrade": True,
-                        "generations_left": 0,
-                        "generations_used": usage['current_usage']['generations_used'],
-                        "monthly_limit": 5,  # Hardcoded for now
-                        "reset_time": usage.get('reset_time'),
-                        "message": f"You have used all {usage['current_usage']['generations_used']} of your free monthly generations. Upgrade to premium for unlimited access."
-                    }), 403
+                    if not usage['can_generate']:
+                        logger.warning(f"Monthly generation limit reached for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                        
+                        return jsonify({
+                            "error": "Monthly generation limit reached",
+                            "limit_reached": True,
+                            "require_upgrade": True,
+                            "generations_left": 0,
+                            "generations_used": usage['current_usage']['generations_used'],
+                            "monthly_limit": 10,
+                            "reset_time": usage.get('reset_time'),
+                            "user_tier": user_tier,
+                            "message": f"You have used all {usage['current_usage']['generations_used']} of your free monthly generations. Upgrade to premium for unlimited access."
+                        }), 403
                 
-                # For download endpoints, check download limits  
-                if action_type == 'download' and not usage['can_download']:
-                    logger.warning(f"Download limit reached for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
-                    
-                    return jsonify({
-                        "error": "Monthly download limit reached",
-                        "limit_reached": True,
-                        "require_upgrade": True,
-                        "downloads_left": 0,
-                        "downloads_used": usage['current_usage']['downloads_used'],
-                        "monthly_limit": 5,  # Hardcoded for now
-                        "reset_time": usage.get('reset_time'),
-                        "message": f"You have used all {usage['current_usage']['downloads_used']} of your free monthly downloads. Upgrade to premium for unlimited access."
-                    }), 403
+                # For download endpoints, check download limits
+                if effective_action_type == 'download':
+                    usage = check_user_limits(user_id, ip_address)
+                    if not usage['can_download']:
+                        logger.warning(f"Download limit reached for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                        
+                        return jsonify({
+                            "error": "Monthly download limit reached",
+                            "limit_reached": True,
+                            "require_upgrade": user_tier == 'free',
+                            "downloads_left": 0,
+                            "downloads_used": usage['current_usage']['downloads_used'],
+                            "monthly_limit": 10,
+                            "reset_time": usage.get('reset_time'),
+                            "user_tier": user_tier,
+                            "message": f"You have used all {usage['current_usage']['downloads_used']} of your free monthly downloads. Upgrade to premium for unlimited access."
+                        }), 403
                 
                 # Increment usage BEFORE calling the function (to prevent race conditions)
                 if not skip_increment:
                     try:
-                        increment_usage(ip_address, user_id, action_type)
-                        logger.info(f"Incremented {action_type} usage for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                        # FIXED: Always increment for regeneration as generation
+                        increment_type = 'generation' if is_regeneration else effective_action_type
+                        increment_usage(ip_address, user_id, increment_type)
+                        logger.info(f"Incremented {increment_type} usage for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
                         
-                        # NEW: Also increment hourly usage (Step 1)
+                        # Also increment hourly usage
                         increment_hourly_usage(user_id, ip_address)
                         
                         if is_test:
-                            logger.info("  ^^ This was a TEST REQUEST (no OpenAI API cost)")
+                            logger.info("  ^^ This was a TEST REQUEST (no expensive API cost)")
+                        if is_regeneration:
+                            logger.info("  ^^ This was a REGENERATION REQUEST (counted as generation)")
                     except Exception as increment_error:
                         logger.error(f"Failed to increment usage: {increment_error}")
                         # Continue with the request even if increment fails
@@ -188,7 +210,7 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                 # Call the original function
                 result = f(*args, **kwargs)
                 
-                # CRITICAL: Check if this is a file download response
+                # Check if this is a file download response
                 if isinstance(result, tuple) and len(result) >= 2:
                     response, status_code = result
                     if hasattr(response, 'mimetype'):
@@ -202,7 +224,7 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                             logger.debug(f"File download detected, returning unmodified response")
                             return result
                 
-                # Also check for single response objects (Flask send_file)
+                # Check for single response objects (Flask send_file)
                 if hasattr(result, 'mimetype'):
                     file_mime_types = [
                         'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -215,7 +237,7 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                         return result
                 
                 # For JSON responses, add updated usage limits (only for generation endpoints)
-                if action_type == 'generation':
+                if effective_action_type == 'generation' or is_regeneration:
                     # Get updated usage after increment
                     updated_usage = check_user_limits(user_id, ip_address)
                     
@@ -263,7 +285,6 @@ def check_usage_limits(action_type='generation', skip_increment=False):
             except Exception as e:
                 logger.error(f"Error in usage limits decorator: {e}", exc_info=True)
                 # In case of any error, still allow the request to proceed
-                # but log the error for debugging
                 return f(*args, **kwargs)
                 
         return decorated_function
