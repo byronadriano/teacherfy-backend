@@ -1,4 +1,4 @@
-# src/auth_routes.py - FIXED logout method handling
+# src/auth_routes.py - FIXED OAuth callback to prevent main site loading in popup
 import os
 from flask import Blueprint, request, jsonify, redirect, url_for, session
 from google.oauth2 import id_token
@@ -116,7 +116,7 @@ def authorize():
 
 @auth_blueprint.route('/oauth2callback')
 def oauth2callback():
-    """Handle Google OAuth callback with proper session management."""
+    """Handle Google OAuth callback - FIXED to stay in popup and communicate properly."""
     try:
         logger.info("🔐 OAuth callback received")
         
@@ -132,13 +132,14 @@ def oauth2callback():
                     <h2>Authentication Error</h2>
                     <p>Error: {error}</p>
                     <script>
-                        if (window.opener) {{
+                        console.log('OAuth error occurred:', '{error}');
+                        if (window.opener && !window.opener.closed) {{
                             window.opener.postMessage({{
                                 type: 'AUTH_ERROR',
                                 error: 'Authentication failed: {error}'
                             }}, '*');
-                            window.close();
                         }}
+                        setTimeout(() => window.close(), 2000);
                     </script>
                 </body>
                 </html>
@@ -153,13 +154,14 @@ def oauth2callback():
                     <h2>Authentication Error</h2>
                     <p>No authorization code received</p>
                     <script>
-                        if (window.opener) {
+                        console.log('No authorization code received');
+                        if (window.opener && !window.opener.closed) {
                             window.opener.postMessage({
                                 type: 'AUTH_ERROR',
                                 error: 'No authorization code received'
                             }, '*');
-                            window.close();
                         }
+                        setTimeout(() => window.close(), 2000);
                     </script>
                 </body>
                 </html>
@@ -199,13 +201,14 @@ def oauth2callback():
                     <h2>Authentication Error</h2>
                     <p>Failed to exchange authorization code</p>
                     <script>
-                        if (window.opener) {{
+                        console.log('Token exchange failed:', '{str(token_error)}');
+                        if (window.opener && !window.opener.closed) {{
                             window.opener.postMessage({{
                                 type: 'AUTH_ERROR',
                                 error: 'Token exchange failed'
                             }}, '*');
-                            window.close();
                         }}
+                        setTimeout(() => window.close(), 2000);
                     </script>
                 </body>
                 </html>
@@ -239,13 +242,14 @@ def oauth2callback():
                     <h2>Authentication Error</h2>
                     <p>Failed to verify authentication token</p>
                     <script>
-                        if (window.opener) {{
+                        console.log('Token verification failed:', '{str(verify_error)}');
+                        if (window.opener && !window.opener.closed) {{
                             window.opener.postMessage({{
                                 type: 'AUTH_ERROR',
                                 error: 'Token verification failed'
                             }}, '*');
-                            window.close();
                         }}
+                        setTimeout(() => window.close(), 2000);
                     </script>
                 </body>
                 </html>
@@ -300,15 +304,15 @@ def oauth2callback():
         
         logger.info(f"✅ Successfully authenticated user: {user_info['email']}")
         
-        # Return success page with better COOP handling
+        # FIXED: Return popup-only success page that NEVER redirects to main site
         return f"""
         <html>
         <head>
             <title>Authentication Successful</title>
             <style>
                 body {{ 
-                    font-family: Arial, sans-serif; 
-                    padding: 20px; 
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                    padding: 40px 20px;
                     text-align: center;
                     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                     color: white;
@@ -317,56 +321,57 @@ def oauth2callback():
                     flex-direction: column;
                     justify-content: center;
                     align-items: center;
+                    margin: 0;
                 }}
                 .success {{ 
                     background: white;
-                    color: #2d5fcf;
-                    padding: 30px;
-                    border-radius: 15px;
-                    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                    color: #2d3748;
+                    padding: 40px;
+                    border-radius: 16px;
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
                     max-width: 400px;
+                    width: 100%;
                 }}
-                .debug {{
-                    position: fixed;
-                    top: 10px;
-                    left: 10px;
-                    background: rgba(0,0,0,0.8);
-                    color: white;
-                    padding: 10px;
-                    border-radius: 5px;
-                    font-size: 12px;
-                    max-width: 300px;
+                .status {{
+                    margin-top: 20px;
+                    padding: 12px;
+                    border-radius: 8px;
+                    background: #f7fafc;
+                    border: 1px solid #e2e8f0;
+                    font-size: 14px;
+                    color: #4a5568;
+                }}
+                .success-icon {{
+                    font-size: 4rem;
+                    margin-bottom: 20px;
+                    animation: bounce 2s infinite;
+                }}
+                @keyframes bounce {{
+                    0%, 20%, 50%, 80%, 100% {{ transform: translateY(0); }}
+                    40% {{ transform: translateY(-10px); }}
+                    60% {{ transform: translateY(-5px); }}
                 }}
             </style>
         </head>
         <body>
-            <div class="debug" id="debug">
-                Debug: Initializing...
-            </div>
-            
             <div class="success">
-                <div style="font-size: 3rem; margin-bottom: 20px;">✅</div>
-                <h2>Authentication Successful!</h2>
-                <p>Welcome, {user_info.get('name', user_info['email'])}!</p>
-                <p id="status">Communicating with parent window...</p>
+                <div class="success-icon">✅</div>
+                <h2 style="margin: 0 0 10px 0; color: #2d3748;">Welcome to Teacherfy!</h2>
+                <p style="margin: 0 0 20px 0; color: #718096;">
+                    Hello, {user_info.get('name', user_info['email'])}!
+                </p>
+                <div class="status" id="status">
+                    Completing sign-in...
+                </div>
             </div>
             
             <script>
-                console.log('🎉 OAuth success page loaded!');
+                console.log('🎉 OAuth success page loaded for popup');
                 
-                const debug = document.getElementById('debug');
                 const status = document.getElementById('status');
-                let attempts = 0;
+                let messagesSent = 0;
+                let maxAttempts = 10;
                 let success = false;
-                
-                function updateDebug(message) {{
-                    console.log(message);
-                    debug.textContent = message;
-                }}
-                
-                function updateStatus(message) {{
-                    status.textContent = message;
-                }}
                 
                 const userData = {{
                     email: '{user_info['email']}',
@@ -382,114 +387,155 @@ def oauth2callback():
                     user: userData
                 }};
                 
+                function updateStatus(text) {{
+                    status.textContent = text;
+                    console.log('Status:', text);
+                }}
+                
                 function sendMessage() {{
-                    attempts++;
-                    updateDebug(`Attempt ${{attempts}}: Sending message...`);
+                    messagesSent++;
+                    
+                    console.log(`Attempt ${{messagesSent}}: Checking parent window...`);
+                    
+                    // CRITICAL: Prevent any redirects or navigation
+                    if (messagesSent === 1) {{
+                        updateStatus('Connecting to main window...');
+                    }}
                     
                     try {{
-                        // Check if we have an opener
+                        // Check if opener exists and is not closed
                         if (!window.opener) {{
-                            updateDebug('No opener window found');
-                            updateStatus('No parent window - redirecting...');
-                            setTimeout(() => {{
-                                window.location.href = 'http://localhost:3000';
-                            }}, 2000);
-                            return;
-                        }}
-                        
-                        // Check if opener is closed
-                        if (window.opener.closed) {{
-                            updateDebug('Opener window is closed');
-                            updateStatus('Parent window closed - redirecting...');
-                            setTimeout(() => {{
-                                window.location.href = 'http://localhost:3000';
-                            }}, 2000);
-                            return;
-                        }}
-                        
-                        // Try to send message
-                        try {{
-                            // Try with specific origins first
-                            const origins = [
-                                'http://localhost:3000',
-                                'https://teacherfy.ai',
-                                window.location.origin
-                            ];
+                            console.log('❌ No opener window found');
+                            updateStatus('No parent window found');
                             
-                            origins.forEach(origin => {{
-                                try {{
-                                    window.opener.postMessage(message, origin);
-                                    updateDebug(`Message sent to ${{origin}}`);
-                                }} catch (e) {{
-                                    updateDebug(`Failed to send to ${{origin}}: ${{e.message}}`);
-                                }}
-                            }});
+                            // CRITICAL: Don't redirect! Just show message
+                            if (messagesSent > 5) {{
+                                updateStatus('Please close this window manually');
+                                return;
+                            }}
+                        }} else if (window.opener.closed) {{
+                            console.log('❌ Opener window is closed');
+                            updateStatus('Parent window was closed');
                             
-                            // Also try wildcard as fallback
-                            window.opener.postMessage(message, '*');
-                            updateDebug('Message sent with wildcard origin');
+                            // CRITICAL: Don't redirect! Just show message
+                            if (messagesSent > 5) {{
+                                updateStatus('Please close this window manually');
+                                return;
+                            }}
+                        }} else {{
+                            console.log('✅ Valid opener found, sending message...');
                             
-                            success = true;
-                            updateStatus('Success! Closing window...');
-                            
-                            // Close the popup after a short delay
-                            setTimeout(() => {{
-                                try {{
-                                    window.close();
-                                }} catch (e) {{
-                                    updateDebug('Could not close window: ' + e.message);
-                                    updateStatus('Please close this window manually');
-                                }}
-                            }}, 1500);
-                            
-                        }} catch (error) {{
-                            updateDebug(`Send error: ${{error.message}}`);
-                            
-                            if (attempts < 5) {{
-                                updateStatus('Retrying...');
-                                setTimeout(sendMessage, 1000);
-                            }} else {{
-                                updateStatus('Communication failed - redirecting...');
+                            try {{
+                                // Send to specific origins
+                                const origins = [
+                                    'http://localhost:3000',
+                                    'https://teacherfy.ai',
+                                    window.location.origin
+                                ];
+                                
+                                origins.forEach(origin => {{
+                                    try {{
+                                        window.opener.postMessage(message, origin);
+                                        console.log(`📤 Message sent to ${{origin}}`);
+                                    }} catch (e) {{
+                                        console.log(`❌ Failed to send to ${{origin}}: ${{e.message}}`);
+                                    }}
+                                }});
+                                
+                                // Also send with wildcard
+                                window.opener.postMessage(message, '*');
+                                console.log('📤 Message sent with wildcard origin');
+                                
+                                success = true;
+                                updateStatus('Success! You can close this window.');
+                                
+                                // Try to close after delay, but don't force redirect
                                 setTimeout(() => {{
-                                    window.location.href = 'http://localhost:3000';
+                                    try {{
+                                        window.close();
+                                        console.log('🔒 Window closed successfully');
+                                    }} catch (e) {{
+                                        console.log('ℹ️ Could not auto-close window:', e.message);
+                                        updateStatus('Success! Please close this window.');
+                                    }}
                                 }}, 2000);
+                                
+                                return; // Success, stop trying
+                                
+                            }} catch (error) {{
+                                console.log(`❌ Error sending message: ${{error.message}}`);
+                                updateStatus('Communication error...');
                             }}
                         }}
                         
-                    }} catch (error) {{
-                        updateDebug(`General error: ${{error.message}}`);
-                        
-                        if (attempts < 5) {{
+                        // If we get here, try again (but not forever)
+                        if (messagesSent < maxAttempts) {{
+                            updateStatus(`Retrying... (attempt ${{messagesSent}}/${{maxAttempts}})`);
                             setTimeout(sendMessage, 1000);
                         }} else {{
-                            updateStatus('Max attempts reached - redirecting...');
-                            setTimeout(() => {{
-                                window.location.href = 'http://localhost:3000';
-                            }}, 2000);
+                            updateStatus('Unable to communicate with main window. Please close this window and refresh the main page.');
+                            console.log('❌ Max attempts reached');
+                        }}
+                        
+                    }} catch (error) {{
+                        console.log(`❌ Unexpected error in sendMessage: ${{error.message}}`);
+                        updateStatus('Unexpected error occurred');
+                        
+                        if (messagesSent < maxAttempts) {{
+                            setTimeout(sendMessage, 1000);
+                        }} else {{
+                            updateStatus('Please close this window and refresh the main page.');
                         }}
                     }}
                 }}
                 
-                // Start sending messages immediately and retry
+                // Start the process
+                console.log('🚀 Starting message sending process...');
                 sendMessage();
                 
-                // Try again after short delays
+                // Also try at intervals
                 setTimeout(sendMessage, 500);
-                setTimeout(sendMessage, 1000);
-                setTimeout(sendMessage, 2000);
+                setTimeout(sendMessage, 1500);
+                setTimeout(sendMessage, 3000);
                 
-                // Fallback: if we haven't succeeded after 10 seconds, redirect
-                setTimeout(() => {{
-                    if (!success) {{
-                        updateStatus('Timeout - redirecting to app...');
-                        window.location.href = 'http://localhost:3000';
-                    }}
-                }}, 10000);
-                
-                // Listen for messages from parent (in case parent is trying to communicate)
+                // Listen for messages from parent
                 window.addEventListener('message', (event) => {{
-                    updateDebug(`Received message: ${{JSON.stringify(event.data)}}`);
+                    console.log('📨 Received message from parent:', event.data);
+                    if (event.data && event.data.type === 'POPUP_READY') {{
+                        console.log('📡 Parent confirmed ready, sending auth data...');
+                        sendMessage();
+                    }}
                 }});
+                
+                // CRITICAL: Prevent any navigation away from this page
+                window.addEventListener('beforeunload', (event) => {{
+                    console.log('⚠️ Popup is about to close/navigate');
+                }});
+                
+                // CRITICAL: Override any location changes
+                const originalReplace = window.location.replace;
+                const originalAssign = window.location.assign;
+                const originalHref = window.location.href;
+                
+                Object.defineProperty(window.location, 'href', {{
+                    get: () => originalHref,
+                    set: (value) => {{
+                        console.log('🚫 Blocked attempt to navigate to:', value);
+                        // Ignore navigation attempts
+                    }}
+                }});
+                
+                window.location.replace = (url) => {{
+                    console.log('🚫 Blocked location.replace to:', url);
+                    // Ignore replace attempts
+                }};
+                
+                window.location.assign = (url) => {{
+                    console.log('🚫 Blocked location.assign to:', url);
+                    // Ignore assign attempts  
+                }};
+                
+                console.log('🔒 Navigation blocking in place');
                 
             </script>
         </body>
@@ -506,13 +552,14 @@ def oauth2callback():
                 <h2>Authentication Error</h2>
                 <p>An unexpected error occurred during authentication</p>
                 <script>
-                    if (window.opener) {{
+                    console.log('OAuth callback error:', '{str(e)}');
+                    if (window.opener && !window.opener.closed) {{
                         window.opener.postMessage({{
                             type: 'AUTH_ERROR',
-                            error: 'Authentication failed'
+                            error: 'Authentication failed: {str(e)}'
                         }}, '*');
-                        window.close();
                     }}
+                    setTimeout(() => window.close(), 3000);
                 </script>
             </body>
             </html>
