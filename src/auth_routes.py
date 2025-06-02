@@ -1,4 +1,4 @@
-# src/auth_routes.py - FIXED session management
+# src/auth_routes.py - FIXED logout method handling
 import os
 from flask import Blueprint, request, jsonify, redirect, url_for, session
 from google.oauth2 import id_token
@@ -211,14 +211,13 @@ def oauth2callback():
                 </html>
             """
         
-        # FIXED: Store only essential credentials to reduce session size
+        # Store only essential credentials to reduce session size
         session['credentials'] = {
             'token': credentials.token,
             'refresh_token': credentials.refresh_token,
             'token_uri': credentials.token_uri,
             'client_id': credentials.client_id,
             'client_secret': credentials.client_secret
-            # Removed 'scopes' to reduce session size
         }
         logger.info("💾 Credentials stored in session")
 
@@ -252,7 +251,7 @@ def oauth2callback():
                 </html>
             """
 
-        # FIXED: Store minimal user info to reduce session size
+        # Store minimal user info to reduce session size
         user_info = {
             'email': id_info['email'],
             'name': id_info.get('name', ''),
@@ -268,11 +267,9 @@ def oauth2callback():
             user_id = create_user(user_info['email'], user_info['name'], user_info['picture'])
             
             if user_id:
-                # FIXED: Only try to update subscription fields if they exist
                 try:
                     from src.db.database import get_db_cursor
                     with get_db_cursor(commit=True) as cursor:
-                        # Check if subscription columns exist first
                         cursor.execute("""
                             SELECT column_name 
                             FROM information_schema.columns 
@@ -293,7 +290,6 @@ def oauth2callback():
                             logger.warning("⚠️ Subscription columns don't exist yet - skipping update")
                 except Exception as subscription_error:
                     logger.warning(f"⚠️ Could not update subscription fields: {subscription_error}")
-                    # Continue anyway - this is not critical for login
                 
                 log_user_login(user_id)
                 session['user_id'] = user_id
@@ -301,89 +297,205 @@ def oauth2callback():
                 
         except Exception as db_error:
             logger.error(f"❌ Database error during OAuth: {db_error}")
-            # Continue with OAuth even if DB update fails
         
         logger.info(f"✅ Successfully authenticated user: {user_info['email']}")
         
-        # Return success page
+        # Return success page with better COOP handling
         return f"""
-            <html>
-            <head>
-                <title>Authentication Successful</title>
-                <style>
-                    body {{ 
-                        font-family: Arial, sans-serif; 
-                        padding: 20px; 
-                        text-align: center;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                        min-height: 100vh;
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: center;
-                        align-items: center;
-                    }}
-                    .success {{ 
-                        background: white;
-                        color: #2d5fcf;
-                        padding: 30px;
-                        border-radius: 15px;
-                        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-                        max-width: 400px;
-                    }}
-                </style>
-            </head>
-            <body>
-                <div class="success">
-                    <div style="font-size: 3rem; margin-bottom: 20px;">✅</div>
-                    <h2>Authentication Successful!</h2>
-                    <p>Welcome, {user_info.get('name', user_info['email'])}!</p>
-                    <p>Redirecting back to the app...</p>
-                </div>
+        <html>
+        <head>
+            <title>Authentication Successful</title>
+            <style>
+                body {{ 
+                    font-family: Arial, sans-serif; 
+                    padding: 20px; 
+                    text-align: center;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    min-height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                }}
+                .success {{ 
+                    background: white;
+                    color: #2d5fcf;
+                    padding: 30px;
+                    border-radius: 15px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                    max-width: 400px;
+                }}
+                .debug {{
+                    position: fixed;
+                    top: 10px;
+                    left: 10px;
+                    background: rgba(0,0,0,0.8);
+                    color: white;
+                    padding: 10px;
+                    border-radius: 5px;
+                    font-size: 12px;
+                    max-width: 300px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="debug" id="debug">
+                Debug: Initializing...
+            </div>
+            
+            <div class="success">
+                <div style="font-size: 3rem; margin-bottom: 20px;">✅</div>
+                <h2>Authentication Successful!</h2>
+                <p>Welcome, {user_info.get('name', user_info['email'])}!</p>
+                <p id="status">Communicating with parent window...</p>
+            </div>
+            
+            <script>
+                console.log('🎉 OAuth success page loaded!');
                 
-                <script>
-                    console.log('🎉 OAuth success! User authenticated');
+                const debug = document.getElementById('debug');
+                const status = document.getElementById('status');
+                let attempts = 0;
+                let success = false;
+                
+                function updateDebug(message) {{
+                    console.log(message);
+                    debug.textContent = message;
+                }}
+                
+                function updateStatus(message) {{
+                    status.textContent = message;
+                }}
+                
+                const userData = {{
+                    email: '{user_info['email']}',
+                    name: '{user_info.get('name', '')}',
+                    picture: '{user_info.get('picture', '')}',
+                    id: {user_id or 'null'},
+                    is_premium: false,
+                    subscription_tier: 'free'
+                }};
+                
+                const message = {{
+                    type: 'AUTH_SUCCESS',
+                    user: userData
+                }};
+                
+                function sendMessage() {{
+                    attempts++;
+                    updateDebug(`Attempt ${{attempts}}: Sending message...`);
                     
                     try {{
-                        if (window.opener && !window.opener.closed) {{
-                            console.log('📨 Sending success message to parent window...');
+                        // Check if we have an opener
+                        if (!window.opener) {{
+                            updateDebug('No opener window found');
+                            updateStatus('No parent window - redirecting...');
+                            setTimeout(() => {{
+                                window.location.href = 'http://localhost:3000';
+                            }}, 2000);
+                            return;
+                        }}
+                        
+                        // Check if opener is closed
+                        if (window.opener.closed) {{
+                            updateDebug('Opener window is closed');
+                            updateStatus('Parent window closed - redirecting...');
+                            setTimeout(() => {{
+                                window.location.href = 'http://localhost:3000';
+                            }}, 2000);
+                            return;
+                        }}
+                        
+                        // Try to send message
+                        try {{
+                            // Try with specific origins first
+                            const origins = [
+                                'http://localhost:3000',
+                                'https://teacherfy.ai',
+                                window.location.origin
+                            ];
                             
-                            window.opener.postMessage({{
-                                type: 'AUTH_SUCCESS',
-                                user: {{
-                                    email: '{user_info['email']}',
-                                    name: '{user_info.get('name', '')}',
-                                    picture: '{user_info.get('picture', '')}',
-                                    id: {user_id or 'null'},
-                                    is_premium: false,
-                                    subscription_tier: 'free'
+                            origins.forEach(origin => {{
+                                try {{
+                                    window.opener.postMessage(message, origin);
+                                    updateDebug(`Message sent to ${{origin}}`);
+                                }} catch (e) {{
+                                    updateDebug(`Failed to send to ${{origin}}: ${{e.message}}`);
                                 }}
-                            }}, window.location.origin);
+                            }});
                             
-                            console.log('✅ Success message sent, closing popup...');
+                            // Also try wildcard as fallback
+                            window.opener.postMessage(message, '*');
+                            updateDebug('Message sent with wildcard origin');
+                            
+                            success = true;
+                            updateStatus('Success! Closing window...');
+                            
+                            // Close the popup after a short delay
                             setTimeout(() => {{
-                                window.close();
-                            }}, 1000);
+                                try {{
+                                    window.close();
+                                }} catch (e) {{
+                                    updateDebug('Could not close window: ' + e.message);
+                                    updateStatus('Please close this window manually');
+                                }}
+                            }}, 1500);
+                            
+                        }} catch (error) {{
+                            updateDebug(`Send error: ${{error.message}}`);
+                            
+                            if (attempts < 5) {{
+                                updateStatus('Retrying...');
+                                setTimeout(sendMessage, 1000);
+                            }} else {{
+                                updateStatus('Communication failed - redirecting...');
+                                setTimeout(() => {{
+                                    window.location.href = 'http://localhost:3000';
+                                }}, 2000);
+                            }}
+                        }}
+                        
+                    }} catch (error) {{
+                        updateDebug(`General error: ${{error.message}}`);
+                        
+                        if (attempts < 5) {{
+                            setTimeout(sendMessage, 1000);
                         }} else {{
-                            console.log('ℹ️ No opener window, redirecting to home...');
+                            updateStatus('Max attempts reached - redirecting...');
                             setTimeout(() => {{
-                                window.location.href = '/';
+                                window.location.href = 'http://localhost:3000';
                             }}, 2000);
                         }}
-                    }} catch (error) {{
-                        console.error('❌ Error in OAuth callback script:', error);
-                        setTimeout(() => {{
-                            try {{
-                                window.close();
-                            }} catch (e) {{
-                                window.location.href = '/';
-                            }}
-                        }}, 2000);
                     }}
-                </script>
-            </body>
-            </html>
+                }}
+                
+                // Start sending messages immediately and retry
+                sendMessage();
+                
+                // Try again after short delays
+                setTimeout(sendMessage, 500);
+                setTimeout(sendMessage, 1000);
+                setTimeout(sendMessage, 2000);
+                
+                // Fallback: if we haven't succeeded after 10 seconds, redirect
+                setTimeout(() => {{
+                    if (!success) {{
+                        updateStatus('Timeout - redirecting to app...');
+                        window.location.href = 'http://localhost:3000';
+                    }}
+                }}, 10000);
+                
+                // Listen for messages from parent (in case parent is trying to communicate)
+                window.addEventListener('message', (event) => {{
+                    updateDebug(`Received message: ${{JSON.stringify(event.data)}}`);
+                }});
+                
+            </script>
+        </body>
+        </html>
         """
+        
     except Exception as e:
         logger.error(f"❌ OAuth callback error: {e}")
         logger.error(traceback.format_exc())
@@ -406,9 +518,10 @@ def oauth2callback():
             </html>
         """
 
-@auth_blueprint.route('/logout')
+# FIXED: Handle both GET and POST for logout
+@auth_blueprint.route('/logout', methods=['GET', 'POST'])
 def logout():
-    """Clear session and log out user."""
+    """Clear session and log out user - handles both GET and POST."""
     try:
         user_email = session.get('user_info', {}).get('email', 'Unknown')
         logger.info(f"🚪 Logging out user: {user_email}")
@@ -416,7 +529,17 @@ def logout():
         session.clear()
         logger.info("✅ Session cleared")
         
-        return jsonify({"message": "Logged out successfully"})
+        # Handle different request methods
+        if request.method == 'GET':
+            # For GET requests, redirect to home page
+            return redirect('/')
+        else:
+            # For POST requests, return JSON
+            return jsonify({"message": "Logged out successfully"})
+            
     except Exception as e:
         logger.error(f"❌ Logout error: {e}")
-        return jsonify({"error": str(e)}), 500
+        if request.method == 'GET':
+            return redirect('/?error=logout_failed')
+        else:
+            return jsonify({"error": str(e)}), 500

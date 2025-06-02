@@ -1,4 +1,4 @@
-# app.py - CLEAN VERSION with unified routes
+# app.py - FIXED VERSION with COOP headers
 import os
 import tempfile
 from flask import Flask, jsonify, request, make_response
@@ -6,7 +6,7 @@ from flask_cors import CORS
 from src.config import config, logger
 from src.auth_routes import auth_blueprint
 from src.slides_routes import slides_blueprint
-from src.outline_routes import outline_blueprint  # Use unified outline routes
+from src.outline_routes import outline_blueprint
 from src.history_routes import history_blueprint
 from src.resource_routes import resource_blueprint
 from src.db.database import test_connection
@@ -54,10 +54,10 @@ def create_app():
         },
         supports_credentials=True)
 
-    # Register blueprints - REMOVE presentation_blueprint to avoid duplicate routes
+    # Register blueprints
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(slides_blueprint)
-    app.register_blueprint(outline_blueprint)  # This now handles all outline generation
+    app.register_blueprint(outline_blueprint)
     app.register_blueprint(history_blueprint)
     app.register_blueprint(resource_blueprint)
 
@@ -75,6 +75,15 @@ def create_app():
                 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
                 'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control',
             })
+            
+            # FIXED: Add COOP headers for OAuth pages
+            # Allow popups to communicate with parent window during OAuth
+            if request.endpoint in ['auth_blueprint.oauth2callback', 'auth_blueprint.authorize']:
+                response.headers['Cross-Origin-Opener-Policy'] = 'same-origin-allow-popups'
+                response.headers['Cross-Origin-Embedder-Policy'] = 'unsafe-none'
+            else:
+                # For other pages, use safer defaults
+                response.headers['Cross-Origin-Opener-Policy'] = 'same-origin-allow-popups'
             
             # For file downloads, add additional headers - now handles multiple MIME types
             if response.mimetype in [
