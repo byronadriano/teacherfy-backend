@@ -3,13 +3,26 @@ import os
 import logging
 import traceback
 from datetime import datetime, timedelta
-from .database import get_db_cursor, get_db_connection
+from .database import get_db_cursor, get_db_connection        
+from src.config import logger
 
 logger = logging.getLogger(__name__)
 
-# FIXED: Use monthly limits consistently
-MONTHLY_GENERATION_LIMIT = int(os.getenv('MONTHLY_GENERATION_LIMIT', 5))  # Changed from daily to monthly
-MONTHLY_DOWNLOAD_LIMIT = int(os.getenv('MONTHLY_DOWNLOAD_LIMIT', 5))      # Changed from daily to monthly
+# DEVELOPMENT: Use higher limits for testing
+def get_generation_limit():
+    """Get generation limit based on environment"""
+    if os.getenv('FLASK_ENV') == 'development':
+        return int(os.getenv('MONTHLY_GENERATION_LIMIT', 15))  # Higher limit for dev
+    return int(os.getenv('MONTHLY_GENERATION_LIMIT', 5))  # Production limit
+
+def get_download_limit():
+    """Get download limit based on environment"""
+    if os.getenv('FLASK_ENV') == 'development':
+        return int(os.getenv('MONTHLY_DOWNLOAD_LIMIT', 15))  # Higher limit for dev
+    return int(os.getenv('MONTHLY_DOWNLOAD_LIMIT', 5))  # Production limit
+
+MONTHLY_GENERATION_LIMIT = get_generation_limit()
+MONTHLY_DOWNLOAD_LIMIT = get_download_limit()
 
 def sanitize_ip_address(ip_address):
     """Sanitize the IP address input."""
@@ -202,11 +215,13 @@ def check_user_limits(user_id=None, ip_address=None):
             if not usage:
                 # No usage record found - user/IP is within limits
                 logger.info("No usage record found - within limits")
+                gen_limit = get_generation_limit()
+                dl_limit = get_download_limit()
                 return {
                     'can_generate': True,
                     'can_download': True,
-                    'generations_left': MONTHLY_GENERATION_LIMIT,
-                    'downloads_left': MONTHLY_DOWNLOAD_LIMIT,
+                    'generations_left': gen_limit,
+                    'downloads_left': dl_limit,
                     'reset_time': get_monthly_reset_time().isoformat(),
                     'current_usage': {
                         'generations_used': 0,
@@ -249,3 +264,162 @@ def check_user_limits(user_id=None, ip_address=None):
                 'downloads_used': 0
             }
         }
+
+def check_and_reset_hourly_limits(user_id, ip_address):
+    """
+    Check if hourly limits need to be reset and return current hourly usage.
+    FIXED: Handle timezone-aware and timezone-naive datetime objects properly.
+    """
+    from src.db.database import get_db_cursor
+    
+    try:
+        with get_db_cursor(commit=True) as cursor:
+            now = datetime.now()
+            
+            # Get current usage record
+            if user_id:
+                cursor.execute("""
+                    SELECT hourly_generations, last_hourly_reset 
+                    FROM user_usage_limits 
+                    WHERE user_id = %s
+                """, (user_id,))
+            else:
+                cursor.execute("""
+                    SELECT hourly_generations, last_hourly_reset 
+                    FROM user_usage_limits 
+                    WHERE user_id IS NULL AND ip_address = %s
+                """, (ip_address,))
+            
+            result = cursor.fetchone()
+            
+            if not result:
+                # No record exists yet, will be created by existing increment_usage function
+                return 0
+            
+            hourly_generations = result.get('hourly_generations', 0)
+            last_hourly_reset = result.get('last_hourly_reset')
+            
+            # FIXED: Handle timezone-aware datetime properly
+            if last_hourly_reset:
+                # Convert timezone-aware datetime to naive if needed
+                if hasattr(last_hourly_reset, 'tzinfo') and last_hourly_reset.tzinfo:
+                    last_hourly_reset = last_hourly_reset.replace(tzinfo=None)
+                
+                # Check if we need to reset hourly counter (if more than 1 hour has passed)
+                if now - last_hourly_reset >= timedelta(hours=1):
+                    # Reset hourly counter
+                    if user_id:
+                        cursor.execute("""
+                            UPDATE user_usage_limits 
+                            SET hourly_generations = 0, last_hourly_reset = %s
+                            WHERE user_id = %s
+                        """, (now, user_id))
+                    else:
+                        cursor.execute("""
+                            UPDATE user_usage_limits 
+                            SET hourly_generations = 0, last_hourly_reset = %s
+                            WHERE user_id IS NULL AND ip_address = %s
+                        """, (now, ip_address))
+                    
+                    logger.info(f"Reset hourly limits for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                    return 0
+            
+            return hourly_generations or 0
+            
+    except Exception as e:
+        logger.error(f"Error checking hourly limits: {e}")
+        return 0
+      
+def increment_hourly_usage(user_id, ip_address):
+    """
+    Increment hourly usage counter. 
+    This works alongside the existing increment_usage function.
+    """
+    from src.db.database import get_db_cursor
+    
+    try:
+        with get_db_cursor(commit=True) as cursor:
+            now = datetime.now()
+            
+            if user_id:
+                cursor.execute("""
+                    UPDATE user_usage_limits 
+                    SET hourly_generations = COALESCE(hourly_generations, 0) + 1,
+                        last_hourly_reset = COALESCE(last_hourly_reset, %s)
+                    WHERE user_id = %s
+                """, (now, user_id))
+            else:
+                cursor.execute("""
+                    UPDATE user_usage_limits 
+                    SET hourly_generations = COALESCE(hourly_generations, 0) + 1,
+                        last_hourly_reset = COALESCE(last_hourly_reset, %s)
+                    WHERE user_id IS NULL AND ip_address = %s
+                """, (now, ip_address))
+                
+    except Exception as e:
+        logger.error(f"Error incrementing hourly usage: {e}")
+
+# Simple rate limit configuration (we'll make this more sophisticated later)
+HOURLY_LIMITS = {
+    'free': 3,      # Free users: 3 generations per hour
+    'premium': 15   # Premium users: 15 generations per hour (we'll add subscription detection later)
+}
+
+# Add this to your existing src/db/usage.py file
+
+def get_user_subscription_tier(user_id, user_email=None):
+    """
+    Get user's subscription tier. Returns 'free' or 'premium'.
+    This is a simple version - we'll enhance it later with Stripe integration.
+    """
+    from src.db.database import get_db_cursor
+    
+    # Default to free for anonymous users
+    if not user_id and not user_email:
+        return 'free'
+    
+    try:
+        with get_db_cursor() as cursor:
+            # Check by user_id first
+            if user_id:
+                cursor.execute("""
+                    SELECT subscription_status 
+                    FROM user_subscriptions 
+                    WHERE user_id = %s 
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                """, (user_id,))
+                
+                result = cursor.fetchone()
+                if result and result['subscription_status'] == 'premium':
+                    logger.info(f"User {user_id} has premium subscription")
+                    return 'premium'
+            
+            # Check by email if we have it
+            if user_email:
+                cursor.execute("""
+                    SELECT subscription_status 
+                    FROM user_subscriptions 
+                    WHERE email = %s 
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                """, (user_email,))
+                
+                result = cursor.fetchone()
+                if result and result['subscription_status'] == 'premium':
+                    logger.info(f"User {user_email} has premium subscription")
+                    return 'premium'
+        
+        logger.debug(f"User {'ID ' + str(user_id) if user_id else 'email ' + str(user_email)} has free subscription")
+        return 'free'
+        
+    except Exception as e:
+        logger.error(f"Error checking subscription tier: {e}")
+        # Default to free on error
+        return 'free'
+
+# Update the hourly limits for premium users
+HOURLY_LIMITS = {
+    'free': 3,      # Free users: 3 generations per hour
+    'premium': 20   # Premium users: 20 generations per hour
+}

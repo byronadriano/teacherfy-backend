@@ -1,7 +1,7 @@
-# src/utils/decorators.py
+# src/utils/decorators.py - Step 2 Version
 from functools import wraps
 from flask import request, jsonify, session
-from src.db.usage import check_user_limits, increment_usage
+from src.db.usage import check_user_limits, increment_usage, check_and_reset_hourly_limits, increment_hourly_usage, HOURLY_LIMITS, get_user_subscription_tier
 from src.config import logger
 
 def is_example_request(request_data):
@@ -82,8 +82,7 @@ def is_test_request(request_data):
 
 def check_usage_limits(action_type='generation', skip_increment=False):
     """
-    FIXED: Decorator to check monthly usage limits before allowing access.
-    Now supports test requests that count against limits but don't make expensive API calls.
+    ENHANCED: Decorator with subscription tier detection and proper rate limiting.
     """
     def decorator(f):
         @wraps(f)
@@ -114,7 +113,31 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                 if is_test:
                     logger.info("TEST REQUEST DETECTED - Will count against limits but avoid expensive API calls")
                 
-                # Check limits for non-example requests
+                # NEW: Check hourly limits with real subscription detection (Step 2)
+                current_hourly_usage = check_and_reset_hourly_limits(user_id, ip_address)
+                
+                # Get user's actual subscription tier
+                user_email = user_info.get('email') if user_info else None
+                user_tier = get_user_subscription_tier(user_id, user_email)
+                hourly_limit = HOURLY_LIMITS.get(user_tier, 3)
+                
+                logger.info(f"User tier: {user_tier}, hourly limit: {hourly_limit}, current usage: {current_hourly_usage}")
+                
+                if current_hourly_usage >= hourly_limit:
+                    logger.warning(f"Hourly limit reached for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                    
+                    return jsonify({
+                        "error": "Rate limit exceeded",
+                        "limit_reached": True,
+                        "require_upgrade": user_tier == 'free',
+                        "hourly_limit": hourly_limit,
+                        "hourly_used": current_hourly_usage,
+                        "user_tier": user_tier,
+                        "reset_time": "1 hour",
+                        "message": f"You've reached your hourly limit of {hourly_limit} generations. {'Upgrade to premium for higher limits!' if user_tier == 'free' else 'Please wait an hour before generating more content.'}"
+                    }), 429  # Use 429 for rate limiting
+                
+                # Continue with existing monthly check...
                 usage = check_user_limits(user_id, ip_address)
                 
                 # For generation endpoints, check generation limits
@@ -152,6 +175,10 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                     try:
                         increment_usage(ip_address, user_id, action_type)
                         logger.info(f"Incremented {action_type} usage for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                        
+                        # NEW: Also increment hourly usage (Step 1)
+                        increment_hourly_usage(user_id, ip_address)
+                        
                         if is_test:
                             logger.info("  ^^ This was a TEST REQUEST (no OpenAI API cost)")
                     except Exception as increment_error:
@@ -202,7 +229,8 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                                         "generations_left": updated_usage['generations_left'],
                                         "downloads_left": updated_usage['downloads_left'],
                                         "reset_time": updated_usage['reset_time'],
-                                        "is_premium": user_info.get('is_premium', False),
+                                        "is_premium": user_tier == 'premium',
+                                        "user_tier": user_tier,
                                         "current_usage": updated_usage['current_usage']
                                     }
                                 })
@@ -220,7 +248,8 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                                     "generations_left": updated_usage['generations_left'],
                                     "downloads_left": updated_usage['downloads_left'],
                                     "reset_time": updated_usage['reset_time'],
-                                    "is_premium": user_info.get('is_premium', False),
+                                    "is_premium": user_tier == 'premium',
+                                    "user_tier": user_tier,
                                     "current_usage": updated_usage['current_usage']
                                 }
                             })

@@ -68,8 +68,8 @@ POSTGRES_PORT=5432
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 GOOGLE_REDIRECT_URI=http://localhost:5000/oauth2callback
-DAILY_GENERATION_LIMIT=5
-DAILY_DOWNLOAD_LIMIT=5
+MONTHLY_GENERATION_LIMIT=15
+MONTHLY_DOWNLOAD_LIMIT=15
 PORT=5000
 EOL
         echo -e "${YELLOW}Please update the .env file with your actual values.${NC}"
