@@ -419,7 +419,7 @@ def build_smart_search_query(features, terms):
 
 def add_image_to_slide(slide, image_bytes, lesson_topic=""):
     """
-    Add an image to a content slide with improved positioning.
+    Add an image to a widescreen slide (13.33" x 7.5") with proper positioning.
     Places image on the right side, centered vertically with text content.
     """
     try:
@@ -430,13 +430,13 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
         with Image.open(image_stream) as img:
             original_width, original_height = img.size
             
-            # Get slide dimensions (standard PowerPoint slide)
-            slide_width = Inches(10)     # Standard slide width
-            slide_height = Inches(7.5)   # Standard slide height
+            # WIDESCREEN slide dimensions (13.33" x 7.5")
+            slide_width = Inches(13.33)  # Widescreen width
+            slide_height = Inches(7.5)   # Standard height
             
-            # IMPROVED POSITIONING: Place image on right side, larger and centered
-            target_width = Inches(3.8)   # Larger width (about 38% of slide)
-            target_height = Inches(3.2)  # Larger height
+            # IMPROVED POSITIONING for widescreen: Place image on right side, larger
+            target_width = Inches(4.5)   # Larger width for widescreen
+            target_height = Inches(3.5)  # Good height for content
             
             # Calculate aspect ratio and adjust if needed
             img_aspect = original_width / original_height
@@ -451,8 +451,8 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
                 final_height = target_height
                 final_width = target_height * img_aspect
             
-            # Position on right side, centered vertically with content area
-            left = slide_width - final_width - Inches(0.4)   # 0.4" margin from right edge
+            # Position on right side of widescreen slide, centered vertically
+            left = slide_width - final_width - Inches(0.5)   # 0.5" margin from right edge
             
             # Center vertically in the content area (below title)
             content_start = Inches(2.0)  # Where content typically starts
@@ -498,7 +498,7 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
             except:
                 pass  # Shadow effects might not be available in all versions
             
-            logger.info(f"Successfully added centered image to slide (size: {final_width} x {final_height}, position: right-center)")
+            logger.info(f"Successfully added image to widescreen slide (size: {final_width} x {final_height}, position: right-center)")
             return True
             
     except Exception as e:
@@ -509,46 +509,115 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
             image_stream.close()
 
 def add_text_box_to_slide(slide, content_items, with_image=False):
-    """Add a text box to the slide with improved positioning for better image/text balance."""
-    if with_image:
-        # Text takes up left 55% of slide, leaving right 40% for image + margins
-        left = Inches(0.6)    # Increased left margin
-        top = Inches(2.1)     # Slightly lower to avoid title overlap
-        width = Inches(5.2)   # Slightly reduced width
-        height = Inches(4.3)  # Slightly reduced height
-    else:
-        # Use full content area if no image
-        left = Inches(0.5)
-        top = Inches(2.0)
-        width = Inches(9.0)
-        height = Inches(5.0)
+    """Add a text box to widescreen slide (13.33" x 7.5") with proper sizing."""
     
+    # WIDESCREEN dimensions
+    slide_width = Inches(13.33)
+    
+    if with_image:
+        # Text takes up left portion of widescreen, leaving right for image
+        left = Inches(0.8)      # Left margin
+        top = Inches(2.1)       # Below title
+        width = Inches(7.5)     # Much wider for widescreen (about 60% of slide)
+        height = Inches(4.2)    # Good height for content
+    else:
+        # Use most of widescreen when no image
+        left = Inches(0.8)
+        top = Inches(2.1)
+        width = Inches(11.5)    # Much wider for widescreen (about 85% of slide)
+        height = Inches(4.5)
+    
+    # Create text box with widescreen-appropriate dimensions
     textbox = slide.shapes.add_textbox(left, top, width, height)
     text_frame = textbox.text_frame
     text_frame.clear()
     
-    # Improve text frame properties for better readability
-    text_frame.margin_left = Inches(0.1)
-    text_frame.margin_right = Inches(0.3)  # More margin on right when image present
+    # Optimize text frame properties for widescreen
+    text_frame.margin_left = Inches(0.2)
+    text_frame.margin_right = Inches(0.3)
     text_frame.margin_top = Inches(0.15)
-    text_frame.margin_bottom = Inches(0.1)
+    text_frame.margin_bottom = Inches(0.15)
     text_frame.word_wrap = True
-    text_frame.auto_size = None  # Disable auto-sizing to prevent overlap
+    text_frame.auto_size = None  # Prevent auto-sizing
     
-    # Use cleaned content
+    # Use cleaned content with larger text for widescreen visibility
     cleaned_items = clean_content_list_for_presentation(content_items)
     
     for item in cleaned_items:
         p = text_frame.add_paragraph()
         p.text = f"• {item}"
         p.font.name = STYLE['fonts']['body']
-        p.font.size = STYLE['sizes']['body']
+        p.font.size = Pt(20)              # Larger font for widescreen
         p.font.color.rgb = STYLE['colors']['body']
-        p.space_after = Pt(8)  # Consistent spacing
-        p.line_spacing = 1.2   # Better line spacing
+        p.space_after = Pt(8)             # More spacing for readability
+        p.line_spacing = 1.2              # Good line spacing
+        p.level = 0                       # Consistent bullet level
     
-    layout_desc = 'with right-side image accommodation' if with_image else 'full content area'
-    logger.info(f"Added text box to slide ({layout_desc})")
+    layout_desc = 'with image accommodation' if with_image else 'full widescreen'
+    logger.info(f"Added widescreen text box ({layout_desc}) - size: {width}x{height}")
+
+def clear_all_placeholder_content(slide):
+    """AGGRESSIVELY clear all placeholder content including master slide placeholders."""
+    try:
+        placeholders_cleared = 0
+        shapes_to_remove = []
+        
+        for shape in slide.shapes:
+            try:
+                # Skip title shapes
+                if shape == slide.shapes.title:
+                    continue
+                
+                # Check if this is a placeholder shape
+                if hasattr(shape, 'is_placeholder') and shape.is_placeholder:
+                    # Try multiple clearing methods
+                    if hasattr(shape, 'text_frame'):
+                        # Method 1: Clear the text frame
+                        shape.text_frame.clear()
+                        
+                        # Method 2: Set text to empty
+                        if hasattr(shape.text_frame, 'text'):
+                            shape.text_frame.text = ""
+                        
+                        # Method 3: Remove all paragraphs and add empty one
+                        try:
+                            shape.text_frame._element.clear()
+                        except:
+                            pass
+                        
+                        placeholders_cleared += 1
+                        logger.debug(f"Aggressively cleared placeholder shape")
+                
+                # Also check by placeholder format
+                elif hasattr(shape, 'placeholder_format'):
+                    placeholder_type = getattr(shape.placeholder_format, 'type', None)
+                    if placeholder_type in [2, 7, 8, 14]:  # Content placeholders
+                        if hasattr(shape, 'text_frame'):
+                            shape.text_frame.clear()
+                            if hasattr(shape.text_frame, 'text'):
+                                shape.text_frame.text = ""
+                            placeholders_cleared += 1
+                            logger.debug(f"Cleared placeholder by type: {placeholder_type}")
+                
+                # Last resort: check for "Click to add" text patterns
+                elif hasattr(shape, 'text_frame') and hasattr(shape.text_frame, 'text'):
+                    text_content = shape.text_frame.text.lower()
+                    if any(phrase in text_content for phrase in ['click to add', 'click to edit', 'add text']):
+                        shape.text_frame.clear()
+                        shape.text_frame.text = ""
+                        placeholders_cleared += 1
+                        logger.debug(f"Cleared shape with placeholder text: {text_content[:20]}")
+                        
+            except Exception as e:
+                logger.debug(f"Could not process shape: {e}")
+                continue
+        
+        logger.info(f"Aggressively cleared {placeholders_cleared} placeholder shapes")
+        return placeholders_cleared > 0
+        
+    except Exception as e:
+        logger.warning(f"Error in aggressive placeholder clearing: {e}")
+        return False
 
 def find_content_placeholder(slide):
     """Find a suitable content placeholder on the slide"""
@@ -591,7 +660,7 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
     if hasattr(create_clean_presentation_with_images, '_image_added'):
         delattr(create_clean_presentation_with_images, '_image_added')
     
-    template_path = os.path.join(os.path.dirname(__file__), 'templates', 'base_template_finalv4.pptx')
+    template_path = os.path.join(os.path.dirname(__file__), 'templates', 'FINAL_base_template_v1.pptx')
     
     # Check if template exists, use fallback if not
     if not os.path.exists(template_path):
@@ -709,52 +778,33 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
                 except Exception as e:
                     logger.warning(f"Failed to add title to slide {slide_index + 1}: {e}")
             
-            # Clean and add content with improved layout for images - FIXED VERSION
+            # WIDESCREEN CONTENT HANDLING - Fixed for 13.33" x 7.5" template
             raw_content_items = slide_data.get('content', [])
             clean_content_items = clean_content_list_for_presentation(raw_content_items)
             
             if clean_content_items:
-                # ALWAYS use text box when image is present for better control
-                if has_image:
-                    logger.info(f"Using text box for slide {slide_index + 1} (image present)")
-                    add_text_box_to_slide(slide, clean_content_items, has_image)
-                    
-                    # If we couldn't add a title through placeholder, add it as text box too
-                    if not title_added and clean_title:
-                        title_box = slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(8), Inches(1))
-                        title_frame = title_box.text_frame
-                        title_para = title_frame.add_paragraph()
-                        title_para.text = clean_title
-                        title_para.font.name = STYLE['fonts']['title']
-                        title_para.font.size = STYLE['sizes']['title']
-                        title_para.font.color.rgb = STYLE['colors']['title']
-                        title_para.font.bold = True
-                        title_para.alignment = PP_ALIGN.CENTER
-                        logger.debug(f"Added title as text box to slide {slide_index + 1}")
-                else:
-                    # Try placeholder first when no image
-                    content_placeholder = find_content_placeholder(slide)
-                    if content_placeholder:
-                        try:
-                            text_frame = content_placeholder.text_frame
-                            text_frame.clear()
-                            
-                            for item in clean_content_items:
-                                p = text_frame.add_paragraph()
-                                p.text = item
-                                p.font.name = STYLE['fonts']['body']
-                                p.font.size = STYLE['sizes']['body']
-                                p.font.color.rgb = STYLE['colors']['body']
-                                p.level = 0  # Main bullet level
-                                p.space_after = Pt(6)  # Add spacing between items
-                            
-                            logger.debug(f"Added {len(clean_content_items)} clean content items to placeholder on slide {slide_index + 1}")
-                        except Exception as e:
-                            logger.warning(f"Placeholder failed on slide {slide_index + 1}, using text box: {e}")
-                            add_text_box_to_slide(slide, clean_content_items, has_image)
-                    else:
-                        logger.info(f"No placeholder found on slide {slide_index + 1}, using text box")
-                        add_text_box_to_slide(slide, clean_content_items, has_image)
+                # ALWAYS clear placeholders and use text boxes for consistency
+                logger.info(f"Using text box for slide {slide_index + 1} (image: {has_image})")
+                
+                # CRITICAL: Clear ALL placeholders to prevent conflicts
+                clear_all_placeholder_content(slide)
+                
+                # Add our custom text box with widescreen sizing
+                add_text_box_to_slide(slide, clean_content_items, has_image)
+                
+                # Handle title if needed
+                if not title_added and clean_title:
+                    # Position title for widescreen
+                    title_box = slide.shapes.add_textbox(Inches(1.5), Inches(0.5), Inches(10), Inches(1))
+                    title_frame = title_box.text_frame
+                    title_para = title_frame.add_paragraph()
+                    title_para.text = clean_title
+                    title_para.font.name = STYLE['fonts']['title']
+                    title_para.font.size = STYLE['sizes']['title']
+                    title_para.font.color.rgb = STYLE['colors']['title']
+                    title_para.font.bold = True
+                    title_para.alignment = PP_ALIGN.CENTER
+                    logger.debug(f"Added widescreen title as text box to slide {slide_index + 1}")
         
         except Exception as e:
             logger.error(f"Error creating slide {slide_index + 1}: {e}")
