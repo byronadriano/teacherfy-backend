@@ -1,4 +1,4 @@
-# src/utils/decorators.py - FIXED to ensure regeneration counts as generation
+# src/utils/decorators.py - IMPROVED with clear user vs IP separation
 from functools import wraps
 from flask import request, jsonify, session
 from src.db.usage import check_user_limits, increment_usage, check_and_reset_hourly_limits, increment_hourly_usage, HOURLY_LIMITS, get_user_subscription_tier
@@ -82,7 +82,7 @@ def is_test_request(request_data):
 
 def check_usage_limits(action_type='generation', skip_increment=False):
     """
-    FIXED: Decorator that properly counts regeneration as generation and enforces tier limits.
+    IMPROVED: Decorator with clear separation between user and IP tracking.
     """
     def decorator(f):
         @wraps(f)
@@ -91,15 +91,18 @@ def check_usage_limits(action_type='generation', skip_increment=False):
             user_info = session.get('user_info', {})
             user_id = user_info.get('id')
             
-            # Get IP address for anonymous users
+            # Get IP address for anonymous users only
             ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
             if ip_address:
                 ip_address = ip_address.split(',')[0].strip()
             
-            # FIXED: Use a different variable name to avoid shadowing the parameter
             effective_action_type = action_type
             
-            logger.info(f"Checking {effective_action_type} limits for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+            # IMPROVED: Clear logging about what we're tracking
+            if user_id:
+                logger.info(f"Checking {effective_action_type} limits for REGISTERED USER {user_id}")
+            else:
+                logger.info(f"Checking {effective_action_type} limits for ANONYMOUS IP {ip_address}")
             
             try:
                 # Get request data
@@ -120,25 +123,33 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                 
                 if is_regeneration:
                     logger.info("REGENERATION REQUEST DETECTED - Will count as generation")
-                    effective_action_type = 'generation'  # Force regeneration to count as generation
+                    effective_action_type = 'generation'
                 
                 # Check if this is a test request (counts against limits but noted for logging)
                 is_test = is_test_request(request_data)
                 if is_test:
                     logger.info("TEST REQUEST DETECTED - Will count against limits but avoid expensive API calls")
                 
-                # Get user's actual subscription tier
-                user_email = user_info.get('email') if user_info else None
-                user_tier = get_user_subscription_tier(user_id, user_email)
+                # IMPROVED: Get user's tier (only for registered users)
+                if user_id:
+                    user_tier = get_user_subscription_tier(user_id, user_info.get('email'))
+                    logger.info(f"Registered user tier: {user_tier}")
+                else:
+                    user_tier = 'free'  # Anonymous users are always free
+                    logger.info(f"Anonymous user tier: {user_tier}")
                 
-                # Check hourly limits first
-                current_hourly_usage = check_and_reset_hourly_limits(user_id, ip_address)
+                # Check hourly limits first (applies to both user and IP tracking)
+                if user_id:
+                    current_hourly_usage = check_and_reset_hourly_limits(user_id, None)
+                else:
+                    current_hourly_usage = check_and_reset_hourly_limits(None, ip_address)
+                    
                 hourly_limit = HOURLY_LIMITS.get(user_tier, 3)
                 
-                logger.info(f"User tier: {user_tier}, hourly limit: {hourly_limit}, current usage: {current_hourly_usage}")
+                logger.info(f"Hourly limit check: {current_hourly_usage}/{hourly_limit}")
                 
                 if current_hourly_usage >= hourly_limit:
-                    logger.warning(f"Hourly limit reached for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                    logger.warning(f"Hourly limit reached for {'registered user ' + str(user_id) if user_id else 'anonymous IP ' + str(ip_address)}")
                     
                     return jsonify({
                         "error": "Rate limit exceeded",
@@ -148,15 +159,19 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                         "hourly_used": current_hourly_usage,
                         "user_tier": user_tier,
                         "reset_time": "1 hour",
+                        "tracking_method": "user_id" if user_id else "ip_address",
                         "message": f"You've reached your hourly limit of {hourly_limit} generations. {'Upgrade to premium for higher limits!' if user_tier == 'free' else 'Please wait an hour before generating more content.'}"
                     }), 429
                 
                 # Check monthly limits (only for free users)
                 if user_tier == 'free' and effective_action_type == 'generation':
-                    usage = check_user_limits(user_id, ip_address)
+                    if user_id:
+                        usage = check_user_limits(user_id, None)
+                    else:
+                        usage = check_user_limits(None, ip_address)
                     
                     if not usage['can_generate']:
-                        logger.warning(f"Monthly generation limit reached for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                        logger.warning(f"Monthly generation limit reached for {'registered user ' + str(user_id) if user_id else 'anonymous IP ' + str(ip_address)}")
                         
                         return jsonify({
                             "error": "Monthly generation limit reached",
@@ -167,14 +182,19 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                             "monthly_limit": 10,
                             "reset_time": usage.get('reset_time'),
                             "user_tier": user_tier,
+                            "tracking_method": "user_id" if user_id else "ip_address",
                             "message": f"You have used all {usage['current_usage']['generations_used']} of your free monthly generations. Upgrade to premium for unlimited access."
                         }), 403
                 
                 # For download endpoints, check download limits
                 if effective_action_type == 'download':
-                    usage = check_user_limits(user_id, ip_address)
+                    if user_id:
+                        usage = check_user_limits(user_id, None)
+                    else:
+                        usage = check_user_limits(None, ip_address)
+                        
                     if not usage['can_download']:
-                        logger.warning(f"Download limit reached for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                        logger.warning(f"Download limit reached for {'registered user ' + str(user_id) if user_id else 'anonymous IP ' + str(ip_address)}")
                         
                         return jsonify({
                             "error": "Monthly download limit reached",
@@ -185,19 +205,26 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                             "monthly_limit": 10,
                             "reset_time": usage.get('reset_time'),
                             "user_tier": user_tier,
+                            "tracking_method": "user_id" if user_id else "ip_address",
                             "message": f"You have used all {usage['current_usage']['downloads_used']} of your free monthly downloads. Upgrade to premium for unlimited access."
                         }), 403
                 
                 # Increment usage BEFORE calling the function (to prevent race conditions)
                 if not skip_increment:
                     try:
-                        # FIXED: Always increment for regeneration as generation
+                        # IMPROVED: Clear separation - either track by user_id OR ip_address, never both
                         increment_type = 'generation' if is_regeneration else effective_action_type
-                        increment_usage(ip_address, user_id, increment_type)
-                        logger.info(f"Incremented {increment_type} usage for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
                         
-                        # Also increment hourly usage
-                        increment_hourly_usage(user_id, ip_address)
+                        if user_id:
+                            # Registered user: track by user_id, ignore IP
+                            increment_usage(None, user_id, increment_type)
+                            increment_hourly_usage(user_id, None)
+                            logger.info(f"Incremented {increment_type} usage for REGISTERED USER {user_id}")
+                        else:
+                            # Anonymous user: track by IP, no user_id
+                            increment_usage(ip_address, None, increment_type)
+                            increment_hourly_usage(None, ip_address)
+                            logger.info(f"Incremented {increment_type} usage for ANONYMOUS IP {ip_address}")
                         
                         if is_test:
                             logger.info("  ^^ This was a TEST REQUEST (no expensive API cost)")
@@ -239,7 +266,10 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                 # For JSON responses, add updated usage limits (only for generation endpoints)
                 if effective_action_type == 'generation' or is_regeneration:
                     # Get updated usage after increment
-                    updated_usage = check_user_limits(user_id, ip_address)
+                    if user_id:
+                        updated_usage = check_user_limits(user_id, None)
+                    else:
+                        updated_usage = check_user_limits(None, ip_address)
                     
                     if isinstance(result, tuple):
                         response, status_code = result
@@ -253,7 +283,8 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                                         "reset_time": updated_usage['reset_time'],
                                         "is_premium": user_tier == 'premium',
                                         "user_tier": user_tier,
-                                        "current_usage": updated_usage['current_usage']
+                                        "current_usage": updated_usage['current_usage'],
+                                        "tracking_method": "user_id" if user_id else "ip_address"
                                     }
                                 })
                                 return jsonify(response_data), status_code
@@ -272,7 +303,8 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                                     "reset_time": updated_usage['reset_time'],
                                     "is_premium": user_tier == 'premium',
                                     "user_tier": user_tier,
-                                    "current_usage": updated_usage['current_usage']
+                                    "current_usage": updated_usage['current_usage'],
+                                    "tracking_method": "user_id" if user_id else "ip_address"
                                 }
                             })
                             return jsonify(response_data)

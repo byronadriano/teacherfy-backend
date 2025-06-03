@@ -1,4 +1,4 @@
-# src/db/usage.py - FIXED VERSION with correct tier limits
+# src/db/usage.py - IMPROVED VERSION with clear separation of user vs IP tracking
 import os
 import logging
 import traceback
@@ -51,11 +51,11 @@ def sanitize_ip_address(ip_address):
 def get_user_subscription_tier(user_id, user_email=None):
     """
     Get user's subscription tier. Returns 'free' or 'premium'.
+    Only checks user table, never IP-based records.
     """
-    from src.db.database import get_db_cursor
-    
     # Default to free for anonymous users
     if not user_id and not user_email:
+        logger.debug("No user_id or email provided - returning free tier")
         return 'free'
     
     try:
@@ -73,12 +73,17 @@ def get_user_subscription_tier(user_id, user_email=None):
                     tier = result.get('subscription_tier', 'free')
                     status = result.get('subscription_status', 'inactive')
                     
+                    logger.debug(f"User {user_id} has tier: {tier}, status: {status}")
+                    
                     if tier == 'premium' and status == 'active':
                         logger.info(f"User {user_id} has active premium subscription")
                         return 'premium'
+                    else:
+                        logger.info(f"User {user_id} has {tier} subscription with status {status}")
+                        return 'free'
             
-            # Check by email if we have it
-            if user_email:
+            # Check by email if we have it and no user_id
+            if user_email and not user_id:
                 cursor.execute("""
                     SELECT subscription_tier, subscription_status 
                     FROM users 
@@ -90,11 +95,13 @@ def get_user_subscription_tier(user_id, user_email=None):
                     tier = result.get('subscription_tier', 'free')
                     status = result.get('subscription_status', 'inactive')
                     
+                    logger.debug(f"User {user_email} has tier: {tier}, status: {status}")
+                    
                     if tier == 'premium' and status == 'active':
                         logger.info(f"User {user_email} has active premium subscription")
                         return 'premium'
         
-        logger.debug(f"User {'ID ' + str(user_id) if user_id else 'email ' + str(user_email)} has free subscription")
+        logger.debug(f"User {'ID ' + str(user_id) if user_id else 'email ' + str(user_email)} defaulting to free subscription")
         return 'free'
         
     except Exception as e:
@@ -103,27 +110,63 @@ def get_user_subscription_tier(user_id, user_email=None):
 
 def increment_usage(ip_address=None, user_id=None, action_type='generation'):
     """
-    Increment the usage count for a user or IP address with tier-aware MONTHLY limits.
+    IMPROVED: Increment usage with clear separation between user and IP tracking.
+    - If user_id is provided: track by user_id only, ignore ip_address for tracking
+    - If no user_id: track by ip_address only (anonymous users)
     """
-    ip_address = sanitize_ip_address(ip_address)
-    if not ip_address:
-        raise ValueError("IP address is required")
-
-    logger.info(f"Incrementing {action_type} usage for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+    logger.info(f"Incrementing {action_type} usage for {'user ' + str(user_id) if user_id else 'IP ' + str(ip_address)}")
 
     try:
-        # Get user's subscription tier
-        user_tier = get_user_subscription_tier(user_id, None)
+        # Get user's subscription tier (only matters for registered users)
+        user_tier = get_user_subscription_tier(user_id, None) if user_id else 'free'
         logger.info(f"User tier: {user_tier}")
         
-        # For premium users with unlimited generations, don't track monthly limits
+        # For premium users with unlimited generations, still track for analytics but note unlimited
         if user_tier == 'premium' and action_type == 'generation':
-            logger.info("Premium user - skipping monthly generation limit tracking")
-            # Still track for analytics but don't enforce limits
+            logger.info("Premium user - tracking for analytics but no limits enforced")
         
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
-                if user_id is None:
+                if user_id:
+                    # REGISTERED USER: Track by user_id only, use placeholder IP
+                    logger.debug(f"Tracking usage for registered user {user_id}")
+                    cursor.execute("""
+                        INSERT INTO user_usage_limits 
+                          (user_id, ip_address, generations_used, downloads_used, last_reset)
+                        VALUES 
+                          (%s, '0.0.0.0', 
+                           CASE WHEN %s = 'generation' THEN 1 ELSE 0 END, 
+                           CASE WHEN %s = 'download' THEN 1 ELSE 0 END, 
+                           CURRENT_TIMESTAMP)
+                        ON CONFLICT (user_id) WHERE user_id IS NOT NULL DO UPDATE 
+                        SET 
+                          generations_used = CASE 
+                            WHEN EXTRACT(MONTH FROM user_usage_limits.last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                              OR EXTRACT(YEAR FROM user_usage_limits.last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                              THEN CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
+                            ELSE user_usage_limits.generations_used + CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
+                          END,
+                          downloads_used = CASE 
+                            WHEN EXTRACT(MONTH FROM user_usage_limits.last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                              OR EXTRACT(YEAR FROM user_usage_limits.last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                              THEN CASE WHEN %s = 'download' THEN 1 ELSE 0 END
+                            ELSE user_usage_limits.downloads_used + CASE WHEN %s = 'download' THEN 1 ELSE 0 END
+                          END,
+                          last_reset = CURRENT_TIMESTAMP,
+                          ip_address = '0.0.0.0'  -- Always use placeholder for registered users
+                    """, (
+                        user_id,
+                        action_type, action_type,
+                        action_type, action_type,
+                        action_type, action_type
+                    ))
+                else:
+                    # ANONYMOUS USER: Track by IP only
+                    ip_address = sanitize_ip_address(ip_address)
+                    if not ip_address:
+                        raise ValueError("IP address is required for anonymous users")
+                    
+                    logger.debug(f"Tracking usage for anonymous IP {ip_address}")
                     cursor.execute("""
                         INSERT INTO user_usage_limits 
                           (user_id, ip_address, generations_used, downloads_used, last_reset)
@@ -153,39 +196,9 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
                         action_type, action_type,
                         action_type, action_type
                     ))
-                else:
-                    cursor.execute("""
-                        INSERT INTO user_usage_limits 
-                          (user_id, ip_address, generations_used, downloads_used, last_reset)
-                        VALUES 
-                          (%s, %s, 
-                           CASE WHEN %s = 'generation' THEN 1 ELSE 0 END, 
-                           CASE WHEN %s = 'download' THEN 1 ELSE 0 END, 
-                           CURRENT_TIMESTAMP)
-                        ON CONFLICT (user_id) WHERE user_id IS NOT NULL DO UPDATE 
-                        SET 
-                          generations_used = CASE 
-                            WHEN EXTRACT(MONTH FROM user_usage_limits.last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
-                              OR EXTRACT(YEAR FROM user_usage_limits.last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
-                              THEN CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
-                            ELSE user_usage_limits.generations_used + CASE WHEN %s = 'generation' THEN 1 ELSE 0 END
-                          END,
-                          downloads_used = CASE 
-                            WHEN EXTRACT(MONTH FROM user_usage_limits.last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
-                              OR EXTRACT(YEAR FROM user_usage_limits.last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
-                              THEN CASE WHEN %s = 'download' THEN 1 ELSE 0 END
-                            ELSE user_usage_limits.downloads_used + CASE WHEN %s = 'download' THEN 1 ELSE 0 END
-                          END,
-                          last_reset = CURRENT_TIMESTAMP
-                    """, (
-                        user_id, ip_address,
-                        action_type, action_type,
-                        action_type, action_type,
-                        action_type, action_type
-                    ))
             
             conn.commit()
-            logger.info(f"Successfully incremented {action_type} usage for {user_tier} user")
+            logger.info(f"Successfully incremented {action_type} usage for {user_tier} {'user' if user_id else 'anonymous'}")
     except Exception as e:
         logger.error(f"Error incrementing usage: {e}")
         logger.error(traceback.format_exc())
@@ -193,45 +206,70 @@ def increment_usage(ip_address=None, user_id=None, action_type='generation'):
 
 def check_user_limits(user_id=None, ip_address=None):
     """
-    Check usage limits for a user or IP address with tier awareness.
+    IMPROVED: Check usage limits with clear separation.
+    - If user_id provided: check user-based limits only
+    - If no user_id: check IP-based limits only
     """
-    ip_address = sanitize_ip_address(ip_address)
-    if not ip_address:
-        raise ValueError("IP address is required")
+    logger.info(f"Checking limits for {'user ' + str(user_id) if user_id else 'IP ' + str(ip_address)}")
 
     # Get user's subscription tier
-    user_tier = get_user_subscription_tier(user_id, None)
-    logger.info(f"Checking limits for {user_tier} user {'ID ' + str(user_id) if user_id else 'IP ' + ip_address}")
+    user_tier = get_user_subscription_tier(user_id, None) if user_id else 'free'
+    logger.info(f"Checking limits for {user_tier} tier")
 
     try:
         with get_db_cursor() as cursor:
-            query = """
-            SELECT 
-              CASE 
-                WHEN EXTRACT(MONTH FROM last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
-                  OR EXTRACT(YEAR FROM last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
-                  OR last_reset IS NULL
-                  THEN 0 
-                ELSE COALESCE(generations_used, 0) 
-              END AS current_generations_used,
-              CASE 
-                WHEN EXTRACT(MONTH FROM last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
-                  OR EXTRACT(YEAR FROM last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
-                  OR last_reset IS NULL
-                  THEN 0 
-                ELSE COALESCE(downloads_used, 0) 
-              END AS current_downloads_used,
-              last_reset
-            FROM user_usage_limits
-            WHERE 
-            """
-            
-            if user_id is not None:
-                query += "user_id = %s"
+            if user_id:
+                # REGISTERED USER: Check by user_id only
+                query = """
+                SELECT 
+                  CASE 
+                    WHEN EXTRACT(MONTH FROM last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                      OR EXTRACT(YEAR FROM last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                      OR last_reset IS NULL
+                      THEN 0 
+                    ELSE COALESCE(generations_used, 0) 
+                  END AS current_generations_used,
+                  CASE 
+                    WHEN EXTRACT(MONTH FROM last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                      OR EXTRACT(YEAR FROM last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                      OR last_reset IS NULL
+                      THEN 0 
+                    ELSE COALESCE(downloads_used, 0) 
+                  END AS current_downloads_used,
+                  last_reset
+                FROM user_usage_limits
+                WHERE user_id = %s
+                """
                 params = (user_id,)
+                logger.debug(f"Checking limits for registered user {user_id}")
             else:
-                query += "user_id IS NULL AND ip_address = %s"
+                # ANONYMOUS USER: Check by IP only
+                ip_address = sanitize_ip_address(ip_address)
+                if not ip_address:
+                    raise ValueError("IP address is required for anonymous users")
+                
+                query = """
+                SELECT 
+                  CASE 
+                    WHEN EXTRACT(MONTH FROM last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                      OR EXTRACT(YEAR FROM last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                      OR last_reset IS NULL
+                      THEN 0 
+                    ELSE COALESCE(generations_used, 0) 
+                  END AS current_generations_used,
+                  CASE 
+                    WHEN EXTRACT(MONTH FROM last_reset) != EXTRACT(MONTH FROM CURRENT_TIMESTAMP)
+                      OR EXTRACT(YEAR FROM last_reset) != EXTRACT(YEAR FROM CURRENT_TIMESTAMP)
+                      OR last_reset IS NULL
+                      THEN 0 
+                    ELSE COALESCE(downloads_used, 0) 
+                  END AS current_downloads_used,
+                  last_reset
+                FROM user_usage_limits
+                WHERE user_id IS NULL AND ip_address = %s
+                """
                 params = (ip_address,)
+                logger.debug(f"Checking limits for anonymous IP {ip_address}")
 
             cursor.execute(query, params)
             usage = cursor.fetchone()
@@ -293,43 +331,50 @@ def check_user_limits(user_id=None, ip_address=None):
     except Exception as e:
         logger.error(f"Error checking user limits: {e}")
         logger.error(traceback.format_exc())
-        # Default to allowing requests on error
+        # Default to allowing requests on error for premium users, restrict for free
+        default_tier = get_user_subscription_tier(user_id, None) if user_id else 'free'
         return {
-            'can_generate': True,
-            'can_download': True,
-            'generations_left': 10,
-            'downloads_left': 10,
+            'can_generate': default_tier == 'premium',
+            'can_download': default_tier == 'premium',
+            'generations_left': 999999 if default_tier == 'premium' else 0,
+            'downloads_left': 999999 if default_tier == 'premium' else 0,
             'reset_time': datetime(2025, 2, 1).isoformat(),
             'current_usage': {
                 'generations_used': 0,
                 'downloads_used': 0
             },
-            'user_tier': 'free',
-            'is_premium': False
+            'user_tier': default_tier,
+            'is_premium': default_tier == 'premium'
         }
 
 def check_and_reset_hourly_limits(user_id, ip_address):
-    """Check and reset hourly limits, return current hourly usage."""
+    """IMPROVED: Check hourly limits with proper user vs IP separation."""
     try:
         with get_db_cursor(commit=True) as cursor:
             now = datetime.now()
             
             if user_id:
+                # Registered user: check by user_id only
                 cursor.execute("""
                     SELECT hourly_generations, last_hourly_reset 
                     FROM user_usage_limits 
                     WHERE user_id = %s
                 """, (user_id,))
+                logger.debug(f"Checking hourly limits for registered user {user_id}")
             else:
+                # Anonymous user: check by IP only
+                ip_address = sanitize_ip_address(ip_address)
                 cursor.execute("""
                     SELECT hourly_generations, last_hourly_reset 
                     FROM user_usage_limits 
                     WHERE user_id IS NULL AND ip_address = %s
                 """, (ip_address,))
+                logger.debug(f"Checking hourly limits for anonymous IP {ip_address}")
             
             result = cursor.fetchone()
             
             if not result:
+                logger.debug("No hourly usage record found")
                 return 0
             
             hourly_generations = result.get('hourly_generations', 0)
@@ -340,6 +385,7 @@ def check_and_reset_hourly_limits(user_id, ip_address):
                     last_hourly_reset = last_hourly_reset.replace(tzinfo=None)
                 
                 if now - last_hourly_reset >= timedelta(hours=1):
+                    # Reset hourly limits
                     if user_id:
                         cursor.execute("""
                             UPDATE user_usage_limits 
@@ -353,7 +399,7 @@ def check_and_reset_hourly_limits(user_id, ip_address):
                             WHERE user_id IS NULL AND ip_address = %s
                         """, (now, ip_address))
                     
-                    logger.info(f"Reset hourly limits for {'user ' + str(user_id) if user_id else 'IP ' + ip_address}")
+                    logger.info(f"Reset hourly limits for {'user ' + str(user_id) if user_id else 'IP ' + str(ip_address)}")
                     return 0
             
             return hourly_generations or 0
@@ -363,25 +409,30 @@ def check_and_reset_hourly_limits(user_id, ip_address):
         return 0
       
 def increment_hourly_usage(user_id, ip_address):
-    """Increment hourly usage counter."""
+    """IMPROVED: Increment hourly usage with proper user vs IP separation."""
     try:
         with get_db_cursor(commit=True) as cursor:
             now = datetime.now()
             
             if user_id:
+                # Registered user: update by user_id only
                 cursor.execute("""
                     UPDATE user_usage_limits 
                     SET hourly_generations = COALESCE(hourly_generations, 0) + 1,
                         last_hourly_reset = COALESCE(last_hourly_reset, %s)
                     WHERE user_id = %s
                 """, (now, user_id))
+                logger.debug(f"Incremented hourly usage for registered user {user_id}")
             else:
+                # Anonymous user: update by IP only
+                ip_address = sanitize_ip_address(ip_address)
                 cursor.execute("""
                     UPDATE user_usage_limits 
                     SET hourly_generations = COALESCE(hourly_generations, 0) + 1,
                         last_hourly_reset = COALESCE(last_hourly_reset, %s)
                     WHERE user_id IS NULL AND ip_address = %s
                 """, (now, ip_address))
+                logger.debug(f"Incremented hourly usage for anonymous IP {ip_address}")
                 
     except Exception as e:
         logger.error(f"Error incrementing hourly usage: {e}")
