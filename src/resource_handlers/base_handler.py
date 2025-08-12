@@ -126,6 +126,9 @@ class BaseResourceHandler:
             r'\(답:\s*([^)]+)\)',          # Korean: (답: ...)
             r'\(Jawaban:\s*([^)]+)\)',     # Indonesian: (Jawaban: ...)
             r'\(Câu trả lời:\s*([^)]+)\)', # Vietnamese: (Câu trả lời: ...)
+            # Handle malformed patterns where answer leaks into question text
+            r'([A-D]\)) [A-Za-z0-9\s/-]+\s+([A-Za-z0-9\s/-]+\s*-\s*.+?)(?:\)|\s*$)',  # Multiple choice with leaked answer
+            r'Answer:\s*([^(]+?)(?:\)|$)',  # Answer: pattern without parentheses
         ]
         
         for pattern in answer_patterns:
@@ -171,8 +174,8 @@ class BaseResourceHandler:
             question, answer = self.extract_question_and_answer(item)
             if question:
                 questions.append(question)
-                if answer:
-                    answers.append(answer)
+                # Always append an answer for every question to keep lists in sync
+                answers.append(answer if answer else "(Answer not provided)")
         
         return questions, answers
 
@@ -244,6 +247,14 @@ class BaseResourceHandler:
                 'layout': item.get('layout', 'TITLE_AND_CONTENT'),
                 'content': self.clean_content_list(item.get('content', []))
             }
+            
+            # Preserve structured data for new format
+            if 'structured_questions' in item:
+                cleaned_item['structured_questions'] = item['structured_questions']
+            if 'teacher_notes' in item:
+                cleaned_item['teacher_notes'] = item['teacher_notes']
+            if 'differentiation_tips' in item:
+                cleaned_item['differentiation_tips'] = item['differentiation_tips']
             
             # Resource-specific cleaning
             if resource_type.upper() == "QUIZ":

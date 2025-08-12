@@ -17,3 +17,27 @@ __pycache__/
 *backup_20250519_111856/
 src/presentation_routes.py
 src/presentation_routes.py.backup
+CLAUDE.md
+.claude/settings.json
+*examples/
+*archive/
+
+# Archive folders and test files created by Claude Code
+archive_temp/
+temp/
+*_temp/
+test_*.py
+quick_*.py
+generate_*.py
+*_test_*.py
+*_TEMP_*
+*_ARCHIVE_*
+CLEANUP_SUMMARY.md
+
+# Generated documents from testing
+*.docx
+*.pptx
+*.pdf
+*QUIZ_*.docx
+*TEST_*.docx
+*SAMPLE_*.docx

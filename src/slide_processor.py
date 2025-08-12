@@ -417,6 +417,67 @@ def build_smart_search_query(features, terms):
     logger.debug(f"Final search query: '{result}'")
     return result
 
+def _enhance_structured_content_for_presentation(structured_content):
+    """Enhance structured content for better PowerPoint presentation processing"""
+    
+    if not structured_content or not isinstance(structured_content, list):
+        return structured_content
+    
+    enhanced_content = []
+    
+    for slide_data in structured_content:
+        if not isinstance(slide_data, dict):
+            continue
+            
+        enhanced_slide = {
+            'title': slide_data.get('title', 'Untitled'),
+            'layout': slide_data.get('layout', 'TITLE_AND_CONTENT'),
+            'content': []
+        }
+        
+        # Process content intelligently
+        raw_content = slide_data.get('content', [])
+        
+        if isinstance(raw_content, list):
+            for item in raw_content:
+                if isinstance(item, str):
+                    # Clean and filter content
+                    cleaned_item = clean_text_for_presentation(item)
+                    if cleaned_item and not _is_metadata_content(cleaned_item):
+                        enhanced_slide['content'].append(cleaned_item)
+        
+        # Add metadata as separate fields for processing
+        if 'structured_questions' in slide_data:
+            enhanced_slide['structured_questions'] = slide_data['structured_questions']
+        
+        if 'teacher_notes' in slide_data:
+            enhanced_slide['teacher_notes'] = slide_data['teacher_notes']
+            
+        if 'differentiation_tips' in slide_data:
+            enhanced_slide['differentiation_tips'] = slide_data['differentiation_tips']
+        
+        enhanced_content.append(enhanced_slide)
+    
+    logger.info(f"Enhanced {len(structured_content)} slides for presentation processing")
+    return enhanced_content
+
+def _is_metadata_content(content_text):
+    """Check if content is metadata that shouldn't appear on slides"""
+    
+    metadata_indicators = [
+        'teacher note:',
+        'differentiation tip:',
+        'assessment check:',
+        'for teachers:',
+        'instructor guidance:',
+        'teaching strategy:',
+        'lesson plan:'
+    ]
+    
+    content_lower = content_text.lower().strip()
+    
+    return any(content_lower.startswith(indicator) for indicator in metadata_indicators)
+
 def add_image_to_slide(slide, image_bytes, lesson_topic=""):
     """
     Add an image to a widescreen slide (13.33" x 7.5") with proper positioning.
@@ -656,9 +717,10 @@ def find_content_placeholder(slide):
 
 def create_clean_presentation_with_images(structured_content, include_images=False):
     """Create a PowerPoint presentation from clean structured content with enhanced images"""
-    # Reset the image tracking flag
-    if hasattr(create_clean_presentation_with_images, '_image_added'):
-        delattr(create_clean_presentation_with_images, '_image_added')
+    # Initialize for enhanced per-slide image processing
+    
+    # Enhanced content processing for JSON structured data
+    processed_content = _enhance_structured_content_for_presentation(structured_content)
     
     template_path = os.path.join(os.path.dirname(__file__), 'templates', 'FINAL_base_template_v1.pptx')
     
@@ -684,32 +746,15 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
         prs = Presentation()
     
     # Initialize Unsplash service if images are requested
-    unsplash_photo_data = None
-    image_bytes = None
+    unsplash_service = None
     
     if include_images:
         try:
-            from src.services.unsplash_service import unsplash_service
-            
-            # Generate enhanced search query from lesson content
-            search_query = extract_enhanced_search_keywords(structured_content)
-            logger.info(f"Searching for image with enhanced query: '{search_query}'")
-            
-            # Search for image
-            unsplash_photo_data = unsplash_service.search_photo(search_query)
-            
-            if unsplash_photo_data:
-                # Download image
-                image_bytes = unsplash_service.download_photo(unsplash_photo_data)
-                if image_bytes:
-                    logger.info(f"Successfully retrieved relevant image by {unsplash_photo_data['photographer_name']} for query '{search_query}'")
-                else:
-                    logger.warning("Failed to download image from Unsplash")
-            else:
-                logger.warning(f"No suitable image found for enhanced query: '{search_query}'")
-                
+            from src.services.unsplash_service import unsplash_service as us
+            unsplash_service = us
+            logger.info("Unsplash service initialized for per-slide image generation")
         except Exception as e:
-            logger.error(f"Error fetching image from Unsplash: {e}")
+            logger.error(f"Error initializing Unsplash service: {e}")
             include_images = False  # Disable images for this generation
     
     # Log available slide layouts for debugging
@@ -722,7 +767,7 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
             logger.debug(f"Layout {i}: Unknown layout")
     
     # Process each slide with clean structure and improved layout
-    for slide_index, slide_data in enumerate(structured_content):
+    for slide_index, slide_data in enumerate(processed_content):
         try:
             # Try different layouts in order of preference
             layout_indices_to_try = [1, 0, 2, 3, 4]  # Title+Content, Title, Section, etc.
@@ -743,19 +788,65 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
                 slide = prs.slides.add_slide(prs.slide_layouts[0])
                 logger.warning(f"Using fallback layout 0 for slide {slide_index + 1}")
             
-            # Add image to first content slide (skip logo/title slides) with enhanced relevance
+            # Add contextually relevant image to each content slide
             has_image = False
-            if include_images and image_bytes:
-                # Check if this is the first slide with actual content
-                slide_content = slide_data.get('content', [])
-                clean_content = clean_content_list_for_presentation(slide_content)
-                
-                # Add image to first slide that has meaningful content
-                if clean_content and not hasattr(create_clean_presentation_with_images, '_image_added'):
-                    has_image = add_image_to_slide(slide, image_bytes, slide_data.get('title', ''))
-                    # Mark that we've added an image to prevent adding to multiple slides
-                    create_clean_presentation_with_images._image_added = True
-                    logger.info(f"Added enhanced relevant image to slide {slide_index + 1} (first content slide)")
+            if include_images and unsplash_service and slide_index > 0:  # Skip learning objectives slide
+                try:
+                    # Create search query from slide title and content
+                    slide_title = slide_data.get('title', '')
+                    slide_content = slide_data.get('content', [])
+                    
+                    # Generate search keywords from this specific slide
+                    search_keywords = []
+                    if slide_title and slide_title != 'Learning Objectives':
+                        search_keywords.append(slide_title.lower())
+                    
+                    # Extract key terms from slide content
+                    content_text = ' '.join(slide_content).lower()
+                    for content_item in slide_content[:2]:  # Use first 2 content items
+                        words = content_item.lower().split()
+                        # Extract meaningful words (nouns, specific terms)
+                        meaningful_words = [w for w in words if len(w) > 4 and w not in ['students', 'will', 'able', 'example', 'today']]
+                        search_keywords.extend(meaningful_words[:2])
+                    
+                    # Create focused search query
+                    search_query = ' '.join(search_keywords[:3])  # Use top 3 keywords
+                    
+                    if search_query.strip():
+                        logger.info(f"Searching for image for slide {slide_index + 1} with query: '{search_query}'")
+                        
+                        # Search for slide-specific image
+                        photo_data = unsplash_service.search_photo(search_query)
+                        if photo_data:
+                            # Download image
+                            image_bytes = unsplash_service.download_photo(photo_data)
+                            if image_bytes:
+                                has_image = add_image_to_slide(slide, image_bytes, slide_title)
+                                
+                                # Add attribution to this slide
+                                try:
+                                    attribution_text = f"Photo: {photo_data['photographer_name']} on Unsplash"
+                                    attr_box = slide.shapes.add_textbox(
+                                        Inches(9.5), Inches(6.8), Inches(3.5), Inches(0.3)
+                                    )
+                                    attr_frame = attr_box.text_frame
+                                    attr_para = attr_frame.add_paragraph()
+                                    attr_para.text = attribution_text
+                                    attr_para.font.size = Pt(8)
+                                    attr_para.font.color.rgb = RGBColor(128, 128, 128)
+                                    attr_para.alignment = PP_ALIGN.RIGHT
+                                except Exception as attr_e:
+                                    logger.warning(f"Failed to add attribution to slide {slide_index + 1}: {attr_e}")
+                                
+                                logger.info(f"Added contextual image to slide {slide_index + 1}: '{slide_title}' by {photo_data['photographer_name']}")
+                            else:
+                                logger.warning(f"Failed to download image for slide {slide_index + 1}")
+                        else:
+                            logger.warning(f"No image found for slide {slide_index + 1} query: '{search_query}'")
+                    
+                except Exception as e:
+                    logger.error(f"Error adding image to slide {slide_index + 1}: {e}")
+                    has_image = False
             
             # Clean and add title
             title_added = False
@@ -833,36 +924,10 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
             except Exception as fallback_error:
                 logger.error(f"Failed to create fallback slide {slide_index + 1}: {fallback_error}")
     
-    # Add attribution for image if used
-    if include_images and unsplash_photo_data and image_bytes:
-        try:
-            # Add a final slide with attribution or add it to the last slide
-            if len(prs.slides) > 0:
-                last_slide = prs.slides[-1]
-                
-                # Add small attribution text at bottom
-                attribution_text = f"Image: {unsplash_photo_data['photographer_name']} on Unsplash"
-                
-                # Add attribution as small text box at bottom
-                attr_box = last_slide.shapes.add_textbox(
-                    Inches(0.5), 
-                    Inches(7), 
-                    Inches(9), 
-                    Inches(0.3)
-                )
-                attr_frame = attr_box.text_frame
-                attr_para = attr_frame.add_paragraph()
-                attr_para.text = attribution_text
-                attr_para.font.size = Pt(8)
-                attr_para.font.color.rgb = RGBColor(128, 128, 128)  # Gray color
-                attr_para.alignment = PP_ALIGN.RIGHT
-                
-                logger.info(f"Added attribution: {attribution_text}")
-                
-        except Exception as e:
-            logger.warning(f"Failed to add image attribution: {e}")
+    # Note: Individual image attributions are now added to each slide that contains an image
+    # This provides better context and proper credit for each specific image used
     
-    logger.info(f"Created presentation with {len(structured_content)} slides (images: {'enabled' if include_images else 'disabled'})")
+    logger.info(f"Created presentation with {len(processed_content)} slides (images: {'enabled' if include_images else 'disabled'})")
     return prs
 
 def generate_search_query_from_content(structured_content, fallback="elementary classroom educational"):

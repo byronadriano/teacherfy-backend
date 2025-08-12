@@ -135,8 +135,14 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                     user_tier = get_user_subscription_tier(user_id, user_info.get('email'))
                     logger.info(f"Registered user tier: {user_tier}")
                 else:
-                    user_tier = 'free'  # Anonymous users are always free
-                    logger.info(f"Anonymous user tier: {user_tier}")
+                    # Check for admin/developer IPs that get premium access
+                    admin_ips = ['127.0.0.1', '::1', '192.168.0.26']  # localhost and local network
+                    if ip_address in admin_ips:
+                        user_tier = 'premium'  # Give admin IPs premium access
+                        logger.info(f"Admin IP {ip_address} - tier: premium")
+                    else:
+                        user_tier = 'free'  # Other anonymous users are free
+                        logger.info(f"Anonymous user tier: {user_tier}")
                 
                 # Check hourly limits first (applies to both user and IP tracking)
                 if user_id:

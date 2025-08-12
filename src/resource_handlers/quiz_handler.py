@@ -59,20 +59,14 @@ class QuizHandler(BaseResourceHandler):
         for section_idx, section in enumerate(self.structured_content):
             section_title = self.clean_markdown_and_formatting(section.get('title', f'Section {section_idx + 1}'))
             
-            # Skip if this is just a title section with no content
-            if not section.get('content'):
+            # Only process sections with structured questions - no legacy support
+            if 'structured_questions' not in section or not section['structured_questions']:
+                logger.warning(f"Skipping section {section_title} - no structured questions found")
                 continue
-            
-            # Extract questions, answers, and teacher guidance
-            questions, answers = self.extract_questions_from_content(section.get('content', []))
-            teacher_notes, differentiation_tips = self.extract_teacher_guidance(section.get('content', []))
-            
-            # Add any teacher_notes from the structured content
-            if section.get('teacher_notes'):
-                for note in section.get('teacher_notes'):
-                    clean_note = self.clean_markdown_and_formatting(note)
-                    if clean_note and not any(keyword in clean_note.lower() for keyword in ['differentiation', 'teacher']):
-                        teacher_notes.append(clean_note)
+                
+            questions, answers = self._extract_from_structured_questions(section['structured_questions'])
+            teacher_notes = section.get('teacher_notes', [])
+            differentiation_tips = section.get('differentiation_tips', [])
             
             # Store teacher data for later use
             all_teacher_data.append({
@@ -140,7 +134,7 @@ class QuizHandler(BaseResourceHandler):
             doc.add_heading(section_data['section_title'], level=2)
             
             # Questions and Answers
-            if section_data['questions'] and section_data['answers']:
+            if section_data['questions'] and len(section_data['answers']) > 0:
                 doc.add_heading("Questions & Answers", level=3)
                 
                 current_q_num = section_data['start_question_num']
@@ -196,3 +190,36 @@ class QuizHandler(BaseResourceHandler):
             raise ValueError("Generated quiz file is empty")
             
         return temp_file
+    
+    def _extract_from_structured_questions(self, structured_questions: List[Dict]) -> tuple[List[str], List[str]]:
+        """Extract questions and answers from structured JSON format"""
+        questions = []
+        answers = []
+        
+        for q_data in structured_questions:
+            question_text = q_data.get('question', '')
+            answer = q_data.get('answer', '')
+            explanation = q_data.get('explanation', '')
+            q_type = q_data.get('type', 'short_answer')
+            
+            # Format question based on type
+            if q_type == 'multiple_choice':
+                options = q_data.get('options', [])
+                if len(options) >= 4:
+                    formatted_question = f"{question_text} A) {options[0]} B) {options[1]} C) {options[2]} D) {options[3]}"
+                else:
+                    formatted_question = question_text
+            else:
+                formatted_question = question_text
+            
+            # Create complete answer with explanation
+            if explanation and explanation != answer:
+                complete_answer = f"{answer} - {explanation}"
+            else:
+                complete_answer = answer
+            
+            questions.append(formatted_question)
+            answers.append(complete_answer)
+        
+        logger.info(f"Extracted {len(questions)} questions from structured format")
+        return questions, answers

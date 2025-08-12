@@ -1,4 +1,4 @@
-# src/outline_routes.py - Updated with DeepSeek API support and Agent integration
+# src/outline_routes.py - Updated with DeepSeek API support
 import os
 import re
 from flask import Blueprint, request, jsonify
@@ -6,9 +6,6 @@ from src.config import logger, client
 from src.utils.decorators import check_usage_limits
 import json
 import traceback
-
-# Import agent coordinator for enhanced content generation
-from src.agents import AgentCoordinator
 
 outline_blueprint = Blueprint("outline_blueprint", __name__)
 
@@ -99,19 +96,6 @@ Content:
         }
     ]
 }
-
-def should_use_agents(request_data):
-    """Check if we should use the agent-based system for content generation"""
-    # Check for explicit opt-out
-    if request_data.get("use_agents") is False:
-        return False  # Explicitly disabled
-    
-    # Check for test requests that shouldn't use agents
-    if is_test_request(request_data):
-        return False  # Use original test data
-    
-    # Default to using agents for all requests (including example bypass)
-    return True
 
 def is_test_request(request_data):
     """Check if this is a test request for limits testing."""
@@ -485,13 +469,8 @@ def get_outline():
 
         # Check for example outline first (before any processing)
         if is_example_request(data):
-            # Check if this should use agents for enhanced example content
-            if should_use_agents(data):
-                logger.info("Example request - using agents for enhanced generation")
-                # Continue to agent processing below
-            else:
-                logger.info("Example request - returning standard example outline")
-                return jsonify(EXAMPLE_OUTLINE_DATA)
+            logger.info("Returning example outline - no usage increment")
+            return jsonify(EXAMPLE_OUTLINE_DATA)
 
         # NEW: Check for test request (counts against limits but doesn't call DeepSeek)
         if is_test_request(data):
@@ -523,49 +502,7 @@ def get_outline():
         if not client:
             return jsonify({"error": "DeepSeek client not initialized"}), 500
 
-        # NEW: Check if we should use the agent-based system
-        if should_use_agents(data):
-            logger.info("Using AGENT-BASED system for enhanced content generation")
-            
-            try:
-                # Initialize agent coordinator
-                agent_coordinator = AgentCoordinator()
-                
-                # Extract requested resources info if available from session/context
-                # For now, we'll use the current resource type but plan for multi-resource support
-                requested_resources = [resource_type]  # Future: extract from frontend session
-                
-                # Generate content using agents
-                structured_content = agent_coordinator.generate_structured_content(
-                    lesson_topic=lesson_topic,
-                    subject_focus=subject_focus,
-                    grade_level=grade_level,
-                    resource_type=resource_type,
-                    language=language,
-                    num_sections=num_items,
-                    standards=selected_standards,
-                    custom_requirements=custom_prompt,
-                    requested_resources=requested_resources
-                )
-                
-                # Generate title using existing function
-                generated_title = generate_outline_title(data, structured_content)
-                
-                # Return clean structured format - no legacy duplication
-                logger.info(f"Agent-based generation complete: {len(structured_content)} sections")
-                return jsonify({
-                    "title": generated_title,
-                    "structured_content": structured_content,
-                    "resource_type": resource_type.lower(),
-                    "generation_method": "agents"
-                })
-                
-            except Exception as e:
-                logger.error(f"Agent-based generation failed: {e}")
-                logger.info("Falling back to original DeepSeek system")
-                # Continue to original system below
-
-        logger.info("Using ORIGINAL DeepSeek system for content generation")
+        logger.info("Making real DeepSeek API call for non-test request...")
 
         # Build requirements
         item_word = "slides" if resource_type.lower() == "presentation" else "sections"

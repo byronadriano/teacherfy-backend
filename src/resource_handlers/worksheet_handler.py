@@ -99,10 +99,15 @@ class WorksheetHandler(BaseResourceHandler):
             
             # Add questions only (no answers, no teacher notes)
             for question in questions:
+                # Clean the question text to avoid Word document corruption
+                clean_question = self.clean_markdown_and_formatting(question)
+                # Remove any problematic characters that might cause corruption
+                clean_question = clean_question.encode('ascii', errors='ignore').decode('ascii')
+                
                 # Add the question with proper numbering
                 question_para = doc.add_paragraph()
                 question_para.add_run(f"{question_counter}. ").bold = True
-                question_para.add_run(question)
+                question_para.add_run(clean_question)
                 
                 # Add answer space
                 if question.endswith('?') or '?' in question:
