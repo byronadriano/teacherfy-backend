@@ -58,28 +58,33 @@ class WorksheetHandler(BaseResourceHandler):
         for section_idx, section in enumerate(self.structured_content):
             section_title = self.clean_markdown_and_formatting(section.get('title', f'Section {section_idx + 1}'))
             
-            # Skip if this is just a title section with no content
-            if not section.get('content'):
-                continue
-            
-            # Extract questions, answers, and teacher guidance
-            questions, answers = self.extract_questions_from_content(section.get('content', []))
-            teacher_notes, differentiation_tips = self.extract_teacher_guidance(section.get('content', []))
-            
-            # Add any additional notes from the content itself
-            content_items = section.get('content', [])
-            for item in content_items:
-                clean_item = self.clean_markdown_and_formatting(item)
-                # Look for teacher guidance within the content
-                if any(keyword in clean_item.lower() for keyword in ['teacher note:', 'differentiation tip:']):
-                    if 'differentiation tip:' in clean_item.lower():
-                        tip = clean_item.split('differentiation tip:', 1)[1].strip()
-                        if tip:
-                            differentiation_tips.append(tip)
-                    elif 'teacher note:' in clean_item.lower():
-                        note = clean_item.split('teacher note:', 1)[1].strip()
-                        if note:
-                            teacher_notes.append(note)
+            # Use structured questions if available (new format), fallback to legacy content parsing
+            if 'structured_questions' in section and section['structured_questions']:
+                questions, answers = self._extract_from_structured_questions(section['structured_questions'])
+                teacher_notes = section.get('teacher_notes', [])
+                differentiation_tips = section.get('differentiation_tips', [])
+            else:
+                # Legacy fallback: extract from content list
+                if not section.get('content'):
+                    continue
+                    
+                questions, answers = self.extract_questions_from_content(section.get('content', []))
+                teacher_notes, differentiation_tips = self.extract_teacher_guidance(section.get('content', []))
+                
+                # Add any additional notes from the content itself
+                content_items = section.get('content', [])
+                for item in content_items:
+                    clean_item = self.clean_markdown_and_formatting(item)
+                    # Look for teacher guidance within the content
+                    if any(keyword in clean_item.lower() for keyword in ['teacher note:', 'differentiation tip:']):
+                        if 'differentiation tip:' in clean_item.lower():
+                            tip = clean_item.split('differentiation tip:', 1)[1].strip()
+                            if tip:
+                                differentiation_tips.append(tip)
+                        elif 'teacher note:' in clean_item.lower():
+                            note = clean_item.split('teacher note:', 1)[1].strip()
+                            if note:
+                                teacher_notes.append(note)
             
             # Store teacher data for later use
             all_teacher_data.append({
@@ -104,18 +109,39 @@ class WorksheetHandler(BaseResourceHandler):
                 # Remove any problematic characters that might cause corruption
                 clean_question = clean_question.encode('ascii', errors='ignore').decode('ascii')
                 
-                # Add the question with proper numbering
-                question_para = doc.add_paragraph()
-                question_para.add_run(f"{question_counter}. ").bold = True
-                question_para.add_run(clean_question)
-                
-                # Add answer space
-                if question.endswith('?') or '?' in question:
-                    # For questions, add a line for answers
-                    doc.add_paragraph("Answer: " + "_" * 50)
+                # Check if it's a multiple choice question (contains newlines with A), B), etc.)
+                if '\n' in clean_question and re.search(r'\b[A-D]\)', clean_question):
+                    # Multiple choice - split into question and options
+                    lines = clean_question.split('\n')
+                    main_question = lines[0]
+                    
+                    # Add main question
+                    question_para = doc.add_paragraph()
+                    question_para.add_run(f"{question_counter}. ").bold = True
+                    question_para.add_run(main_question)
+                    
+                    # Add each option on separate line with proper spacing
+                    for line in lines[1:]:
+                        if line.strip():
+                            option_para = doc.add_paragraph()
+                            option_para.add_run(f"   {line.strip()}")
+                    
+                    # Add answer space
+                    doc.add_paragraph()
+                    doc.add_paragraph("Answer: " + "_" * 20)
                 else:
-                    # For fill-in-the-blank or calculation problems
-                    doc.add_paragraph("_" * 60)
+                    # Regular question
+                    question_para = doc.add_paragraph()
+                    question_para.add_run(f"{question_counter}. ").bold = True
+                    question_para.add_run(clean_question)
+                    
+                    # Add answer space
+                    if question.endswith('?') or '?' in question:
+                        # For questions, add a line for answers
+                        doc.add_paragraph("Answer: " + "_" * 50)
+                    else:
+                        # For fill-in-the-blank or calculation problems
+                        doc.add_paragraph("_" * 60)
                 
                 doc.add_paragraph()  # Add spacing between questions
                 question_counter += 1
@@ -190,3 +216,45 @@ class WorksheetHandler(BaseResourceHandler):
             raise ValueError("Generated worksheet file is empty")
             
         return temp_file
+
+    def _extract_from_structured_questions(self, structured_questions: List[Dict]) -> tuple[List[str], List[str]]:
+        """Extract questions and answers from structured JSON format with improved formatting"""
+        questions = []
+        answers = []
+        
+        for q_data in structured_questions:
+            question_text = q_data.get('question', '')
+            answer = q_data.get('answer', '')
+            explanation = q_data.get('explanation', '')
+            teacher_instruction = q_data.get('teacher_instruction', '')
+            q_type = q_data.get('type', 'short_answer')
+            
+            # Format question based on type
+            if q_type == 'multiple_choice':
+                options = q_data.get('options', [])
+                if len(options) >= 4:
+                    # Format with newlines for proper separation in document
+                    formatted_question = f"{question_text}\nA) {options[0]}\nB) {options[1]}\nC) {options[2]}\nD) {options[3]}"
+                else:
+                    formatted_question = question_text
+            elif q_type == 'fill_blank':
+                # Ensure fill-in-the-blank format
+                if '___' not in question_text and '_' not in question_text:
+                    formatted_question = f"{question_text} ___"
+                else:
+                    formatted_question = question_text
+            else:
+                formatted_question = question_text
+            
+            # Create complete answer with explanation and teacher instruction for teacher guide
+            complete_answer = answer
+            if explanation and explanation != answer:
+                complete_answer += f" ({explanation})"
+            if teacher_instruction:
+                complete_answer += f" [Teacher instruction: {teacher_instruction}]"
+            
+            questions.append(formatted_question)
+            answers.append(complete_answer)
+        
+        logger.info(f"Extracted {len(questions)} worksheet questions from structured format")
+        return questions, answers

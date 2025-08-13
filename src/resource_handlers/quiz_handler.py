@@ -88,12 +88,23 @@ class QuizHandler(BaseResourceHandler):
             for question in questions:
                 # Check if it's a multiple choice question
                 if re.search(r'\b[A-D]\)', question):
-                    # Multiple choice - add question as is
+                    # Multiple choice - split into question and options
+                    lines = question.split('\n')
+                    main_question = lines[0]
+                    
+                    # Add main question
                     question_para = doc.add_paragraph()
                     question_para.add_run(f"{question_counter}. ").bold = True
-                    question_para.add_run(question)
+                    question_para.add_run(main_question)
+                    
+                    # Add each option on separate line with proper spacing
+                    for line in lines[1:]:
+                        if line.strip():
+                            option_para = doc.add_paragraph()
+                            option_para.add_run(f"   {line.strip()}")
                     
                     # Add some space for the answer
+                    doc.add_paragraph()
                     doc.add_paragraph("Answer: _____")
                 else:
                     # Regular question - add question with answer space
@@ -206,7 +217,8 @@ class QuizHandler(BaseResourceHandler):
             if q_type == 'multiple_choice':
                 options = q_data.get('options', [])
                 if len(options) >= 4:
-                    formatted_question = f"{question_text} A) {options[0]} B) {options[1]} C) {options[2]} D) {options[3]}"
+                    # Format with newlines for proper separation in document
+                    formatted_question = f"{question_text}\nA) {options[0]}\nB) {options[1]}\nC) {options[2]}\nD) {options[3]}"
                 else:
                     formatted_question = question_text
             else:

@@ -251,10 +251,16 @@ class BaseResourceHandler:
             # Preserve structured data for new format
             if 'structured_questions' in item:
                 cleaned_item['structured_questions'] = item['structured_questions']
+            if 'structured_activities' in item:
+                cleaned_item['structured_activities'] = item['structured_activities']
             if 'teacher_notes' in item:
                 cleaned_item['teacher_notes'] = item['teacher_notes']
+            if 'teacher_actions' in item:
+                cleaned_item['teacher_actions'] = item['teacher_actions']
             if 'differentiation_tips' in item:
                 cleaned_item['differentiation_tips'] = item['differentiation_tips']
+            if 'assessment_checks' in item:
+                cleaned_item['assessment_checks'] = item['assessment_checks']
             
             # Resource-specific cleaning
             if resource_type.upper() == "QUIZ":

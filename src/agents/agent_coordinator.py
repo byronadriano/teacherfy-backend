@@ -5,11 +5,9 @@ Agent Coordinator - Optimized single-call approach for fast educational content 
 from typing import Dict, List, Any
 from src.config import logger
 from .optimized_quiz_agent import OptimizedQuizAgent
-from .presentation_specialist_agent import (
-    PresentationSpecialistAgent, 
-    WorksheetSpecialistAgent,
-    LessonPlanSpecialistAgent
-)
+from .optimized_worksheet_agent import OptimizedWorksheetAgent
+from .optimized_lesson_plan_agent import OptimizedLessonPlanAgent
+from .presentation_specialist_agent import PresentationSpecialistAgent
 
 class AgentCoordinator:
     """Optimized coordinator using single API calls for faster response times"""
@@ -18,10 +16,97 @@ class AgentCoordinator:
         self.specialist_agents = {
             "presentation": PresentationSpecialistAgent(),
             "quiz": OptimizedQuizAgent(),  # Optimized single-call quiz generation
-            "worksheet": WorksheetSpecialistAgent(),
-            "lesson_plan": LessonPlanSpecialistAgent()
+            "worksheet": OptimizedWorksheetAgent(),  # Optimized single-call worksheet generation
+            "lesson_plan": OptimizedLessonPlanAgent()  # Optimized single-call lesson plan generation
         }
+        self._generated_content = {}  # Store generated content for cross-resource alignment
         logger.info("Agent Coordinator initialized with optimized single-call agents")
+    
+    def generate_multiple_resources(self,
+                                   lesson_topic: str,
+                                   subject_focus: str,
+                                   grade_level: str,
+                                   language: str,
+                                   resource_types: List[str],
+                                   standards: List[str] = None,
+                                   custom_requirements: str = "",
+                                   **kwargs) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Generate multiple resources with proper alignment.
+        Lesson plan is generated LAST using content from other resources.
+        """
+        logger.info(f"Generating multiple aligned resources: {resource_types}")
+        
+        results = {}
+        
+        # Generate non-lesson-plan resources first
+        other_resources = [rt for rt in resource_types if rt != 'lesson_plan' and rt != 'lesson plan']
+        
+        for resource_type in other_resources:
+            logger.info(f"Generating {resource_type}...")
+            results[resource_type] = self.generate_structured_content(
+                lesson_topic=lesson_topic,
+                subject_focus=subject_focus,
+                grade_level=grade_level,
+                resource_type=resource_type,
+                language=language,
+                standards=standards,
+                custom_requirements=custom_requirements,
+                **kwargs
+            )
+        
+        # Generate lesson plan LAST with reference to other resources
+        if 'lesson_plan' in resource_types or 'lesson plan' in resource_types:
+            logger.info("Generating lesson plan with reference to other resources...")
+            
+            # Build reference content summary for lesson plan
+            reference_summary = self._build_reference_summary(results)
+            
+            results['lesson_plan'] = self.generate_structured_content(
+                lesson_topic=lesson_topic,
+                subject_focus=subject_focus,
+                grade_level=grade_level,
+                resource_type='lesson_plan',
+                language=language,
+                standards=standards,
+                custom_requirements=custom_requirements + f"\n\nREFERENCE CONTENT:\n{reference_summary}",
+                requested_resources=list(results.keys()),
+                **kwargs
+            )
+        
+        logger.info(f"Generated {len(results)} aligned resources")
+        return results
+    
+    def _build_reference_summary(self, generated_resources: Dict) -> str:
+        """Build a summary of generated resources for lesson plan reference"""
+        summary_parts = []
+        
+        for resource_type, content in generated_resources.items():
+            if resource_type == 'presentation':
+                slide_titles = []
+                for i, section in enumerate(content, 1):
+                    title = section.get('title', f'Slide {i}')
+                    slide_titles.append(f"Slide {i}: {title}")
+                
+                summary_parts.append(f"PRESENTATION ({len(content)} slides):")
+                summary_parts.extend([f"  - {title}" for title in slide_titles])
+                
+            elif resource_type == 'quiz':
+                summary_parts.append(f"QUIZ ({len(content)} sections):")
+                for section in content:
+                    title = section.get('title', 'Quiz Section')
+                    questions = section.get('structured_questions', [])
+                    question_types = [q.get('type', 'question') for q in questions]
+                    summary_parts.append(f"  - {title}: {len(questions)} questions ({', '.join(set(question_types))})")
+                    
+            elif resource_type == 'worksheet':
+                summary_parts.append(f"WORKSHEET ({len(content)} sections):")
+                for section in content:
+                    title = section.get('title', 'Worksheet Section')
+                    questions = section.get('structured_questions', [])
+                    summary_parts.append(f"  - {title}: {len(questions)} practice problems")
+        
+        return "\n".join(summary_parts)
     
     def generate_structured_content(self,
                                   lesson_topic: str,
@@ -59,22 +144,36 @@ class AgentCoordinator:
             # Single API call through specialist agent (includes embedded research)
             logger.info(f"Generating content with {specialist_agent.name}")
             
-            # Check if this is the optimized quiz agent (different interface)
-            if agent_key == "quiz":
+            # Check if this is an optimized agent (different interface)
+            if agent_key in ["quiz", "worksheet", "lesson_plan"]:
                 # Enhance requirements based on content strategy
                 enhanced_requirements = self._enhance_requirements_for_strategy(
                     custom_requirements, content_strategy, requested_resources
                 )
                 
-                structured_content = specialist_agent.create_structured_content(
-                    lesson_topic=lesson_topic,
-                    subject_focus=subject_focus,
-                    grade_level=grade_level,
-                    language=language,
-                    num_sections=num_sections,
-                    standards=standards,
-                    custom_requirements=enhanced_requirements
-                )
+                # For lesson plan, pass requested_resources for integration
+                if agent_key == "lesson_plan":
+                    structured_content = specialist_agent.create_structured_content(
+                        lesson_topic=lesson_topic,
+                        subject_focus=subject_focus,
+                        grade_level=grade_level,
+                        language=language,
+                        num_sections=num_sections,
+                        standards=standards,
+                        custom_requirements=enhanced_requirements,
+                        requested_resources=requested_resources,
+                        reference_content=getattr(self, '_generated_content', {})
+                    )
+                else:
+                    structured_content = specialist_agent.create_structured_content(
+                        lesson_topic=lesson_topic,
+                        subject_focus=subject_focus,
+                        grade_level=grade_level,
+                        language=language,
+                        num_sections=num_sections,
+                        standards=standards,
+                        custom_requirements=enhanced_requirements
+                    )
             else:
                 # Base specialist agents - use enhanced research data based on strategy
                 mock_research_data = self._create_enhanced_research_data(
@@ -101,6 +200,9 @@ class AgentCoordinator:
                 logger.error("Generated content does not match expected format")
                 raise ValueError("Invalid structured content format")
             
+            # Store generated content for cross-resource alignment
+            self._generated_content[resource_type] = structured_content
+            
             logger.info(f"Agent workflow complete: {len(structured_content)} sections generated")
             return structured_content
             
@@ -118,15 +220,28 @@ class AgentCoordinator:
             if not isinstance(section, dict):
                 return False
             
-            # Check required fields
-            required_fields = ["title", "layout", "content"]
-            for field in required_fields:
-                if field not in section:
-                    logger.error(f"Missing required field: {field}")
-                    return False
+            # Check required fields - title and layout are always required
+            if "title" not in section:
+                logger.error("Missing required field: title")
+                return False
             
-            # Validate content is a list
-            if not isinstance(section["content"], list):
+            if "layout" not in section:
+                logger.error("Missing required field: layout")
+                return False
+            
+            # For new structured format, check for structured data
+            has_structured_data = (
+                "structured_questions" in section or 
+                "structured_activities" in section or
+                "content" in section
+            )
+            
+            if not has_structured_data:
+                logger.error("Section must have either structured_questions, structured_activities, or content")
+                return False
+            
+            # If content exists, validate it's a list
+            if "content" in section and not isinstance(section["content"], list):
                 logger.error("Content field must be a list")
                 return False
         
