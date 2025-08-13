@@ -20,13 +20,33 @@ def check_auth():
     try:
         logger.info("🔍 DEBUG: /auth/check route called")
         logger.info(f"🔍 DEBUG: Session keys: {list(session.keys())}")
+        logger.info(f"🔍 DEBUG: Session contents: {dict(session)}")
+        logger.info(f"🔍 DEBUG: Request cookies: {request.cookies}")
         
+        # Check if user is in session
+        if 'user_id' in session and 'user_email' in session:
+            user_data = {
+                'id': session['user_id'],
+                'email': session['user_email'],
+                'name': session.get('user_name', ''),
+                'picture': session.get('user_picture', ''),
+                'is_premium': session.get('is_premium', False)
+            }
+            
+            logger.info(f"🔍 DEBUG: Found session data for user: {user_data['email']}")
+            
+            return jsonify({
+                'authenticated': True,
+                'user': user_data
+            }), 200
+        
+        # Fallback to user_info check
         user_info = session.get('user_info')
         if not user_info:
             logger.info("🔍 DEBUG: No user_info in session")
             return jsonify({
                 "authenticated": False,
-                "needsAuth": True
+                "user": None
             }), 401
 
         logger.info(f"🔍 DEBUG: User info found: {user_info.get('email', 'No email')}")
@@ -88,7 +108,7 @@ def check_auth():
         return jsonify({
             "authenticated": False,
             "error": str(e)
-        }), 500
+        }), 401
 
 @auth_blueprint.route('/authorize')
 def authorize():
@@ -255,14 +275,22 @@ def oauth2callback():
                 </html>
             """
 
-        # Store minimal user info to reduce session size
+        # Store user data in session for persistence
+        session.permanent = True
+        session['user_id'] = None  # Will update after database operation
+        session['user_email'] = id_info['email']
+        session['user_name'] = id_info.get('name', '')
+        session['user_picture'] = id_info.get('picture', '')
+        session['is_premium'] = False
+        session['login_time'] = id_info.get('iat')
+        
+        # Store minimal user info for backward compatibility
         user_info = {
             'email': id_info['email'],
             'name': id_info.get('name', ''),
             'picture': id_info.get('picture', '')
         }
         session['user_info'] = user_info
-        session.permanent = True
         logger.info("💾 User info stored in session")
 
         # Create/update user in database
@@ -301,6 +329,11 @@ def oauth2callback():
                 
         except Exception as db_error:
             logger.error(f"❌ Database error during OAuth: {db_error}")
+        
+        # Update user_id in session after successful database operation
+        if user_id:
+            session['user_id'] = user_id
+            logger.info(f"✅ Updated session with user_id: {user_id}")
         
         logger.info(f"✅ Successfully authenticated user: {user_info['email']}")
         
@@ -570,7 +603,7 @@ def oauth2callback():
 def logout():
     """Clear session and log out user - handles both GET and POST."""
     try:
-        user_email = session.get('user_info', {}).get('email', 'Unknown')
+        user_email = session.get('user_email') or session.get('user_info', {}).get('email', 'Unknown')
         logger.info(f"🚪 Logging out user: {user_email}")
         
         session.clear()

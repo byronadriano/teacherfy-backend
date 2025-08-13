@@ -1,6 +1,7 @@
 # app.py - FIXED VERSION with COOP headers
 import os
 import tempfile
+from datetime import timedelta
 from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
 from src.config import config, logger
@@ -21,8 +22,10 @@ def create_app():
         SESSION_COOKIE_SECURE=config.SESSION_COOKIE_SECURE,
         SESSION_COOKIE_SAMESITE=config.SESSION_COOKIE_SAMESITE,
         SESSION_COOKIE_HTTPONLY=config.SESSION_COOKIE_HTTPONLY,
+        SESSION_PERMANENT=config.SESSION_PERMANENT,
         PERMANENT_SESSION_LIFETIME=config.PERMANENT_SESSION_LIFETIME,
         SESSION_COOKIE_DOMAIN=config.SESSION_COOKIE_DOMAIN,
+        SESSION_COOKIE_NAME=config.SESSION_COOKIE_NAME,
         MAX_CONTENT_LENGTH=config.MAX_CONTENT_LENGTH,
         
         # Secret key
@@ -48,7 +51,8 @@ def create_app():
                     "Content-Disposition",
                     "Content-Type", 
                     "Content-Length",
-                    "Authorization"
+                    "Authorization",
+                    "Set-Cookie"
                 ]
             }
         },

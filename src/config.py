@@ -146,8 +146,10 @@ class BaseConfig:
     
     # Session settings
     SESSION_COOKIE_HTTPONLY = True
-    PERMANENT_SESSION_LIFETIME = 86400  # 24 hours
+    SESSION_PERMANENT = True
+    PERMANENT_SESSION_LIFETIME = 86400 * 30  # 30 days
     SESSION_COOKIE_DOMAIN = None
+    SESSION_COOKIE_NAME = 'teacherfy_session'
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     
     @property
