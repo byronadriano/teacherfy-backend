@@ -28,20 +28,27 @@ STUDENT CONTENT ONLY:
 MANDATORY FIRST SLIDE - LEARNING OBJECTIVES:
 The FIRST slide must always be a "Learning Objectives" slide that clearly states what students will know and be able to do. Create clear, actionable objectives appropriate for the grade level and subject:
 
-LEARNING OBJECTIVES SHOULD:
-1. State what students will know (content knowledge)
-2. State what students will be able to do (skills and applications)  
-3. Include key vocabulary students will use
+LEARNING OBJECTIVES MUST BE SPECIFIC TO THE LESSON CONTENT:
+1. State what students will know (specific content knowledge)
+2. State what students will be able to do (specific skills and applications)  
+3. Include key vocabulary students will use (lesson-specific terms)
 4. Be appropriate for the grade level and subject
-5. Connect to real-world applications when possible
+5. Connect to specific applications of the lesson content (NOT generic statements)
 
-EXAMPLES ACROSS SUBJECTS:
-Science: Students will be able to identify the three states of matter and explain how particles behave in each state
-Math: Students will be able to solve multiplication problems using repeated addition and arrays
-Language Arts: Students will be able to identify the main idea and supporting details in informational texts
-Social Studies: Students will be able to explain how geography affects where people live and work
-Physical Education: Students will be able to demonstrate proper form in throwing and catching
-Music: Students will be able to identify rhythm patterns and clap along to different time signatures
+EXAMPLES OF SPECIFIC OBJECTIVES:
+Math (Linear Equations): Students will be able to solve linear equations using algebraic methods and graph their solutions
+Science (Photosynthesis): Students will be able to explain how plants convert sunlight into energy and identify the reactants and products
+Language Arts (Persuasive Writing): Students will be able to write persuasive paragraphs using evidence and logical reasoning
+Social Studies (Civil War): Students will be able to analyze the causes of the Civil War and evaluate their impact
+
+AVOID GENERIC STATEMENTS LIKE:
+❌ "Today we'll explore how math helps solve everyday problems"
+❌ "Students will learn about important concepts"
+❌ "We'll discover how science affects our daily lives"
+
+INSTEAD USE SPECIFIC CONNECTIONS:
+✅ "Students will apply linear equations to calculate rates and predict outcomes"
+✅ "Students will use vocabulary: equation, variable, coefficient, slope, intercept"
 
 REQUIRED JSON STRUCTURE:
 {{
@@ -50,10 +57,10 @@ REQUIRED JSON STRUCTURE:
       "slide_number": 1,
       "title": "Learning Objectives",
       "content": [
-        "Students will be able to [specific learning goal for this lesson]",
-        "Students will understand [key concepts they'll master]", 
-        "Key Vocabulary: [important terms students will use]",
-        "[Brief overview or real-world connection]"
+        "Students will be able to [specific skill with lesson topic]",
+        "Students will understand [specific content knowledge from lesson]", 
+        "Key Vocabulary: [lesson-specific terms only]",
+        "[Specific application or connection to lesson content]"
       ]
     }},
     {{
@@ -90,7 +97,9 @@ STRICT CONTENT RULES:
 - Each slide focuses on ONE main concept
 - Students should be able to read and understand everything
 - Include key vocabulary naturally in context
-- Connect to real-world applications when possible
+- Connect to SPECIFIC applications of lesson content (never generic "everyday problems" or "real-world applications")
+- AVOID generic opener statements like "Today we'll explore how [subject] helps solve everyday problems"
+- BE SPECIFIC about what students will learn and do with the actual lesson content
 
 EXAMPLE VALID JSON RESPONSE:
 {{
@@ -99,10 +108,10 @@ EXAMPLE VALID JSON RESPONSE:
       "slide_number": 1,
       "title": "Learning Objectives",
       "content": [
-        "Students will be able to solve multiplication problems using repeated addition",
-        "Students will understand how multiplication connects to equal groups",
-        "Key Vocabulary: multiplication, factor, product, equal groups",
-        "Today we'll learn how multiplication helps us solve problems quickly"
+        "Students will be able to solve multiplication problems using repeated addition and arrays",
+        "Students will understand how multiplication creates equal groups and patterns",
+        "Key Vocabulary: multiplication, factor, product, equal groups, array",
+        "Students will apply multiplication to calculate total objects in organized groups"
       ]
     }},
     {{

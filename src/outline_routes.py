@@ -383,7 +383,7 @@ def get_system_prompt(resource_type="PRESENTATION"):
         5. Write slide content in the target language, but keep structure in English
         6. EXACTLY match the requested number of slides
         7. Write DIRECT TEACHING CONTENT, NOT meta-instructions
-        8. First slide should introduce the topic with clear learning objectives
+        8. First slide should introduce specific learning objectives tied to lesson content
         9. Last slide should include key takeaways or review points
         10. Write as if speaking directly to students
         
@@ -394,8 +394,8 @@ def get_system_prompt(resource_type="PRESENTATION"):
         - A fraction represents a part of a whole
         - The numerator (top number) tells us how many parts we have
         - The denominator (bottom number) tells us the total number of equal parts
-        - Fractions are everywhere in daily life: half a pizza, quarter of an hour
-        - Today we will learn to work with fractions confidently
+        - Fractions help us measure ingredients in cooking and divide objects equally
+        - Students will identify, compare, and solve problems using fractions
         """
               
 def parse_outline_to_clean_structure(outline_text, resource_type="PRESENTATION"):
