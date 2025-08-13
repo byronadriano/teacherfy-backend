@@ -21,10 +21,10 @@ def get_download_limit(tier='free'):
         return -1  # Unlimited
     return 10  # Free tier: 10 per month
 
-# FIXED: Correct hourly limits as requested
+# UPDATED: New hourly limits
 HOURLY_LIMITS = {
-    'free': 3,      # Free users: 3 generations per hour
-    'premium': 10   # Premium users: 10 generations per hour
+    'free': 5,      # Free users: 5 generations per hour
+    'premium': 15   # Premium users: 15 generations per hour
 }
 
 def sanitize_ip_address(ip_address):
