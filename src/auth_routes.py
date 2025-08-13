@@ -1,15 +1,16 @@
-# src/auth_routes.py - FIXED OAuth callback to prevent main site loading in popup
+# src/auth_routes.py - OAuth endpoints with new login initiation flow
 import os
 from flask import Blueprint, request, jsonify, redirect, url_for, session
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 import traceback
 import json
+import requests
 
 if os.environ.get('FLASK_ENV') == 'development':
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
-from src.config import logger, flow, CLIENT_ID, config
+from src.config import logger, flow, CLIENT_ID, CLIENT_SECRET, config
 from src.db import get_user_by_email, create_user, log_user_login, log_user_activity
 
 auth_blueprint = Blueprint("auth_blueprint", __name__)
@@ -109,6 +110,233 @@ def check_auth():
             "authenticated": False,
             "error": str(e)
         }), 401
+
+# NEW OAUTH ENDPOINTS FOR FRONTEND-CONTROLLED FLOW
+
+@auth_blueprint.route('/api/auth/login/<provider>', methods=['GET'])
+def initiate_login(provider):
+    """Return OAuth URL instead of redirecting immediately - for frontend-controlled flow"""
+    try:
+        logger.info(f"🔑 Login initiation requested for provider: {provider}")
+        
+        if provider == 'google':
+            # Generate Google OAuth URL using existing flow configuration
+            if not flow:
+                logger.error("❌ OAuth flow not initialized")
+                return jsonify({'error': 'OAuth not configured', 'success': False}), 500
+            
+            # Create a new flow instance with the correct redirect URI for the new callback
+            from google_auth_oauthlib.flow import Flow
+            from src.config import SCOPES
+            
+            # Set up redirect URI for new callback endpoint
+            if config.DEVELOPMENT_MODE:
+                new_redirect_uri = "http://localhost:5000/api/auth/callback/google"
+            else:
+                new_redirect_uri = "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net/api/auth/callback/google"
+            
+            oauth_config = {
+                "web": {
+                    "client_id": CLIENT_ID,
+                    "client_secret": CLIENT_SECRET,
+                    "redirect_uris": [new_redirect_uri],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+                }
+            }
+            
+            new_flow = Flow.from_client_config(oauth_config, scopes=SCOPES)
+            new_flow.redirect_uri = new_redirect_uri
+            
+            # Generate authorization URL with state for security
+            authorization_url, state = new_flow.authorization_url(
+                access_type='offline',
+                include_granted_scopes='true',
+                prompt='consent'
+            )
+            
+            # Store state and flow in session for verification
+            session['oauth_state'] = state
+            session['oauth_flow_redirect'] = new_redirect_uri
+            logger.info(f"🔗 Generated Google OAuth URL with state: {state[:10]}...")
+            
+            return jsonify({
+                'auth_url': authorization_url,
+                'success': True,
+                'provider': 'google',
+                'state': state
+            })
+            
+        else:
+            logger.warning(f"⚠️ Unsupported OAuth provider: {provider}. Only 'google' is supported.")
+            return jsonify({'error': f'Only Google OAuth is supported. Provider "{provider}" is not available.', 'success': False}), 400
+            
+    except Exception as e:
+        logger.error(f"❌ Error initiating login for {provider}: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e), 'success': False}), 500
+
+def exchange_code_for_user_data(provider, code):
+    """Helper function to exchange authorization code for user data"""
+    try:
+        if provider == 'google':
+            # Create a new flow instance for token exchange
+            from google_auth_oauthlib.flow import Flow
+            from src.config import SCOPES
+            
+            # Get the redirect URI from session or construct it
+            redirect_uri = session.get('oauth_flow_redirect')
+            if not redirect_uri:
+                if config.DEVELOPMENT_MODE:
+                    redirect_uri = "http://localhost:5000/api/auth/callback/google"
+                else:
+                    redirect_uri = "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net/api/auth/callback/google"
+            
+            oauth_config = {
+                "web": {
+                    "client_id": CLIENT_ID,
+                    "client_secret": CLIENT_SECRET,
+                    "redirect_uris": [redirect_uri],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs"
+                }
+            }
+            
+            token_flow = Flow.from_client_config(oauth_config, scopes=SCOPES)
+            token_flow.redirect_uri = redirect_uri
+            
+            # Set up the authorization response URL
+            callback_url = f"{redirect_uri}?code={code}"
+            
+            # Exchange code for token
+            token_flow.fetch_token(authorization_response=callback_url)
+            credentials = token_flow.credentials
+            
+            # Verify token and get user info
+            id_info = id_token.verify_oauth2_token(
+                credentials.id_token,
+                google_requests.Request(),
+                CLIENT_ID,
+                clock_skew_in_seconds=300
+            )
+            
+            return {
+                'id': id_info.get('sub'),
+                'email': id_info.get('email'),
+                'name': id_info.get('name', ''),
+                'picture': id_info.get('picture', ''),
+                'provider': 'google'
+            }
+            
+        else:
+            raise Exception(f"Unsupported provider: {provider}")
+            
+    except Exception as e:
+        logger.error(f"❌ Error exchanging code for user data ({provider}): {e}")
+        raise
+
+@auth_blueprint.route('/api/auth/callback/<provider>', methods=['GET'])
+def oauth_callback(provider):
+    """Handle OAuth callback and redirect back to frontend"""
+    try:
+        logger.info(f"🔐 OAuth callback received for provider: {provider}")
+        
+        # Get authorization code from query params
+        code = request.args.get('code')
+        error = request.args.get('error')
+        
+        if error:
+            logger.error(f"❌ OAuth error in callback: {error}")
+            return redirect(f'http://localhost:3000/?auth=error&error={error}')
+        
+        if not code:
+            logger.error("❌ No authorization code received")
+            return redirect('http://localhost:3000/?auth=error&error=no_code')
+        
+        # Exchange code for user data
+        try:
+            user_data = exchange_code_for_user_data(provider, code)
+            logger.info(f"✅ Successfully exchanged code for user data: {user_data.get('email')}")
+        except Exception as exchange_error:
+            logger.error(f"❌ Failed to exchange code for user data: {exchange_error}")
+            return redirect('http://localhost:3000/?auth=error&error=exchange_failed')
+        
+        # Create user session
+        session.permanent = True
+        session['user_id'] = None  # Will update after database operation
+        session['user_email'] = user_data['email']
+        session['user_name'] = user_data.get('name', '')
+        session['user_picture'] = user_data.get('picture', '')
+        session['user_provider'] = provider
+        session['is_premium'] = False
+        
+        # Store user info for backward compatibility
+        session['user_info'] = {
+            'email': user_data['email'],
+            'name': user_data.get('name', ''),
+            'picture': user_data.get('picture', ''),
+            'provider': provider
+        }
+        
+        logger.info("💾 User session created")
+        
+        # Create/update user in database
+        user_id = None
+        try:
+            user_id = create_user(user_data['email'], user_data.get('name', ''), user_data.get('picture', ''))
+            
+            if user_id:
+                try:
+                    from src.db.database import get_db_cursor
+                    with get_db_cursor(commit=True) as cursor:
+                        cursor.execute("""
+                            SELECT column_name 
+                            FROM information_schema.columns 
+                            WHERE table_name = 'users' 
+                            AND column_name IN ('subscription_tier', 'subscription_status')
+                        """)
+                        existing_columns = [row['column_name'] for row in cursor.fetchall()]
+                        
+                        if 'subscription_tier' in existing_columns and 'subscription_status' in existing_columns:
+                            cursor.execute("""
+                                UPDATE users 
+                                SET subscription_tier = COALESCE(subscription_tier, 'free'),
+                                    subscription_status = COALESCE(subscription_status, 'active')
+                                WHERE id = %s
+                            """, (user_id,))
+                            logger.info("✅ Subscription fields updated")
+                        else:
+                            logger.warning("⚠️ Subscription columns don't exist yet - skipping update")
+                except Exception as subscription_error:
+                    logger.warning(f"⚠️ Could not update subscription fields: {subscription_error}")
+                
+                log_user_login(user_id)
+                session['user_id'] = user_id
+                logger.info(f"✅ User login logged for ID: {user_id}")
+                
+        except Exception as db_error:
+            logger.error(f"❌ Database error during OAuth: {db_error}")
+        
+        # Update user_id in session after successful database operation
+        if user_id:
+            session['user_id'] = user_id
+            logger.info(f"✅ Updated session with user_id: {user_id}")
+        
+        logger.info(f"✅ Successfully authenticated user: {user_data['email']} via {provider}")
+        
+        # Redirect back to frontend with success
+        frontend_url = 'http://localhost:3000' if config.DEVELOPMENT_MODE else 'https://teacherfy.ai'
+        return redirect(f'{frontend_url}/?auth=success&provider={provider}')
+        
+    except Exception as e:
+        logger.error(f"❌ OAuth callback error for {provider}: {e}")
+        logger.error(traceback.format_exc())
+        frontend_url = 'http://localhost:3000' if config.DEVELOPMENT_MODE else 'https://teacherfy.ai'
+        return redirect(f'{frontend_url}/?auth=error&error=callback_failed')
+
+# EXISTING OAUTH ENDPOINTS (keeping for backward compatibility)
 
 @auth_blueprint.route('/authorize')
 def authorize():
