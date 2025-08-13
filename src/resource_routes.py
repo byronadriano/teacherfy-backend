@@ -1,7 +1,8 @@
-# src/resource_routes.py - Updated with image support
+# src/resource_routes.py - Updated with image support and multi-resource generation
 from flask import Blueprint, request, jsonify, send_file
 from src.config import logger
 from src.resource_types import ResourceType, get_resource_handler
+from src.agents.agent_coordinator import AgentCoordinator
 import os
 import traceback
 
@@ -136,3 +137,71 @@ def generate_presentation_endpoint():
     logger.info(f"Processing generate request with {len(structured_content)} items for resource type: {resource_type} (images: {include_images})")
     
     return generate_resource_endpoint(resource_type)
+
+@resource_blueprint.route("/generate-multiple-resources", methods=["POST", "OPTIONS"])
+def generate_multiple_resources_endpoint():
+    """Generate multiple aligned resources in a single optimized API call."""
+    if request.method == "OPTIONS":
+        return jsonify({"status": "OK"}), 200
+
+    logger.info(f"Multi-resource generation request from: {request.remote_addr}")
+    
+    try:
+        data = request.get_json()
+    except Exception as e:
+        logger.error(f"Error parsing JSON: {e}")
+        return jsonify({"error": "Invalid JSON data"}), 400
+    
+    # Extract and validate required fields
+    lesson_topic = data.get('lessonTopic')
+    subject_focus = data.get('subjectFocus') 
+    grade_level = data.get('gradeLevel')
+    resource_types = data.get('resourceTypes', [])
+    
+    if not all([lesson_topic, subject_focus, grade_level]):
+        logger.error("Missing required fields: lessonTopic, subjectFocus, or gradeLevel")
+        return jsonify({"error": "Missing required fields: lessonTopic, subjectFocus, gradeLevel"}), 400
+    
+    if not resource_types or len(resource_types) == 0:
+        logger.error("No resource types specified")
+        return jsonify({"error": "At least one resource type must be specified"}), 400
+    
+    # Convert resource types to lowercase for consistency
+    normalized_resource_types = [rt.lower() for rt in resource_types]
+    
+    logger.info(f"Generating {len(normalized_resource_types)} resources: {normalized_resource_types}")
+    
+    try:
+        # Initialize the agent coordinator
+        coordinator = AgentCoordinator()
+        
+        # Generate multiple aligned resources
+        results = coordinator.generate_multiple_resources(
+            lesson_topic=lesson_topic,
+            subject_focus=subject_focus,
+            grade_level=grade_level,
+            language=data.get('language', 'English'),
+            resource_types=normalized_resource_types,
+            standards=data.get('selectedStandards', []),
+            custom_requirements=data.get('custom_prompt', ''),
+            num_sections=data.get('numSlides', 5)
+        )
+        
+        logger.info(f"Successfully generated {len(results)} aligned resources")
+        
+        # Return structured content for frontend processing
+        return jsonify({
+            'success': True,
+            'structured_content': results,
+            'generation_method': 'optimized_multiple_resources',
+            'resource_types': list(results.keys()),
+            'message': f'Generated {len(results)} aligned resources successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in multi-resource generation: {e}", exc_info=True)
+        return jsonify({
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "message": "Failed to generate multiple resources"
+        }), 500
