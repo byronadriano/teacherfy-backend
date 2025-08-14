@@ -87,9 +87,27 @@ def check_usage_limits(action_type='generation', skip_increment=False):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # Get user info from session
-            user_info = session.get('user_info', {})
-            user_id = user_info.get('id')
+            # Get user info from session - support both new and legacy session structures
+            user_id = session.get('user_id')
+            user_email = session.get('user_email')
+            
+            # Fallback to legacy user_info structure for compatibility
+            if not user_id or not user_email:
+                user_info = session.get('user_info', {})
+                user_id = user_id or user_info.get('id')
+                user_email = user_email or user_info.get('email')
+
+            # Critical fix: If we have email but no user_id, resolve it from database
+            # This ensures premium users are properly recognized even with incomplete session data
+            if not user_id and user_email:
+                try:
+                    from src.db.database import get_user_by_email as _get_user_by_email
+                    user_row = _get_user_by_email(user_email)
+                    if user_row and user_row.get('id'):
+                        user_id = user_row['id']
+                        logger.info(f"Resolved user_id {user_id} from email {user_email}")
+                except Exception as lookup_err:
+                    logger.warning(f"Could not resolve user_id from email {user_email}: {lookup_err}")
             
             # Get IP address for anonymous users only
             ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -131,7 +149,6 @@ def check_usage_limits(action_type='generation', skip_increment=False):
                     logger.info("TEST REQUEST DETECTED - Will count against limits but avoid expensive API calls")
                 
                 # NEW ROBUST TRACKING: Check limits with clean separation
-                user_email = user_info.get('email')
                 limits_result = UsageTracker.check_limits(user_id, ip_address, user_email)
                 
                 logger.info(f"Limits check: {limits_result}")

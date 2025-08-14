@@ -19,38 +19,75 @@ auth_blueprint = Blueprint("auth_blueprint", __name__)
 def check_auth():
     """Check if the user is authenticated and session is valid."""
     try:
-        logger.info("🔍 DEBUG: /auth/check route called")
-        logger.info(f"🔍 DEBUG: Session keys: {list(session.keys())}")
-        logger.info(f"🔍 DEBUG: Session contents: {dict(session)}")
-        logger.info(f"🔍 DEBUG: Request cookies: {request.cookies}")
+        logger.info("🔍 Auth check called")
         
-        # Check if user is in session
+        # Check if user is in session (new session structure)
         if 'user_id' in session and 'user_email' in session:
+            try:
+                # Always verify current subscription status from database
+                user = get_user_by_email(session['user_email'])
+                if user:
+                    from src.db.usage import check_user_limits, get_user_subscription_tier
+                    
+                    user_tier = get_user_subscription_tier(user['id'], session['user_email'])
+                    usage = check_user_limits(user['id'], request.remote_addr)
+                    
+                    user_data = {
+                        'id': session['user_id'],
+                        'email': session['user_email'],
+                        'name': session.get('user_name', ''),
+                        'picture': session.get('user_picture', ''),
+                        'is_premium': user_tier == 'premium',
+                        'subscription_tier': user_tier,
+                        'subscription_status': user.get('subscription_status', 'active')
+                    }
+                    
+                    logger.info(f"✅ User {user_data['email']} verified as {user_tier}")
+                    
+                    return jsonify({
+                        'authenticated': True,
+                        'user': user_data,
+                        "usage_limits": {
+                            "generations_left": usage['generations_left'],
+                            "downloads_left": usage['downloads_left'],
+                            "reset_time": usage['reset_time'],
+                            "is_premium": user_tier == 'premium',
+                            "user_tier": user_tier,
+                            "current_usage": usage['current_usage']
+                        }
+                    }), 200
+                else:
+                    logger.warning(f"User not found in database: {session['user_email']}")
+            except Exception as db_error:
+                logger.error(f"Database error checking user: {db_error}")
+            
+            # Fallback to session data if database check fails
             user_data = {
                 'id': session['user_id'],
                 'email': session['user_email'],
                 'name': session.get('user_name', ''),
                 'picture': session.get('user_picture', ''),
-                'is_premium': session.get('is_premium', False)
+                'is_premium': session.get('is_premium', False),
+                'subscription_tier': 'premium' if session.get('is_premium') else 'free'
             }
             
-            logger.info(f"🔍 DEBUG: Found session data for user: {user_data['email']}")
+            logger.info(f"⚠️ Fallback to session data for user: {user_data['email']}")
             
             return jsonify({
                 'authenticated': True,
                 'user': user_data
             }), 200
         
-        # Fallback to user_info check
+        # Check legacy user_info structure
         user_info = session.get('user_info')
         if not user_info:
-            logger.info("🔍 DEBUG: No user_info in session")
+            logger.info("No authentication found in session")
             return jsonify({
                 "authenticated": False,
                 "user": None
             }), 401
 
-        logger.info(f"🔍 DEBUG: User info found: {user_info.get('email', 'No email')}")
+        logger.info(f"Legacy session found for: {user_info.get('email', 'No email')}")
         
         try:
             user = get_user_by_email(user_info.get('email'))
@@ -81,7 +118,7 @@ def check_auth():
                     }
                 })
         except Exception as db_error:
-            logger.error(f"❌ Database error in auth check: {db_error}")
+            logger.error(f"Database error in legacy auth check: {db_error}")
             return jsonify({
                 "authenticated": True,
                 "user": {
@@ -104,8 +141,7 @@ def check_auth():
             }
         })
     except Exception as e:
-        logger.error(f"❌ Error checking auth status: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Error checking auth status: {e}")
         return jsonify({
             "authenticated": False,
             "error": str(e)
