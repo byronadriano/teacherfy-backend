@@ -1,55 +1,65 @@
+# Python
 __pycache__/
-*.pyctemplates/base_template.pptx
-*.pyc
-*.env
-# Ignore sensitive files
-firebase-adminsdk.json
-.env
-__pycache__/
-*.pyc
-__pycache__/
-*.pyc
+*.py[cod]
 *.pyo
-*.log
-*teacherfy-backend/
-.env.development
-*test_downloads/
-*backup_20250519_111856/
-src/presentation_routes.py
-src/presentation_routes.py.backup
-CLAUDE.md
-.venv/
-venv/
-teacherfy-backend/
-env/
-ENV/
-*.egg-info/
+*.pyd
+.Python
+*.so
 .pytest_cache/
 .mypy_cache/
+*.egg-info/
+
+# Environment and secrets
+.env
+.env.*
+*.env
+firebase-adminsdk.json
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+.virtualenv/
+teacherfy-backend/
+
+# Development tools
 .DS_Store
-/.vscode/
-/.idea/
+.vscode/
+.idea/
 *.log
+
+# Database
 *.sqlite3
 *.db
+
+# Node.js (if applicable)
 node_modules/
 dist/
 build/
-.claude/settings.json
-*examples/
-*archive/
 
-# Archive folders and test files created by Claude Code
+# Claude Code settings
+.claude/settings.json
+CLAUDE.md
+
+# Documentation with sensitive data
+BACKGROUND_JOBS.md
+
+# Backup and temporary files
+*backup_*/
 archive_temp/
 temp/
 *_temp/
+*_TEMP_*
+*_ARCHIVE_*
+test_downloads/
+CLEANUP_SUMMARY.md
+
+# Test files created by development
 test_*.py
 quick_*.py
 generate_*.py
 *_test_*.py
-*_TEMP_*
-*_ARCHIVE_*
-CLEANUP_SUMMARY.md
 
 # Generated documents from testing
 *.docx
@@ -58,3 +68,9 @@ CLEANUP_SUMMARY.md
 *QUIZ_*.docx
 *TEST_*.docx
 *SAMPLE_*.docx
+
+# Legacy files
+src/presentation_routes.py
+src/presentation_routes.py.backup
+*examples/
+*archive/
