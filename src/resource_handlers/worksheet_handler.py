@@ -1,6 +1,7 @@
 # src/resource_handlers/worksheet_handler.py - CLEANED VERSION
 import os
 import logging
+import re
 import docx
 from typing import Dict, Any, List
 from .base_handler import BaseResourceHandler
@@ -104,15 +105,10 @@ class WorksheetHandler(BaseResourceHandler):
             
             # Add questions only (no answers, no teacher notes)
             for question in questions:
-                # Clean the question text to avoid Word document corruption
-                clean_question = self.clean_markdown_and_formatting(question)
-                # Remove any problematic characters that might cause corruption
-                clean_question = clean_question.encode('ascii', errors='ignore').decode('ascii')
-                
-                # Check if it's a multiple choice question (contains newlines with A), B), etc.)
-                if '\n' in clean_question and re.search(r'\b[A-D]\)', clean_question):
+                # Check if it's a multiple choice question (same approach as quiz handler)
+                if re.search(r'\b[A-D]\)', question):
                     # Multiple choice - split into question and options
-                    lines = clean_question.split('\n')
+                    lines = question.split('\n')
                     main_question = lines[0]
                     
                     # Add main question
@@ -126,21 +122,28 @@ class WorksheetHandler(BaseResourceHandler):
                             option_para = doc.add_paragraph()
                             option_para.add_run(f"   {line.strip()}")
                     
-                    # Add answer space
+                    # Add answer space (match quiz format)
                     doc.add_paragraph()
-                    doc.add_paragraph("Answer: " + "_" * 20)
+                    doc.add_paragraph("Answer: _____")
                 else:
-                    # Regular question
+                    # Regular question - add question with answer space (match quiz handler approach)
                     question_para = doc.add_paragraph()
                     question_para.add_run(f"{question_counter}. ").bold = True
-                    question_para.add_run(clean_question)
+                    question_para.add_run(question)
                     
-                    # Add answer space
-                    if question.endswith('?') or '?' in question:
-                        # For questions, add a line for answers
-                        doc.add_paragraph("Answer: " + "_" * 50)
+                    # Add answer space based on question type (like quiz handler)
+                    if any(word in question.lower() for word in ['calculate', 'solve', 'find', 'what is', 'calcular', 'resolver', 'encontrar', 'qué es']):
+                        # Math/calculation question - provide work space
+                        doc.add_paragraph()
+                        doc.add_paragraph("Show your work:")
+                        doc.add_paragraph("_" * 60)
+                        doc.add_paragraph()
+                        answer_para = doc.add_paragraph()
+                        answer_para.add_run("Answer: ").bold = True
+                        answer_para.add_run("_" * 30)
                     else:
-                        # For fill-in-the-blank or calculation problems
+                        # Standard answer space
+                        doc.add_paragraph("_" * 60)
                         doc.add_paragraph("_" * 60)
                 
                 doc.add_paragraph()  # Add spacing between questions
