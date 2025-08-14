@@ -230,8 +230,42 @@ def save_history_item():
         
         # Extract required data
         title = data.get("title", "Untitled Lesson")
-        resource_type = data.get("resourceType", "PRESENTATION")
         lesson_data = data.get("lessonData", {})
+        
+        # Get resource type from the correct location - check both direct field and lessonData
+        resource_type = data.get("resourceType") or lesson_data.get("resourceType")
+        
+        # Intelligently determine resource type if not provided or if it's the default
+        if not resource_type or resource_type == "PRESENTATION":
+            # Check lesson data for clues about the resource type
+            if lesson_data and isinstance(lesson_data, dict):
+                title_lower = title.lower()
+                
+                # Look for worksheet indicators
+                if any(keyword in title_lower for keyword in [
+                    'worksheet', 'activity', 'practice', 'exercise', 'assignment'
+                ]):
+                    resource_type = "WORKSHEET"
+                # Look for quiz/test indicators
+                elif any(keyword in title_lower for keyword in [
+                    'quiz', 'test', 'assessment', 'exam', 'evaluation'
+                ]):
+                    resource_type = "QUIZ"
+                # Look for lesson plan indicators
+                elif any(keyword in title_lower for keyword in [
+                    'lesson plan', 'lesson', 'curriculum', 'teaching plan', 'unit plan'
+                ]):
+                    resource_type = "LESSON_PLAN"
+                # Look for presentation indicators  
+                elif any(keyword in title_lower for keyword in [
+                    'presentation', 'slides', 'slideshow', 'ppt'
+                ]):
+                    resource_type = "PRESENTATION"
+                else:
+                    # Default fallback based on common patterns
+                    resource_type = "PRESENTATION"
+            else:
+                resource_type = "PRESENTATION"
         
         logger.info(f"Saving history item: {title}, type: {resource_type}")
         
