@@ -30,7 +30,9 @@
 {
   custom_prompt: "",
   gradeLevel: "3rd grade",
-  includeImages: false,
+    # includeImages (boolean) - optional. Defaults to false on the backend. Set to true only
+    # when the user explicitly wants images (images are expensive to generate).
+    includeImages: false,
   language: "English",
   lessonTopic: "Math",
   numSections: 5,
@@ -81,7 +83,8 @@ def generate_aligned_resources():
         standards=standards,
         custom_requirements=custom_prompt,
         num_sections=data.get('numSlides', 5),
-        include_images=data.get('includeImages', False)
+    # Map frontend camelCase 'includeImages' to backend snake_case and default to False
+    include_images=data.get('includeImages', False)
     )
     
     # Create files for each resource

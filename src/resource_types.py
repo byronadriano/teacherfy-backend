@@ -78,8 +78,9 @@ def get_resource_handler(resource_type, structured_content, **kwargs):
     
     # Create and return an instance with optional parameters
     if handler_class == PresentationHandler:
-        # Pass image preference for presentations
-        include_images = kwargs.get('include_images', True)
+        # Pass image preference for presentations. Default to False to avoid
+        # expensive image generation unless the frontend explicitly requests it.
+        include_images = kwargs.get('include_images', False)
         return handler_class(structured_content, include_images=include_images)
     else:
         # Other handlers don't need image support yet

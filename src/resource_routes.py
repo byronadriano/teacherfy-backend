@@ -23,7 +23,14 @@ def generate_resource_endpoint(resource_type):
         data = request.form.to_dict()
     
     structured_content = data.get('structured_content')
-    include_images = data.get('include_images', True)  # Default to True for backward compatibility
+    # Default to False to avoid expensive image generation unless explicitly requested
+    # Accept either snake_case (include_images) or camelCase (includeImages) from frontend
+    include_images = False
+    if isinstance(data, dict):
+        if 'include_images' in data:
+            include_images = data.get('include_images', False)
+        else:
+            include_images = data.get('includeImages', False)
     
     if not structured_content:
         logger.error("No structured content provided")
@@ -128,7 +135,14 @@ def generate_presentation_endpoint():
     # Extract and validate the data
     resource_type = data.get('resource_type', 'presentation').lower()
     structured_content = data.get('structured_content')
-    include_images = data.get('include_images', False)  # Default to True
+    # Default to False to avoid expensive image generation unless explicitly requested
+    # Accept either snake_case (include_images) or camelCase (includeImages) from frontend
+    include_images = False
+    if isinstance(data, dict):
+        if 'include_images' in data:
+            include_images = data.get('include_images', False)
+        else:
+            include_images = data.get('includeImages', False)
     
     if not structured_content:
         logger.error("No structured content provided")
