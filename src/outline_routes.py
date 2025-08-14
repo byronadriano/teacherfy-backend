@@ -1,14 +1,15 @@
 # src/outline_routes.py - Updated with DeepSeek API support and Agent integration
 import os
 import re
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from src.config import logger, client
 from src.utils.decorators import check_usage_limits
 import json
 import traceback
 
 # Import agent coordinator for enhanced content generation
-from src.agents import AgentCoordinator
+from src.agents.agent_coordinator import AgentCoordinator
+from src.services.content_cache import ContentCacheService
 
 outline_blueprint = Blueprint("outline_blueprint", __name__)
 
@@ -527,6 +528,35 @@ def get_outline():
         if should_use_agents(data):
             logger.info("Using AGENT-BASED system for enhanced content generation")
             
+            # NEW: Check cache first (only if no custom prompt provided)
+            if not custom_prompt:
+                logger.info("🔍 Checking content cache (no custom prompt provided)")
+                
+                cached_result = ContentCacheService.get_cached_content(
+                    resource_type=resource_type,
+                    lesson_topic=lesson_topic,
+                    subject_focus=subject_focus,
+                    grade_level=grade_level,
+                    language=language,
+                    num_sections=num_items,
+                    selected_standards=selected_standards
+                )
+                
+                if cached_result:
+                    # Generate title using existing function
+                    generated_title = generate_outline_title(data, cached_result["structured_content"])
+                    
+                    logger.info("⚡ Serving content from cache - no usage limit deducted!")
+                    return jsonify({
+                        "title": generated_title,
+                        "structured_content": cached_result["structured_content"],
+                        "resource_type": resource_type.lower(),
+                        "generation_method": "cache",
+                        "cached": True
+                    })
+            else:
+                logger.info("🔄 Custom prompt provided - bypassing cache and generating new content")
+            
             try:
                 # Initialize agent coordinator
                 agent_coordinator = AgentCoordinator()
@@ -547,6 +577,28 @@ def get_outline():
                     custom_requirements=custom_prompt,
                     requested_resources=requested_resources
                 )
+                
+                # NEW: Cache the generated content (only if no custom prompt)
+                if not custom_prompt and structured_content:
+                    # Get user ID from session if available
+                    user_info = session.get('user_info', {})
+                    user_id = None
+                    if user_info and 'email' in user_info:
+                        from src.db.database import get_user_by_email
+                        user = get_user_by_email(user_info['email'])
+                        user_id = user.get('id') if user else None
+                    
+                    ContentCacheService.cache_content(
+                        resource_type=resource_type,
+                        lesson_topic=lesson_topic,
+                        subject_focus=subject_focus,
+                        grade_level=grade_level,
+                        structured_content=structured_content,
+                        language=language,
+                        num_sections=num_items,
+                        selected_standards=selected_standards,
+                        user_id=user_id
+                    )
                 
                 # Generate title using existing function
                 generated_title = generate_outline_title(data, structured_content)
