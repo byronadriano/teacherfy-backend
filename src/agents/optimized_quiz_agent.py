@@ -10,6 +10,7 @@ import json
 import re
 from typing import Dict, Any, List, Optional
 from src.config import logger, client
+from src.utils.subject_guidance import SubjectSpecificPrompts
 
 class OptimizedQuizAgent:
     """Single-call quiz generation agent that embeds research and generation"""
@@ -72,150 +73,57 @@ class OptimizedQuizAgent:
             return self._create_intelligent_fallback(lesson_topic, subject_focus, grade_level, num_sections, language)
     
     def _get_optimized_system_prompt(self, language: str, grade_level: str, subject_focus: str) -> str:
-        """Optimized system prompt with structured JSON output"""
+        """Optimized system prompt with subject-specific guidance"""
         
-        return f"""You are an expert educator who creates high-quality quizzes with structured JSON output for clean parsing.
+        # Get subject-specific guidance  
+        subject_guidance = SubjectSpecificPrompts.format_subject_guidance_for_prompt(subject_focus, "quiz")
+        
+        return f"""Expert educator creating {grade_level} assessments in {language}. Respond with ONLY valid JSON.
 
-CRITICAL: Respond with ONLY valid JSON. No explanations, no additional text.
+{subject_guidance}
 
-LANGUAGE: All content in {language}
-GRADE LEVEL: {grade_level} appropriate complexity and vocabulary
-SUBJECT: Focus on {subject_focus} concepts and standards
-
-OUTPUT FORMAT (respond with exactly this JSON structure):
+JSON FORMAT:
 {{
   "sections": [
     {{
-      "title": "Section Title in {language}",
+      "title": "Assessment Section in {language}",
       "questions": [
         {{
-          "question": "Complete question text in {language}",
-          "type": "multiple_choice",
-          "options": ["Option A", "Option B", "Option C", "Option D"],
-          "answer": "Correct option letter and text",
-          "explanation": "Why this answer is correct"
-        }},
-        {{
-          "question": "Another question in {language}",
-          "type": "short_answer",
-          "answer": "Direct answer",
-          "explanation": "Brief explanation of the answer"
-        }},
-        {{
-          "question": "True or False: Statement in {language}",
-          "type": "true_false", 
-          "answer": "True/False",
-          "explanation": "Explanation of why this is true or false"
-        }},
-        {{
-          "question": "Real-world application question in {language}",
-          "type": "word_problem",
-          "answer": "Numerical or descriptive answer",
-          "explanation": "Step-by-step reasoning"
+          "question": "Complete question in {language}",
+          "type": "multiple_choice|short_answer|true_false|word_problem",
+          "options": ["A", "B", "C", "D"] (if multiple_choice),
+          "answer": "Correct answer",
+          "explanation": "Why this is correct"
         }}
       ],
-      "teacher_notes": ["Specific teaching guidance in {language}"],
-      "differentiation_tips": ["Learning accommodation strategies in {language}"]
+      "teacher_notes": ["Grading guidance"],
+      "differentiation_tips": ["Assessment accommodations"]
     }}
   ]
 }}
 
-QUESTION TYPES TO USE:
-- "multiple_choice": A/B/C/D format questions
-- "short_answer": Brief response questions  
-- "true_false": True/False questions
-- "word_problem": Real-world application problems
-- "fill_blank": Fill-in-the-blank questions
-
-CONTENT REQUIREMENTS:
-- Mix question types within each section
-- Progress from basic recall to application
-- Include common misconceptions as questions
-- Use grade-appropriate vocabulary
-- Provide clear, accurate answers
-- Add helpful explanations for complex answers
-
-QUESTION REQUIREMENTS:
-- Mix types: multiple choice, true/false, short answer, word problems
-- Progress from basic recall to application/analysis
-- Include common misconceptions as questions or distractors
-- Use real-world examples appropriate for {grade_level}
-- Each question must have complete, accurate answer
-- Questions test understanding, not memorization
-
-CONTENT QUALITY:
-- Specific, concrete examples (not vague generalizations)
-- Grade-appropriate vocabulary and sentence structure
-- Real-world connections students can relate to
-- Address common learning difficulties for this topic
-- Include visual/hands-on learning opportunities where relevant
-
-TEACHER SUPPORT:
-- Each section includes "Teacher note:" with specific guidance
-- Each section includes "Differentiation tip:" for various learners
-- Focus areas clearly identified through question selection
-- Common errors addressed through answer explanations
-
-CLEAN JSON STRUCTURE (NO DUPLICATION):
-{{
-  "sections": [
-    {{
-      "title": "Basic Fraction Understanding",
-      "questions": [
-        {{
-          "question": "In the fraction 3/4, which number tells us how many equal parts the whole is divided into?",
-          "type": "multiple_choice",
-          "options": ["3", "4", "7", "12"],
-          "answer": "4",
-          "explanation": "The denominator shows total equal parts"
-        }},
-        {{
-          "question": "If you eat 2 slices of a pizza cut into 8 equal slices, what fraction did you eat?",
-          "type": "short_answer", 
-          "answer": "2/8 or 1/4",
-          "explanation": "Two parts out of eight total parts"
-        }}
-      ],
-      "teacher_notes": ["Use visual fraction models and real objects"],
-      "differentiation_tips": ["Start with halves and fourths using familiar objects"]
-    }}
-  ]
-}}
-
-OPTIMIZATION FOCUS:
-- Direct, efficient content generation
-- No unnecessary explanation or research exposition  
-- Complete questions with full context in each item
-- Ready-to-use format for quiz handlers
-- Balanced difficulty appropriate for grade level"""
+ASSESSMENT RULES:
+• Self-contained - no external resources needed
+• Test understanding, not memorization  
+• Include common misconceptions as distractors
+• Progress from basic to application questions
+• Provide clear, complete answer explanations"""
 
     def _build_optimized_user_prompt(self, lesson_topic: str, subject_focus: str, grade_level: str,
                                    language: str, num_sections: int, standards: List[str], custom_requirements: str) -> str:
         """Streamlined user prompt for single-call efficiency"""
         
-        standards_text = f"Standards: {', '.join(standards[:3])}" if standards else ""  # Limit standards to avoid bloat
+        standards_text = f"Standards: {', '.join(standards[:2])}" if standards else ""
+        custom_text = f"CUSTOM: {custom_requirements}" if custom_requirements else ""
         
-        return f"""Create a {num_sections}-section quiz on "{lesson_topic}" for {grade_level} {subject_focus}.
+        return f"""Create {num_sections}-section quiz: "{lesson_topic}" | {grade_level} {subject_focus} | {language}
 
-TOPIC: {lesson_topic}
-SUBJECT: {subject_focus}  
-GRADE: {grade_level}
-LANGUAGE: {language}
-SECTIONS: {num_sections} sections with 4-5 questions each
 {standards_text}
+{custom_text}
 
-REQUIREMENTS:
-- Research {lesson_topic} concepts appropriate for {grade_level}
-- Create questions that test core understanding and application
-- Include common misconceptions students have about {lesson_topic}
-- Use real-world examples {grade_level} students can relate to
-- Provide complete teacher guidance for each section
-- Mix question types for comprehensive assessment
-{f"- {custom_requirements}" if custom_requirements else ""}
+Generate {num_sections} sections, 4-5 questions each. Test core understanding and application.
 
-Focus on the most important {lesson_topic} concepts that {grade_level} students need to master in {subject_focus}. Create questions that reveal true understanding, not just memorization.
-
-Respond with the structured content JSON array only."""
+JSON only."""
 
     def _parse_optimized_response(self, content: str, expected_sections: int) -> Optional[List[Dict[str, Any]]]:
         """Parse the new JSON structure efficiently"""

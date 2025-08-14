@@ -8,6 +8,7 @@ from .optimized_quiz_agent import OptimizedQuizAgent
 from .optimized_worksheet_agent import OptimizedWorksheetAgent
 from .optimized_lesson_plan_agent import OptimizedLessonPlanAgent
 from .presentation_specialist_agent import PresentationSpecialistAgent
+from .content_research_agent import ContentResearchAgent
 
 class AgentCoordinator:
     """Optimized coordinator using single API calls for faster response times"""
@@ -19,8 +20,9 @@ class AgentCoordinator:
             "worksheet": OptimizedWorksheetAgent(),  # Optimized single-call worksheet generation
             "lesson_plan": OptimizedLessonPlanAgent()  # Optimized single-call lesson plan generation
         }
+        self.research_agent = ContentResearchAgent()  # For multi-resource alignment
         self._generated_content = {}  # Store generated content for cross-resource alignment
-        logger.info("Agent Coordinator initialized with optimized single-call agents")
+        logger.info("Agent Coordinator initialized with optimized single-call agents and research agent")
     
     def generate_multiple_resources(self,
                                    lesson_topic: str,
@@ -32,18 +34,30 @@ class AgentCoordinator:
                                    custom_requirements: str = "",
                                    **kwargs) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Generate multiple resources with proper alignment.
-        Lesson plan is generated LAST using content from other resources.
+        Generate multiple resources with proper alignment using shared research.
+        Uses ContentResearchAgent for consistent foundation across all resources.
         """
         logger.info(f"Generating multiple aligned resources: {resource_types}")
         
+        # STEP 1: Generate shared research for alignment
+        logger.info("🔍 Generating shared research for content alignment...")
+        shared_research = self.research_agent.research_topic(
+            lesson_topic=lesson_topic,
+            subject_focus=subject_focus,
+            grade_level=grade_level,
+            language=language,
+            standards=standards,
+            custom_requirements=custom_requirements
+        )
+        logger.info("✅ Shared research complete - all resources will use consistent foundation")
+        
         results = {}
         
-        # Generate non-lesson-plan resources first
+        # STEP 2: Generate non-lesson-plan resources using shared research
         other_resources = [rt for rt in resource_types if rt != 'lesson_plan' and rt != 'lesson plan']
         
         for resource_type in other_resources:
-            logger.info(f"Generating {resource_type}...")
+            logger.info(f"Generating {resource_type} with shared research foundation...")
             results[resource_type] = self.generate_structured_content(
                 lesson_topic=lesson_topic,
                 subject_focus=subject_focus,
@@ -52,12 +66,14 @@ class AgentCoordinator:
                 language=language,
                 standards=standards,
                 custom_requirements=custom_requirements,
+                requested_resources=resource_types,  # Pass all requested resources for strategy
+                shared_research_data=shared_research,  # Pass shared research
                 **kwargs
             )
         
-        # Generate lesson plan LAST with reference to other resources
+        # STEP 3: Generate lesson plan LAST with both shared research AND reference to other resources
         if 'lesson_plan' in resource_types or 'lesson plan' in resource_types:
-            logger.info("Generating lesson plan with reference to other resources...")
+            logger.info("Generating lesson plan with shared research + reference to other resources...")
             
             # Build reference content summary for lesson plan
             reference_summary = self._build_reference_summary(results)
@@ -71,10 +87,11 @@ class AgentCoordinator:
                 standards=standards,
                 custom_requirements=custom_requirements + f"\n\nREFERENCE CONTENT:\n{reference_summary}",
                 requested_resources=list(results.keys()),
+                shared_research_data=shared_research,  # Pass shared research
                 **kwargs
             )
         
-        logger.info(f"Generated {len(results)} aligned resources")
+        logger.info(f"Generated {len(results)} aligned resources using shared research foundation")
         return results
     
     def _build_reference_summary(self, generated_resources: Dict) -> str:
@@ -117,13 +134,19 @@ class AgentCoordinator:
                                   num_sections: int = 5,
                                   standards: List[str] = None,
                                   custom_requirements: str = "",
-                                  requested_resources: List[str] = None) -> List[Dict[str, Any]]:
+                                  requested_resources: List[str] = None,
+                                  shared_research_data: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """
-        Optimized single-call workflow for fast content generation
+        Optimized workflow: Uses shared research when available, single-call for individual resources
         Returns structured content compatible with handlers
         """
         
         logger.info(f"Agent Coordinator generating {resource_type} for: {lesson_topic}")
+        
+        # Determine if we're using shared research or individual optimization
+        using_shared_research = shared_research_data is not None
+        if using_shared_research:
+            logger.info("📚 Using shared research data for content alignment")
         
         # Analyze requested resources for content optimization
         if requested_resources:
@@ -141,7 +164,6 @@ class AgentCoordinator:
                 logger.error(f"No specialist agent found for: {resource_type}")
                 raise ValueError(f"Unsupported resource type: {resource_type}")
             
-            # Single API call through specialist agent (includes embedded research)
             logger.info(f"Generating content with {specialist_agent.name}")
             
             # Check if this is an optimized agent (different interface)
@@ -150,6 +172,11 @@ class AgentCoordinator:
                 enhanced_requirements = self._enhance_requirements_for_strategy(
                     custom_requirements, content_strategy, requested_resources
                 )
+                
+                # Add shared research context if available
+                if using_shared_research:
+                    research_context = self._format_research_for_agents(shared_research_data)
+                    enhanced_requirements = f"{enhanced_requirements}\n\nSHARED RESEARCH FOUNDATION:\n{research_context}"
                 
                 # For lesson plan, pass requested_resources for integration
                 if agent_key == "lesson_plan":
@@ -175,10 +202,15 @@ class AgentCoordinator:
                         custom_requirements=enhanced_requirements
                     )
             else:
-                # Base specialist agents - use enhanced research data based on strategy
-                mock_research_data = self._create_enhanced_research_data(
-                    lesson_topic, subject_focus, content_strategy, requested_resources
-                )
+                # Base specialist agents (presentation) - use shared or enhanced research
+                if using_shared_research:
+                    research_data = shared_research_data
+                    logger.info("Using shared research for presentation agent")
+                else:
+                    research_data = self._create_enhanced_research_data(
+                        lesson_topic, subject_focus, content_strategy, requested_resources
+                    )
+                    logger.info("Using enhanced mock research for presentation agent")
                 
                 # Enhance requirements based on content strategy
                 enhanced_requirements = self._enhance_requirements_for_strategy(
@@ -186,7 +218,7 @@ class AgentCoordinator:
                 )
                 
                 structured_content = specialist_agent.create_structured_content(
-                    research_data=mock_research_data,
+                    research_data=research_data,
                     num_sections=num_sections,
                     lesson_topic=lesson_topic,
                     subject_focus=subject_focus,
@@ -393,3 +425,67 @@ Create robust, versatile content that adapts well to multiple resource formats:
             base_data["cross_format_examples"] = [f"Flexible {lesson_topic} scenarios", f"Transferable {lesson_topic} skills"]
         
         return base_data
+    
+    def _format_research_for_agents(self, research_data: Dict[str, Any]) -> str:
+        """Format comprehensive research data for optimized agents that use prompts instead of structured data"""
+        if not research_data:
+            return ""
+        
+        formatted_parts = []
+        
+        # Core content information
+        if "core_concepts" in research_data:
+            concepts = research_data["core_concepts"]
+            if isinstance(concepts, list):
+                formatted_parts.append(f"CORE CONCEPTS: {', '.join(concepts)}")
+        
+        if "key_learning_points" in research_data:
+            points = research_data["key_learning_points"]
+            if isinstance(points, list):
+                formatted_parts.append(f"KEY LEARNING POINTS: {', '.join(points)}")
+        
+        # Examples and applications
+        if "age_appropriate_examples" in research_data:
+            examples = research_data["age_appropriate_examples"]
+            if isinstance(examples, list):
+                formatted_parts.append(f"EXAMPLES: {', '.join(examples)}")
+        
+        if "real_world_connections" in research_data:
+            connections = research_data["real_world_connections"]
+            if isinstance(connections, list):
+                formatted_parts.append(f"REAL-WORLD CONNECTIONS: {', '.join(connections)}")
+        
+        # Vocabulary and terminology
+        if "vocabulary" in research_data:
+            vocab = research_data["vocabulary"]
+            if isinstance(vocab, list):
+                vocab_terms = []
+                for term in vocab:
+                    if isinstance(term, dict) and "term" in term and "definition" in term:
+                        vocab_terms.append(f"{term['term']}: {term['definition']}")
+                if vocab_terms:
+                    formatted_parts.append(f"KEY VOCABULARY: {'; '.join(vocab_terms)}")
+        
+        # Learning challenges and support
+        if "common_misconceptions" in research_data:
+            misconceptions = research_data["common_misconceptions"]
+            if isinstance(misconceptions, list):
+                formatted_parts.append(f"AVOID MISCONCEPTIONS: {', '.join(misconceptions)}")
+        
+        if "prerequisite_knowledge" in research_data:
+            prereqs = research_data["prerequisite_knowledge"]
+            if isinstance(prereqs, list):
+                formatted_parts.append(f"PREREQUISITE KNOWLEDGE: {', '.join(prereqs)}")
+        
+        # Assessment and differentiation
+        if "assessment_strategies" in research_data:
+            assessment = research_data["assessment_strategies"]
+            if isinstance(assessment, list):
+                formatted_parts.append(f"ASSESSMENT APPROACHES: {', '.join(assessment)}")
+        
+        if "differentiation_strategies" in research_data:
+            diff = research_data["differentiation_strategies"]
+            if isinstance(diff, list):
+                formatted_parts.append(f"DIFFERENTIATION: {', '.join(diff)}")
+        
+        return "\n".join(formatted_parts)

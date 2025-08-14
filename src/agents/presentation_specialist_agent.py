@@ -226,6 +226,10 @@ ASSESSMENT PRINCIPLES:
 - Provide distractors that reveal common misconceptions
 - Include questions that assess different learning styles
 - Ensure cultural relevance and accessibility
+- CRITICAL: Create SELF-CONTAINED content - students should NOT need external resources
+- For literature analysis, include short excerpts (2-4 sentences) within questions
+- For history topics, provide brief historical passages or context
+- Never reference specific books, stories, or texts without providing the relevant content
 
 EXAMPLE VALID JSON RESPONSE:
 {{
@@ -297,6 +301,15 @@ Content:
 - Differentiation tip: Use counting blocks for visual learners
 - Teacher note: Allow 10 minutes for completion
 
+LITERATURE EXAMPLE:
+Section 1: Character Analysis Practice  
+Content:
+- Read this passage: "Maria looked at the broken vase on the floor. Her heart raced as she heard footsteps approaching. She quickly grabbed the broom and started sweeping." What emotion is Maria feeling? (Answer: Fear or anxiety)
+- In the passage above, what clue tells us Maria is nervous? (Answer: Her heart raced)
+- How does Maria try to fix the problem? (Answer: She cleans up by sweeping)
+- Differentiation tip: Highlight emotion words for struggling readers
+- Teacher note: Discuss how actions show character feelings
+
 WORKSHEET DESIGN PRINCIPLES:
 - Start with guided practice, move to independent work
 - Include examples or models when introducing new concepts
@@ -304,6 +317,10 @@ WORKSHEET DESIGN PRINCIPLES:
 - Create activities that can be completed in reasonable time
 - Use text-based visual descriptions instead of emojis
 - Design for formative assessment opportunities
+- CRITICAL: Create SELF-CONTAINED content - students should NOT need external books/resources
+- For literature analysis, include short excerpts (2-4 sentences) within questions
+- For history topics, provide brief historical passages or context
+- Never reference specific books, stories, or texts without including the relevant content
 
 ACTIVITY TYPES:
 - Guided practice with step-by-step support

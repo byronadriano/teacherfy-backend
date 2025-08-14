@@ -4,8 +4,10 @@ Provides foundational content that specialist agents can adapt for their specifi
 """
 
 import json
+import re
 from typing import Dict, List, Any, Optional
 from src.config import logger, client
+from src.utils.subject_guidance import SubjectSpecificPrompts
 
 class ContentResearchAgent:
     """Agent responsible for researching and gathering comprehensive topic information"""
@@ -104,9 +106,17 @@ Provide comprehensive research data that specialist agents can use to create pre
                 elif content.startswith('```'):
                     content = content.split('```')[1].split('```')[0].strip()
                 
-                research_data = json.loads(content)
-                logger.info(f"Successfully researched topic: {lesson_topic}")
-                return research_data
+                # First attempt - direct parsing
+                try:
+                    research_data = json.loads(content)
+                    logger.info(f"Successfully researched topic: {lesson_topic}")
+                    return research_data
+                except json.JSONDecodeError:
+                    # Second attempt - try to fix common JSON issues
+                    content_fixed = self._fix_common_json_issues(content)
+                    research_data = json.loads(content_fixed)
+                    logger.info(f"Successfully researched topic after JSON repair: {lesson_topic}")
+                    return research_data
                 
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse research JSON: {e}")
@@ -118,6 +128,19 @@ Provide comprehensive research data that specialist agents can use to create pre
         except Exception as e:
             logger.error(f"Error in content research: {e}")
             return self._create_fallback_research(lesson_topic, subject_focus, grade_level, language)
+    
+    def _fix_common_json_issues(self, content: str) -> str:
+        """Attempt to fix common JSON formatting issues"""
+        # Remove trailing commas before closing brackets/braces
+        content = re.sub(r',(\s*[}\]])', r'\1', content)
+        
+        # Fix missing commas between array elements (basic cases)
+        content = re.sub(r'"\s*\n\s*"', '",\n    "', content)
+        
+        # Fix missing commas between object elements
+        content = re.sub(r'}\s*\n\s*{', '},\n    {', content)
+        
+        return content
     
     def _create_fallback_research(self, topic: str, subject: str, grade: str, language: str) -> Dict[str, Any]:
         """Create fallback research data when API fails"""
