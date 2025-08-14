@@ -28,3 +28,11 @@ gunicorn
 
 # Testing
 pytest
+
+# Job Queue & Background Processing
+celery[redis]==5.3.4
+redis==5.0.1
+kombu==5.3.4
+
+# Email Services
+flask-mail==0.9.1

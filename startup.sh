@@ -53,6 +53,18 @@ check_requirements() {
         fi
     fi
     
+    # Check for Celery installation
+    echo -e "${YELLOW}Checking Celery installation...${NC}"
+    python -c "import celery; print(f'Celery {celery.__version__} is available')" 2>/dev/null || {
+        echo -e "${RED}Celery is not installed. Installing dependencies...${NC}"
+        pip install -r requirements.txt
+        # Verify installation
+        python -c "import celery; print(f'Celery {celery.__version__} installed successfully')" || {
+            echo -e "${RED}Failed to install Celery. Please check requirements.txt${NC}"
+            missing=1
+        }
+    }
+    
     if [ ! -f ".env" ]; then
         echo -e "${YELLOW}Warning: .env file not found. Some environment variables might be missing.${NC}"
         echo -e "${YELLOW}Creating a sample .env file...${NC}"
@@ -86,31 +98,79 @@ check_database() {
 
 # Start the development server
 start_dev_server() {
-    echo -e "${GREEN}Starting development server...${NC}"
+    echo -e "${GREEN}Starting development server with background job support...${NC}"
+    
+    # Start Celery worker for development
+    start_celery_worker
+    
     export FLASK_ENV=development
+    
+    # Setup signal handlers for graceful shutdown
+    trap 'stop_celery_worker; exit' SIGTERM SIGINT
+    
     python run_dev.py
+}
+
+# Start Celery worker
+start_celery_worker() {
+    echo -e "${YELLOW}Starting Celery worker for background job processing...${NC}"
+    
+    # Check if Redis is available
+    if command_exists redis-cli; then
+        redis-cli ping >/dev/null 2>&1 || echo -e "${YELLOW}Warning: Redis server may not be running${NC}"
+    fi
+    
+    # Start Celery worker in background
+    if [ "$MODE" = "dev" ]; then
+        celery -A run_celery:celery_app worker --loglevel=info &
+        CELERY_PID=$!
+        echo -e "${GREEN}Celery worker started with PID: $CELERY_PID${NC}"
+        echo $CELERY_PID > /tmp/celery.pid
+    else
+        # Production mode - use detached worker
+        celery -A run_celery:celery_app worker --loglevel=info --detach --pidfile=/tmp/celery.pid
+        echo -e "${GREEN}Celery worker started in detached mode${NC}"
+    fi
+}
+
+# Stop Celery worker
+stop_celery_worker() {
+    if [ -f /tmp/celery.pid ]; then
+        CELERY_PID=$(cat /tmp/celery.pid)
+        if kill -0 $CELERY_PID 2>/dev/null; then
+            echo -e "${YELLOW}Stopping Celery worker (PID: $CELERY_PID)...${NC}"
+            kill $CELERY_PID
+            rm -f /tmp/celery.pid
+        fi
+    fi
 }
 
 # Start the production server
 start_prod_server() {
-    echo -e "${GREEN}Starting production server with Gunicorn...${NC}"
+    echo -e "${GREEN}Starting production server with Gunicorn and background jobs...${NC}"
+    
+    # Start Celery worker first
+    start_celery_worker
     
     # Get port from environment or use default
-    PORT=${PORT:-5000}
+    PORT=${PORT:-8000}
     
     # Set number of workers based on CPU cores
     if command_exists nproc; then
         WORKERS=$(($(nproc) * 2 + 1))
     else
-        WORKERS=4  # Default if we can't determine CPU count
+        WORKERS=2  # Default for Azure App Service
     fi
     
     echo -e "${YELLOW}Using $WORKERS workers on port $PORT${NC}"
     
+    # Setup signal handlers for graceful shutdown
+    trap 'stop_celery_worker; exit' SIGTERM SIGINT
+    
     # Start Gunicorn
     gunicorn --bind=0.0.0.0:$PORT \
         --workers=$WORKERS \
-        --timeout=600 \
+        --timeout=120 \
         --log-level=info \
         --access-logfile=- \
         --error-logfile=- \

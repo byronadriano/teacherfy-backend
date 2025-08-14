@@ -1,6 +1,9 @@
-# app.py - FIXED VERSION with COOP headers
+# app.py - FIXED VERSION with COOP headers and background job processing
 import os
 import tempfile
+import uuid
+import time
+import re
 from datetime import timedelta
 from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
@@ -64,6 +67,226 @@ def create_app():
     app.register_blueprint(outline_blueprint)
     app.register_blueprint(history_blueprint)
     app.register_blueprint(resource_blueprint)
+
+    # Initialize Celery for background jobs
+    try:
+        # First check if celery package is available
+        import celery as celery_package
+        
+        from celery_config import make_celery
+        from background_tasks import init_celery
+        from email_service import email_service
+        
+        celery = init_celery(app)
+        generate_resources_background = celery.tasks.get('generate_resources_background')
+        
+        # In-memory job storage (use Redis or database in production)
+        job_storage = {}
+        
+        logger.info("Celery initialized successfully for background job processing")
+    except ImportError as e:
+        logger.warning(f"Celery not available, background jobs disabled: {e}")
+        celery = None
+        generate_resources_background = None
+        job_storage = {}
+    except Exception as e:
+        logger.error(f"Failed to initialize Celery: {e}")
+        celery = None
+        generate_resources_background = None
+        job_storage = {}
+
+    # Background job endpoints
+    @app.route('/generate/background', methods=['POST'])
+    def start_background_generation():
+        """Start background resource generation job"""
+        if celery is None:
+            return jsonify({'error': 'Background job processing not available'}), 503
+            
+        try:
+            data = request.get_json()
+
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+
+            # Validate required fields
+            required_fields = ['structured_content']
+            for field in required_fields:
+                if field not in data:
+                    return jsonify({'error': f'Missing required field: {field}'}), 400
+
+            # Generate unique job ID
+            job_id = data.get('job_id', f"job_{int(time.time())}_{str(uuid.uuid4())[:8]}")
+
+            # Prepare job data
+            job_data = {
+                'job_id': job_id,
+                'operation_type': data.get('operation_type', 'resource_generation'),
+                'notification_email': data.get('notification_email'),
+                'resource_types': data.get('resource_types', ['Presentation']),
+                'structured_content': data.get('structured_content'),
+                'grade_level': data.get('grade_level'),
+                'subject': data.get('subject'),
+                'topic': data.get('topic'),
+                'include_images': data.get('include_images', False),
+                'background_mode': True,
+                'started_at': time.time()
+            }
+
+            # Validate email if provided
+            email = job_data.get('notification_email')
+            if email and not _is_valid_email(email):
+                return jsonify({'error': 'Invalid email address'}), 400
+
+            # Start the background task
+            if generate_resources_background is None:
+                return jsonify({'error': 'Background task not available'}), 503
+            task = generate_resources_background.delay(job_data)
+
+            # Store job info
+            job_storage[job_id] = {
+                'task_id': task.id,
+                'status': 'queued',
+                'progress': 0,
+                'message': 'Job queued successfully',
+                'started_at': time.time(),
+                'job_data': job_data
+            }
+
+            logger.info(f"Started background job {job_id} with task ID {task.id}")
+
+            return jsonify({
+                'job_id': job_id,
+                'task_id': task.id,
+                'status': 'queued',
+                'progress': 0,
+                'message': 'Background job started successfully',
+                'estimated_duration': _estimate_duration(job_data)
+            }), 200
+
+        except Exception as e:
+            logger.error(f"Error starting background job: {str(e)}")
+            return jsonify({'error': f'Failed to start background job: {str(e)}'}), 500
+
+    @app.route('/generate/status/<job_id>', methods=['GET'])
+    def get_job_status(job_id):
+        """Get the status of a background job"""
+        if celery is None:
+            return jsonify({'error': 'Background job processing not available'}), 503
+            
+        try:
+            if job_id not in job_storage:
+                return jsonify({'error': 'Job not found'}), 404
+
+            job_info = job_storage[job_id]
+            task_id = job_info['task_id']
+
+            # Get task status from Celery
+            if generate_resources_background is None:
+                return jsonify({'error': 'Background task not available'}), 503
+            task = generate_resources_background.AsyncResult(task_id)
+
+            if task.state == 'PENDING':
+                response = {
+                    'job_id': job_id,
+                    'status': 'queued',
+                    'progress': 0,
+                    'message': 'Job is queued'
+                }
+            elif task.state == 'PROCESSING':
+                response = {
+                    'job_id': job_id,
+                    'status': 'processing',
+                    'progress': task.info.get('progress', 0),
+                    'message': task.info.get('message', 'Processing...')
+                }
+            elif task.state == 'SUCCESS':
+                result = task.result
+                response = {
+                    'job_id': job_id,
+                    'status': 'completed',
+                    'progress': 100,
+                    'message': 'Job completed successfully',
+                    'download_url': result.get('download_url'),
+                    'result': result.get('result')
+                }
+            elif task.state == 'FAILURE':
+                response = {
+                    'job_id': job_id,
+                    'status': 'failed',
+                    'progress': 0,
+                    'message': f'Job failed: {str(task.info)}',
+                    'error': str(task.info)
+                }
+            else:
+                response = {
+                    'job_id': job_id,
+                    'status': task.state.lower(),
+                    'progress': 0,
+                    'message': f'Job status: {task.state}'
+                }
+
+            return jsonify(response), 200
+
+        except Exception as e:
+            logger.error(f"Error getting job status for {job_id}: {str(e)}")
+            return jsonify({'error': f'Failed to get job status: {str(e)}'}), 500
+
+    @app.route('/generate/cancel/<job_id>', methods=['POST'])
+    def cancel_job(job_id):
+        """Cancel a background job"""
+        if celery is None:
+            return jsonify({'error': 'Background job processing not available'}), 503
+            
+        try:
+            if job_id not in job_storage:
+                return jsonify({'error': 'Job not found'}), 404
+
+            job_info = job_storage[job_id]
+            task_id = job_info['task_id']
+
+            # Revoke the task
+            celery.control.revoke(task_id, terminate=True)
+
+            # Update job status
+            job_storage[job_id]['status'] = 'cancelled'
+
+            logger.info(f"Cancelled job {job_id}")
+
+            return jsonify({
+                'job_id': job_id,
+                'status': 'cancelled',
+                'message': 'Job cancelled successfully'
+            }), 200
+
+        except Exception as e:
+            logger.error(f"Error cancelling job {job_id}: {str(e)}")
+            return jsonify({'error': f'Failed to cancel job: {str(e)}'}), 500
+
+    @app.route('/outline/background', methods=['POST'])
+    def start_background_outline():
+        """Start background outline generation (same as resource generation but different endpoint)"""
+        return start_background_generation()
+
+    def _is_valid_email(email):
+        """Basic email validation"""
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return re.match(pattern, email) is not None
+
+    def _estimate_duration(job_data):
+        """Estimate job duration based on complexity"""
+        resource_count = len(job_data.get('resource_types', ['Presentation']))
+        content_length = len(job_data.get('structured_content', []))
+
+        if resource_count == 1:
+            base_time = 45
+            complexity_factor = min(content_length * 3, 45)
+            return base_time + complexity_factor
+        else:
+            research_time = 30
+            per_resource_time = 80
+            complexity_multiplier = max(1, content_length / 10)
+            total_time = research_time + (resource_count * per_resource_time * complexity_multiplier)
+            return min(total_time, 480)
 
     @app.after_request
     def after_request(response):
