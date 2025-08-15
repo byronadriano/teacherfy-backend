@@ -18,16 +18,19 @@ class PresentationHandler(BaseResourceHandler):
         # Create temp file
         temp_file = self.create_temp_file("pptx")
         
-        # Create presentation using the restored template-based system
+        # CRITICAL DEBUG: Log image preference at multiple levels
+        logger.info(f"🎯 PresentationHandler.generate() called with include_images: {self.include_images}")
         logger.info(f"Creating presentation with {len(self.structured_content)} slides, images: {self.include_images}")
         
         # Import the restored slide processor functions
         from resources.generators.slide_processor import create_clean_presentation_with_images, create_clean_presentation
         
-        # Use the correct function based on image preference
+        # Use the correct function based on image preference with explicit logging
         if self.include_images:
+            logger.info("📸 USING create_clean_presentation_with_images() - IMAGES ENABLED")
             prs = create_clean_presentation_with_images(self.structured_content, include_images=True)
         else:
+            logger.info("🚫 USING create_clean_presentation() - NO IMAGES")
             prs = create_clean_presentation(self.structured_content)
         
         # Save presentation

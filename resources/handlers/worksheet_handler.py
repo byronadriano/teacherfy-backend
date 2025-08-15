@@ -1,4 +1,4 @@
-# src/resource_handlers/worksheet_handler.py - CLEANED VERSION
+# resources/handlers/worksheet_handler.py - RESTORED from original
 import os
 import logging
 import re
@@ -232,12 +232,19 @@ class WorksheetHandler(BaseResourceHandler):
             teacher_instruction = q_data.get('teacher_instruction', '')
             q_type = q_data.get('type', 'short_answer')
             
-            # Format question based on type
+            # Format question based on type with PROPER visual array handling
             if q_type == 'multiple_choice':
                 options = q_data.get('options', [])
                 if len(options) >= 4:
-                    # Format with newlines for proper separation in document
-                    formatted_question = f"{question_text}\nA) {options[0]}\nB) {options[1]}\nC) {options[2]}\nD) {options[3]}"
+                    # CRITICAL: Clean visual formatting and fix duplicate labels
+                    clean_options = []
+                    for i, option in enumerate(options[:4]):
+                        # Remove duplicate labels like "A) A)" 
+                        option_text = self._clean_option_text(option)
+                        clean_options.append(option_text)
+                    
+                    # Format with proper newlines for clean display
+                    formatted_question = f"{question_text}\nA) {clean_options[0]}\nB) {clean_options[1]}\nC) {clean_options[2]}\nD) {clean_options[3]}"
                 else:
                     formatted_question = question_text
             elif q_type == 'fill_blank':
@@ -251,13 +258,85 @@ class WorksheetHandler(BaseResourceHandler):
             
             # Create complete answer with explanation and teacher instruction for teacher guide
             complete_answer = answer
-            if explanation and explanation != answer:
-                complete_answer += f" ({explanation})"
+            if explanation:
+                complete_answer += f" (Explanation: {explanation})"
             if teacher_instruction:
-                complete_answer += f" [Teacher instruction: {teacher_instruction}]"
+                complete_answer += f" [Teacher: {teacher_instruction}]"
             
             questions.append(formatted_question)
             answers.append(complete_answer)
         
-        logger.info(f"Extracted {len(questions)} worksheet questions from structured format")
         return questions, answers
+
+    def _clean_option_text(self, option_text: str) -> str:
+        """Clean option text to remove duplicate labels and fix visual arrays"""
+        if not option_text:
+            return ""
+        
+        # Remove duplicate labels like "A) A)" -> "A)"
+        option_text = re.sub(r'^[A-D]\)\s*[A-D]\)\s*', '', option_text)
+        
+        # Fix visual array formatting - convert broken circles to proper display
+        # Handle cases like "○○○ ○○○○" where spacing is broken
+        option_text = self._fix_visual_arrays(option_text)
+        
+        return option_text.strip()
+
+    def _fix_visual_arrays(self, text: str) -> str:
+        """Fix visual array formatting for mathematical arrays"""
+        if not text or '○' not in text:
+            return text
+        
+        # Pattern for arrays that show multiplication (like 3 × 4)
+        # Look for patterns like "○○○ ○○○○" or "○○○○\n○○○○\n○○○○"
+        
+        # First, normalize line breaks in arrays
+        # Convert multiple spaces between circle groups to line breaks for proper row/column display
+        text = re.sub(r'○+\s+○+', lambda m: m.group(0).replace(' ', '\n'), text)
+        
+        # Clean up any double line breaks
+        text = re.sub(r'\n\n+', '\n', text)
+        
+        # Ensure proper spacing within rows
+        text = re.sub(r'○(?=○)', '○ ', text)  # Add space between circles in same row
+        
+        return text
+
+    def extract_questions_from_content(self, content_items: List[str]) -> tuple[List[str], List[str]]:
+        """Extract questions and answers from content list (legacy support)"""
+        questions = []
+        answers = []
+        
+        for item in content_items:
+            clean_item = self.clean_markdown_and_formatting(item)
+            
+            # Skip teacher guidance and metadata
+            if any(keyword in clean_item.lower() for keyword in ['teacher note:', 'differentiation tip:', 'teaching strategy:']):
+                continue
+            
+            # Look for question patterns
+            if any(pattern in clean_item.lower() for pattern in ['?', 'calculate', 'solve', 'find', 'what is', 'how much', 'how many']):
+                questions.append(clean_item)
+                # For content-based questions, we don't have explicit answers
+                answers.append("(Student response)")
+        
+        return questions, answers
+
+    def extract_teacher_guidance(self, content_items: List[str]) -> tuple[List[str], List[str]]:
+        """Extract teacher notes and differentiation tips from content"""
+        teacher_notes = []
+        differentiation_tips = []
+        
+        for item in content_items:
+            clean_item = self.clean_markdown_and_formatting(item)
+            
+            if 'teacher note:' in clean_item.lower():
+                note = clean_item.split('teacher note:', 1)[1].strip()
+                if note:
+                    teacher_notes.append(note)
+            elif 'differentiation tip:' in clean_item.lower():
+                tip = clean_item.split('differentiation tip:', 1)[1].strip()
+                if tip:
+                    differentiation_tips.append(tip)
+        
+        return teacher_notes, differentiation_tips

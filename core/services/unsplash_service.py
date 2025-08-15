@@ -235,6 +235,24 @@ class UnsplashService:
         photographer_name = photo_data['photographer_name']
         return f"Photo by {photographer_name} on Unsplash"
 
+    def get_relevant_image(self, query: str, orientation: str = "landscape") -> Optional[str]:
+        """
+        Convenience wrapper that returns a direct image URL for a query.
+        Kept for backward compatibility with other modules (e.g. slide_processor)
+        which expect a single-image URL string via `get_relevant_image`.
+
+        Returns the 'regular' sized image URL or None if not found.
+        """
+        try:
+            photo = self.search_photo(query, orientation=orientation)
+            if not photo:
+                return None
+            # Prefer the regular-sized url for good quality; fall back to small/thumb
+            return photo.get('url_regular') or photo.get('url_small') or photo.get('url_thumb')
+        except Exception as e:
+            logger.error(f"Error in get_relevant_image: {e}")
+            return None
+
 
 # Create a global instance that can be imported
 try:

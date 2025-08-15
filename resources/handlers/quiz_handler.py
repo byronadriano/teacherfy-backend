@@ -203,7 +203,7 @@ class QuizHandler(BaseResourceHandler):
         return temp_file
     
     def _extract_from_structured_questions(self, structured_questions: List[Dict]) -> tuple[List[str], List[str]]:
-        """Extract questions and answers from structured JSON format"""
+        """Extract questions and answers from structured JSON format with improved formatting"""
         questions = []
         answers = []
         
@@ -211,27 +211,75 @@ class QuizHandler(BaseResourceHandler):
             question_text = q_data.get('question', '')
             answer = q_data.get('answer', '')
             explanation = q_data.get('explanation', '')
+            teacher_instruction = q_data.get('teacher_instruction', '')
             q_type = q_data.get('type', 'short_answer')
             
-            # Format question based on type
+            # Format question based on type with PROPER visual array handling
             if q_type == 'multiple_choice':
                 options = q_data.get('options', [])
                 if len(options) >= 4:
-                    # Format with newlines for proper separation in document
-                    formatted_question = f"{question_text}\nA) {options[0]}\nB) {options[1]}\nC) {options[2]}\nD) {options[3]}"
+                    # CRITICAL: Clean visual formatting and fix duplicate labels
+                    clean_options = []
+                    for i, option in enumerate(options[:4]):
+                        # Remove duplicate labels like "A) A)" 
+                        option_text = self._clean_option_text(option)
+                        clean_options.append(option_text)
+                    
+                    # Format with proper newlines for clean display
+                    formatted_question = f"{question_text}\nA) {clean_options[0]}\nB) {clean_options[1]}\nC) {clean_options[2]}\nD) {clean_options[3]}"
+                else:
+                    formatted_question = question_text
+            elif q_type == 'fill_blank':
+                # Ensure fill-in-the-blank format
+                if '___' not in question_text and '_' not in question_text:
+                    formatted_question = f"{question_text} ___"
                 else:
                     formatted_question = question_text
             else:
                 formatted_question = question_text
             
-            # Create complete answer with explanation
-            if explanation and explanation != answer:
-                complete_answer = f"{answer} - {explanation}"
-            else:
-                complete_answer = answer
+            # Create complete answer with explanation and teacher instruction for teacher guide
+            complete_answer = answer
+            if explanation:
+                complete_answer += f" (Explanation: {explanation})"
+            if teacher_instruction:
+                complete_answer += f" [Teacher: {teacher_instruction}]"
             
             questions.append(formatted_question)
             answers.append(complete_answer)
         
-        logger.info(f"Extracted {len(questions)} questions from structured format")
         return questions, answers
+
+    def _clean_option_text(self, option_text: str) -> str:
+        """Clean option text to remove duplicate labels and fix visual arrays"""
+        if not option_text:
+            return ""
+        
+        # Remove duplicate labels like "A) A)" -> "A)"
+        option_text = re.sub(r'^[A-D]\)\s*[A-D]\)\s*', '', option_text)
+        
+        # Fix visual array formatting - convert broken circles to proper display
+        # Handle cases like "○○○ ○○○○" where spacing is broken
+        option_text = self._fix_visual_arrays(option_text)
+        
+        return option_text.strip()
+
+    def _fix_visual_arrays(self, text: str) -> str:
+        """Fix visual array formatting for mathematical arrays"""
+        if not text or '○' not in text:
+            return text
+        
+        # Pattern for arrays that show multiplication (like 3 × 4)
+        # Look for patterns like "○○○ ○○○○" or "○○○○\n○○○○\n○○○○"
+        
+        # First, normalize line breaks in arrays
+        # Convert multiple spaces between circle groups to line breaks for proper row/column display
+        text = re.sub(r'○+\s+○+', lambda m: m.group(0).replace(' ', '\n'), text)
+        
+        # Clean up any double line breaks
+        text = re.sub(r'\n\n+', '\n', text)
+        
+        # Ensure proper spacing within rows
+        text = re.sub(r'○(?=○)', '○ ', text)  # Add space between circles in same row
+        
+        return text
