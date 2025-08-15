@@ -1,8 +1,9 @@
 # src/resource_routes.py - Updated with image support and multi-resource generation
-from flask import Blueprint, request, jsonify, send_file
-from src.config import logger
+from flask import Blueprint, request, jsonify, send_file, session
+from src.config import logger, SCOPES
 from src.resource_types import ResourceType, get_resource_handler
 from src.agents.agent_coordinator import AgentCoordinator
+from google.oauth2.credentials import Credentials
 import os
 import traceback
 
@@ -23,6 +24,10 @@ def generate_resource_endpoint(resource_type):
         data = request.form.to_dict()
     
     structured_content = data.get('structured_content')
+    
+    # Check for Google Slides output option
+    output_format = data.get('output_format', 'file')  # 'file' or 'google_slides'
+    
     # Default to False to avoid expensive image generation unless explicitly requested
     # Accept either snake_case (include_images) or camelCase (includeImages) from frontend
     include_images = False
@@ -43,7 +48,7 @@ def generate_resource_endpoint(resource_type):
         normalized_resource_type = resource_type.lower().replace('-', '_').replace(' ', '_')
         
         # Log the received and normalized resource type
-        logger.info(f"Resource type received: '{resource_type}', normalized to: '{normalized_resource_type}', images: {include_images}")
+        logger.info(f"Resource type received: '{resource_type}', normalized to: '{normalized_resource_type}', images: {include_images}, output: {output_format}")
         
         # Better resource type normalization with improved mapping
         if "quiz" in normalized_resource_type or "test" in normalized_resource_type:
@@ -55,6 +60,50 @@ def generate_resource_endpoint(resource_type):
         else:
             handler_type = "presentation"  # Default
         
+        # Handle Google Slides output for presentations
+        if handler_type == "presentation" and output_format == "google_slides":
+            # Check authentication for Google Slides
+            if 'credentials' not in session:
+                return jsonify({
+                    "error": "Authentication required for Google Slides generation",
+                    "needsAuth": True
+                }), 401
+            
+            # Get credentials from session
+            credentials_data = session.get('credentials')
+            if not credentials_data:
+                return jsonify({
+                    "needsAuth": True,
+                    "error": "No Google credentials found in session"
+                }), 401
+            
+            from google.oauth2.credentials import Credentials
+            credentials = Credentials(
+                token=credentials_data['token'],
+                refresh_token=credentials_data.get('refresh_token'),
+                token_uri=credentials_data['token_uri'],
+                client_id=credentials_data['client_id'],
+                client_secret=credentials_data['client_secret'],
+                scopes=SCOPES
+            )
+            
+            # Use Google Slides handler
+            from src.resource_handlers.google_slides_handler import GoogleSlidesHandler
+            handler = GoogleSlidesHandler(structured_content, credentials, include_images=include_images)
+            presentation_url, presentation_id = handler.generate()
+            
+            logger.info(f"Successfully generated Google Slides presentation: {presentation_url}")
+            
+            return jsonify({
+                "success": True,
+                "presentation_url": presentation_url,
+                "presentation_id": presentation_id,
+                "message": "Google Slides presentation created successfully",
+                "slide_count": len(structured_content),
+                "output_format": "google_slides"
+            })
+        
+        # Standard file generation flow
         logger.info(f"Selected handler_type: '{handler_type}' for resource_type: '{resource_type}'")
         
         # Get the appropriate handler using the resource_types module
@@ -135,6 +184,10 @@ def generate_presentation_endpoint():
     # Extract and validate the data
     resource_type = data.get('resource_type', 'presentation').lower()
     structured_content = data.get('structured_content')
+    
+    # Check for Google Slides output option
+    output_format = data.get('output_format', 'file')  # 'file' or 'google_slides'
+    
     # Default to False to avoid expensive image generation unless explicitly requested
     # Accept either snake_case (include_images) or camelCase (includeImages) from frontend
     include_images = False
@@ -148,7 +201,8 @@ def generate_presentation_endpoint():
         logger.error("No structured content provided")
         return jsonify({"error": "No structured content provided"}), 400
     
-    logger.info(f"Processing generate request with {len(structured_content)} items for resource type: {resource_type} (images: {include_images})")
+    
+    logger.info(f"Processing generate request with {len(structured_content)} items for resource type: {resource_type} (images: {include_images}, output: {output_format})")
     
     return generate_resource_endpoint(resource_type)
 
@@ -219,3 +273,4 @@ def generate_multiple_resources_endpoint():
             "error_type": type(e).__name__,
             "message": "Failed to generate multiple resources"
         }), 500
+

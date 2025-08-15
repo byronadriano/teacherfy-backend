@@ -1,5 +1,9 @@
 import os
 from dotenv import load_dotenv
+
+# Set Flask environment to development BEFORE importing anything from src
+os.environ['FLASK_ENV'] = 'development'
+
 from src.db.database import create_database_and_user, test_connection
 from src.config import logger
 

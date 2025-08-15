@@ -4,7 +4,6 @@ from flask import Blueprint, request, jsonify, session, redirect, url_for
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-from src.google_slides_generator import create_google_slides_presentation
 from src.config import logger, SCOPES, flow
 
 slides_blueprint = Blueprint("slides_blueprint", __name__)
@@ -45,15 +44,17 @@ def generate_slides_endpoint():
         
         if not structured_content:
             return jsonify({"error": "No structured content provided"}), 400
-            
-        presentation_url, presentation_id = create_google_slides_presentation(
-            credentials,
-            structured_content
-        )
+        
+        # Use the new Google Slides handler that integrates with agent system
+        from src.resource_handlers.google_slides_handler import GoogleSlidesHandler
+        
+        google_slides_handler = GoogleSlidesHandler(structured_content, credentials)
+        presentation_url, presentation_id = google_slides_handler.generate()
         
         return jsonify({
             "presentation_url": presentation_url,
-            "presentation_id": presentation_id
+            "presentation_id": presentation_id,
+            "success": True
         })
         
     except Exception as e:

@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
+    'https://www.googleapis.com/auth/presentations',
+    'https://www.googleapis.com/auth/drive.file',
     'openid'
 ]
 
@@ -32,9 +34,9 @@ class BaseConfig:
         
         # Environment-aware redirect URI
         if self.DEVELOPMENT_MODE:
-            self.REDIRECT_URI = "http://localhost:5000/oauth2callback"
+            self.REDIRECT_URI = "http://localhost:5000/api/auth/callback/google"
         else:
-            self.REDIRECT_URI = "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net/oauth2callback"
+            self.REDIRECT_URI = "https://teacherfy-gma6hncme7cpghda.westus-01.azurewebsites.net/api/auth/callback/google"
         
         # Initialize external services
         self.deepseek_client = self._init_deepseek()

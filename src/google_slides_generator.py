@@ -43,6 +43,26 @@ def create_text_box_request(slide_id: str, text: str, transform: Dict[str, Any])
         }
     }
 
+def set_presentation_permissions(credentials: Credentials, presentation_id: str) -> None:
+    """Set appropriate permissions for the presentation to ensure it can be opened."""
+    try:
+        drive_service = build('drive', 'v3', credentials=credentials)
+        
+        # Update the file to be accessible by the owner
+        drive_service.files().update(
+            fileId=presentation_id,
+            body={
+                'writersCanShare': True
+            }
+        ).execute()
+        
+        logger.info(f"Set permissions for presentation: {presentation_id}")
+        
+    except HttpError as error:
+        logger.warning(f"Could not set permissions for presentation {presentation_id}: {error}")
+    except Exception as e:
+        logger.warning(f"Unexpected error setting permissions: {e}")
+
 def create_google_slides_presentation(credentials: Credentials, 
                                     structured_content: List[Dict[str, Any]]) -> Tuple[str, str]:
     """
@@ -180,7 +200,10 @@ def create_google_slides_presentation(credentials: Credentials,
                     body={'requests': populate_requests}
                 ).execute()
         
-        presentation_url = f"https://docs.google.com/presentation/d/{presentation_id}/edit"
+        # Set proper permissions for the presentation
+        set_presentation_permissions(credentials, presentation_id)
+        
+        presentation_url = f"https://docs.google.com/presentation/d/{presentation_id}"
         logger.info(f"Generated presentation: {presentation_url}")
         
         return presentation_url, presentation_id
