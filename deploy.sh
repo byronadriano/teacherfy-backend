@@ -22,7 +22,7 @@ python -c "import redis; print(f'✅ Redis {redis.__version__} is available')" |
 }
 
 echo "🔍 Testing Celery configuration..."
-python test_celery.py || {
+python scripts/test_celery.py || {
     echo "⚠️ Celery configuration test failed, but continuing..."
 }
 

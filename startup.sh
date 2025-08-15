@@ -79,7 +79,7 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:5000/oauth2callback
+GOOGLE_REDIRECT_URI=http://localhost:5000/api/auth/callback/google
 MONTHLY_GENERATION_LIMIT=15
 MONTHLY_DOWNLOAD_LIMIT=15
 PORT=5000
@@ -93,7 +93,7 @@ EOL
 # Check if the database is ready
 check_database() {
     echo -e "${YELLOW}Testing database connection...${NC}"
-    python -c "from dotenv import load_dotenv; load_dotenv(); from src.db.database import test_connection; print('Database connection ' + ('successful' if test_connection() else 'failed'));" || echo -e "${RED}Database connection test failed${NC}"
+    python -c "from dotenv import load_dotenv; load_dotenv(); from core.database.database import test_connection; print('Database connection ' + ('successful' if test_connection() else 'failed'));" || echo -e "${RED}Database connection test failed${NC}"
 }
 
 # Start the development server
@@ -122,13 +122,13 @@ start_celery_worker() {
     
     # Start Celery worker in background
     if [ "$MODE" = "dev" ]; then
-        celery -A run_celery:celery_app worker --loglevel=info &
+        celery -A tasks.worker:celery_app worker --loglevel=info &
         CELERY_PID=$!
         echo -e "${GREEN}Celery worker started with PID: $CELERY_PID${NC}"
         echo $CELERY_PID > /tmp/celery.pid
     else
         # Production mode - use detached worker
-        celery -A run_celery:celery_app worker --loglevel=info --detach --pidfile=/tmp/celery.pid
+        celery -A tasks.worker:celery_app worker --loglevel=info --detach --pidfile=/tmp/celery.pid
         echo -e "${GREEN}Celery worker started in detached mode${NC}"
     fi
 }

@@ -7,13 +7,13 @@ import re
 from datetime import timedelta
 from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
-from src.config import config, logger
-from src.auth_routes import auth_blueprint
-from src.slides_routes import slides_blueprint
-from src.outline_routes import outline_blueprint
-from src.history_routes import history_blueprint
-from src.resource_routes import resource_blueprint
-from src.db.database import test_connection
+from config.settings import config, logger
+from core.auth.routes import auth_blueprint
+from resources.routes.presentations import slides_blueprint
+from resources.routes.outlines import outline_blueprint
+from resources.routes.history import history_blueprint
+from resources.routes.resources import resource_blueprint
+from core.database.database import test_connection
 
 def create_app():
     # Initialize Flask app
@@ -73,9 +73,9 @@ def create_app():
         # First check if celery package is available
         import celery as celery_package
         
-        from celery_config import make_celery
-        from background_tasks import init_celery
-        from email_service import email_service
+        from config.celery_config import make_celery
+        from tasks.jobs import init_celery
+        from core.services.email_service import email_service
         
         celery = init_celery(app)
         generate_resources_background = celery.tasks.get('generate_resources_background')
@@ -363,13 +363,13 @@ def create_app():
     @app.route('/debug/database')
     def debug_database():
         """Test database operations directly"""
-        from src.db import get_user_by_email, create_user, log_user_login
+        from core.database import get_user_by_email, create_user, log_user_login
         
         test_results = {}
         
         try:
             # Test 1: Check if database connection works
-            from src.db.database import test_connection
+            from core.database.database import test_connection
             test_results['connection'] = test_connection()
             
             # Test 2: Try to get a user (should return None if no user exists)
