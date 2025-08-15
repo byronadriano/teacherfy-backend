@@ -19,7 +19,7 @@ class GoogleSlidesHandler(BaseResourceHandler):
         Generate Google Slides presentation and return (presentation_url, presentation_id).
         Unlike other handlers that return file paths, this returns web URLs.
         """
-        from src.google_slides_generator import create_google_slides_presentation
+        from resources.generators.google_slides import create_google_slides_presentation
         
         logger.info(f"Creating Google Slides presentation with {len(self.structured_content)} slides")
         

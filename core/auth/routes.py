@@ -92,7 +92,7 @@ def check_auth():
         try:
             user = get_user_by_email(user_info.get('email'))
             if user:
-                from src.db.usage import check_user_limits, get_user_subscription_tier
+                from core.database.usage import check_user_limits, get_user_subscription_tier
                 
                 user_tier = get_user_subscription_tier(user['id'], user_info.get('email'))
                 usage = check_user_limits(user['id'], request.remote_addr)

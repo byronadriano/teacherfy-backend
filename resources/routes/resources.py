@@ -88,7 +88,7 @@ def generate_resource_endpoint(resource_type):
             )
             
             # Use Google Slides handler
-            from src.resource_handlers.google_slides_handler import GoogleSlidesHandler
+            from resources.handlers.google_slides_handler import GoogleSlidesHandler
             handler = GoogleSlidesHandler(structured_content, credentials, include_images=include_images)
             presentation_url, presentation_id = handler.generate()
             
@@ -107,7 +107,7 @@ def generate_resource_endpoint(resource_type):
         logger.info(f"Selected handler_type: '{handler_type}' for resource_type: '{resource_type}'")
         
         # Get the appropriate handler using the resource_types module
-        from src.resource_types import get_resource_handler
+        from resources.types import get_resource_handler
         
         # Create the handler instance with image preference
         handler = get_resource_handler(handler_type, structured_content, include_images=include_images)

@@ -46,7 +46,7 @@ def generate_slides_endpoint():
             return jsonify({"error": "No structured content provided"}), 400
         
         # Use the new Google Slides handler that integrates with agent system
-        from src.resource_handlers.google_slides_handler import GoogleSlidesHandler
+        from resources.handlers.google_slides_handler import GoogleSlidesHandler
         
         google_slides_handler = GoogleSlidesHandler(structured_content, credentials)
         presentation_url, presentation_id = google_slides_handler.generate()

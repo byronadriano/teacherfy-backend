@@ -6,7 +6,7 @@ import logging
 import json
 import time
 import traceback
-from src.slide_processor import parse_outline_to_structured_content, create_presentation
+# Note: slide_processor functions need to be recreated or found in another module
 
 logger = logging.getLogger(__name__)
 

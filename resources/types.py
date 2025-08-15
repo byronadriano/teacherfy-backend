@@ -51,7 +51,7 @@ class ResourceType(Enum):
 
 def get_resource_handler(resource_type, structured_content, **kwargs):
     """Get the appropriate resource handler for the specified type with optional parameters"""
-    from src.resource_handlers import (
+    from resources.handlers import (
         PresentationHandler, 
         LessonPlanHandler,
         WorksheetHandler,
