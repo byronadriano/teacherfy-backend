@@ -726,25 +726,75 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
     # Enhanced content processing for JSON structured data
     processed_content = _enhance_structured_content_for_presentation(structured_content)
     
-    # Prefer the repo-level static templates location, fall back to module templates
-    template_candidates = [
-        os.path.join('static', 'templates', 'FINAL_base_template_v1.pptx'),
-        os.path.join(os.path.dirname(__file__), 'templates', 'FINAL_base_template_v1.pptx'),
-        os.path.join('templates', 'FINAL_base_template_v1.pptx'),
-        os.path.join('static', 'templates', 'base_template.pptx'),
-        os.path.join(os.path.dirname(__file__), 'templates', 'base_template.pptx'),
-        'base_template.pptx'
-    ]
+    # Check for explicit template path in environment variable first
+    explicit_template_path = os.environ.get('POWERPOINT_TEMPLATE_PATH')
+    if explicit_template_path and os.path.exists(explicit_template_path):
+        logger.info(f"Using explicit template path from environment: {explicit_template_path}")
+        template_path = explicit_template_path
+    else:
+        # Robust template path resolution for both local and Azure deployment
+        current_dir = os.path.dirname(os.path.abspath(__file__))  # resources/generators/
+        project_root = os.path.dirname(os.path.dirname(current_dir))  # project root
+        
+        # Also try to find project root using common Azure patterns
+        possible_roots = [
+            project_root,
+            os.getcwd(),  # Current working directory
+            os.path.dirname(os.getcwd()),  # Parent of working directory
+            '/home/site/wwwroot',  # Azure App Service default
+            os.environ.get('HOME', '/tmp'),  # Azure container home
+        ]
+        
+        # Build comprehensive template candidate list
+        template_candidates = []
+        template_names = ['FINAL_base_template_v1.pptx', 'base_template.pptx']
+        
+        for root in possible_roots:
+            if root and os.path.exists(root):
+                for template_name in template_names:
+                    # Try static/templates directory
+                    template_candidates.append(os.path.join(root, 'static', 'templates', template_name))
+                    # Try templates directory at root
+                    template_candidates.append(os.path.join(root, 'templates', template_name))
+                    # Try direct in root
+                    template_candidates.append(os.path.join(root, template_name))
+        
+        # Add relative path fallbacks
+        for template_name in template_names:
+            template_candidates.extend([
+                os.path.join('static', 'templates', template_name),
+                os.path.join('templates', template_name),
+                template_name
+            ])
 
-    template_path = None
-    for candidate in template_candidates:
-        if os.path.exists(candidate):
-            template_path = candidate
-            break
-
-    if not template_path:
-        # Last resort: empty Presentation
         template_path = None
+        logger.info(f"Template search - Current dir: {current_dir}")
+        logger.info(f"Template search - Project root: {project_root}")
+        logger.info(f"Template search - Working dir: {os.getcwd()}")
+        logger.info(f"Template search - Environment HOME: {os.environ.get('HOME', 'Not set')}")
+        
+        # Log first few candidates for debugging
+        logger.info(f"Template search - Checking {len(template_candidates)} candidates")
+        for i, candidate in enumerate(template_candidates[:5]):  # Log first 5 for debugging
+            logger.info(f"Template candidate {i+1}: {candidate}")
+        
+        for candidate in template_candidates:
+            if os.path.exists(candidate):
+                template_path = candidate
+                logger.info(f"✅ Found template at: {template_path}")
+                break
+
+        if not template_path:
+            logger.error("❌ No template file found in any candidate location")
+            logger.error("Available files in project root:")
+            try:
+                if os.path.exists(project_root):
+                    for item in os.listdir(project_root)[:10]:  # List first 10 items
+                        logger.error(f"  - {item}")
+            except Exception as e:
+                logger.error(f"Could not list project root contents: {e}")
+            # Last resort: empty Presentation
+            template_path = None
     
     # Create presentation
     try:
