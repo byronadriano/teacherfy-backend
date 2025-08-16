@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Database Duplicate Prevention System**: Complete solution to prevent duplicate database entries
+  - Database-level unique constraints with content hashing for atomic duplicate prevention
+  - UPSERT logic using `INSERT ... ON CONFLICT` for race condition-safe operations
+  - Automatic content hash generation with PostgreSQL triggers
+  - Fixed at the source with proper database constraints
 - **Complete Repository Reorganization**: Restructured entire codebase for better organization and scalability
   - `config/` - Centralized configuration management (`settings.py`, `celery_config.py`)
   - `core/` - Essential system components (auth, database, services)
@@ -73,6 +78,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Monolithic Organization**: Replaced flat file structure with hierarchical, domain-driven organization
 
 ### Fixed
+- **Backend Duplicate Entries**: Eliminated duplicate database entries in user history (IDs 260-268 and similar groups)
+  - Removed 80+ duplicate entries while preserving most recent versions
+  - Fixed race conditions in history saving that created simultaneous duplicate entries
+  - Implemented content-aware deduplication based on lesson content rather than just timing
+  - Added automatic prevention of future duplicates at database and application levels
 - **Dependency Conflicts**: Fixed Redis version conflict with Celery (Redis 5.0.1 → 4.6.0 to satisfy Celery 5.3.4 requirements)
 - **Code Organization**: Eliminated confusion between old and new code with clear file structure and naming conventions
   - No more mixing of agent code with database code in same directory
