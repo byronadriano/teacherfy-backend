@@ -937,13 +937,16 @@ def generate_optimized_image_search_query(slide_title, slide_content):
         if not combined_text:
             return "classroom education learning"
         
-        # Step 1: Extract actual visual terms mentioned in content
-        visual_terms = extract_smart_visual_terms(combined_text)
+        # Step 1: Analyze content importance - prioritize main content over questions/examples
+        main_content, supplementary_content = separate_main_from_supplementary_content(slide_content, title_text)
         
-        # Step 2: Detect subject area for context  
+        # Step 2: Extract visual terms with content importance weighting
+        visual_terms = extract_smart_visual_terms_weighted(main_content, supplementary_content, combined_text)
+        
+        # Step 3: Detect subject area for context  
         subject_area = detect_subject_area(combined_text)
         
-        # Step 3: Build smart search query using actual content
+        # Step 4: Build smart search query using weighted content analysis
         search_query = build_smart_search_query(visual_terms, subject_area, title_text, combined_text)
         
         logger.info(f"Optimized image search for '{title_text}': '{search_query}'")
@@ -953,6 +956,203 @@ def generate_optimized_image_search_query(slide_title, slide_content):
         logger.error(f"Error generating optimized image search: {e}")
         return "classroom education learning"
 
+def separate_main_from_supplementary_content(slide_content, title_text):
+    """
+    Intelligently separate main educational content from supplementary content like questions.
+    Main content should drive image selection, not incidental mentions in questions.
+    """
+    main_content = []
+    supplementary_content = []
+    
+    for item in slide_content:
+        if not item:
+            continue
+            
+        item_lower = item.lower().strip()
+        
+        # Identify supplementary content patterns (questions, examples at the end)
+        is_supplementary = (
+            item_lower.startswith(('what is', 'what are', 'how do', 'how does', 'why do', 'why does', 'can you')) or
+            item_lower.startswith(('example:', 'for example', 'try this:', 'practice:', 'question:')) or
+            '?' in item or
+            item_lower.startswith(('discuss', 'think about', 'consider', 'imagine'))
+        )
+        
+        if is_supplementary:
+            supplementary_content.append(item)
+        else:
+            main_content.append(item)
+    
+    # If we don't have main content, treat everything as main content
+    if not main_content:
+        main_content = slide_content
+        supplementary_content = []
+    
+    return main_content, supplementary_content
+
+def extract_smart_visual_terms_weighted(main_content, supplementary_content, full_text):
+    """
+    Extract visual terms with heavy weighting toward main content.
+    Only use supplementary content if it reinforces the main theme.
+    """
+    # Extract terms from main content (high priority)
+    main_content_text = ' '.join(main_content).lower()
+    main_visual_terms = extract_smart_visual_terms(main_content_text)
+    
+    # Extract terms from supplementary content (low priority)
+    supplementary_content_text = ' '.join(supplementary_content).lower()
+    supplementary_visual_terms = extract_smart_visual_terms(supplementary_content_text)
+    
+    # Determine if supplementary terms reinforce main theme
+    reinforcing_terms = []
+    if main_visual_terms and supplementary_visual_terms:
+        # Check if supplementary terms are related to main terms
+        for supp_term in supplementary_visual_terms:
+            # Only include supplementary terms that relate to main content theme
+            if any(are_terms_related(supp_term, main_term) for main_term in main_visual_terms):
+                reinforcing_terms.append(supp_term)
+    
+    # Detect if main content has only weak terms
+    weak_terms = {'author', 'book', 'books', 'story', 'paragraph', 'example', 'details', 'idea', 'point'}
+    main_has_strong_terms = any(term not in weak_terms for term in main_visual_terms)
+    supplementary_has_strong_terms = any(term not in weak_terms for term in supplementary_visual_terms)
+    
+    # Smart prioritization: use supplementary if main is weak but supplementary is strong
+    if not main_has_strong_terms and supplementary_has_strong_terms:
+        logger.info(f"Using supplementary content (main content weak): {supplementary_visual_terms}")
+        final_terms = supplementary_visual_terms.copy()
+        
+        # Also try to extract subject matter from examples
+        example_subject_terms = extract_subject_from_examples(supplementary_content)
+        for term in example_subject_terms:
+            if term not in final_terms:
+                final_terms.append(term)
+    else:
+        # Normal prioritization: main content first
+        final_terms = main_visual_terms.copy()
+        
+        # Add reinforcing terms that aren't already present
+        for term in reinforcing_terms:
+            if term not in final_terms:
+                final_terms.append(term)
+    
+    # If still no strong terms found, try example subject extraction
+    if not final_terms or not any(term not in weak_terms for term in final_terms):
+        example_subject_terms = extract_subject_from_examples(supplementary_content)
+        if example_subject_terms:
+            final_terms = example_subject_terms
+        else:
+            # Final fallback to title-based analysis
+            title_terms = extract_smart_visual_terms(full_text)
+            final_terms = title_terms
+    
+    return final_terms
+
+def are_terms_related(term1, term2):
+    """
+    Check if two terms are thematically related for content analysis.
+    """
+    # Define thematic relationships
+    related_groups = [
+        # Math/food combinations
+        {'pizza', 'fractions', 'slices', 'pie', 'cake', 'food'},
+        {'coins', 'money', 'dollars', 'cents', 'math'},
+        {'clock', 'time', 'hours', 'minutes'},
+        
+        # Science themes
+        {'animals', 'ocean', 'fish', 'marine', 'water'},
+        {'plants', 'flowers', 'trees', 'garden', 'nature'},
+        {'rainforest', 'ecosystem', 'species', 'oxygen', 'trees', 'animals'},
+        {'space', 'planets', 'sun', 'moon', 'stars', 'solar'},
+        
+        # Social studies themes
+        {'maps', 'countries', 'globe', 'geography', 'earth'},
+        {'community', 'buildings', 'cities', 'neighborhoods'},
+        
+        # Arts themes
+        {'music', 'instruments', 'piano', 'guitar', 'songs'},
+        {'art', 'painting', 'colors', 'brushes', 'canvas'},
+        
+        # PE themes
+        {'sports', 'exercise', 'running', 'swimming', 'dancing'},
+        {'soccer', 'basketball', 'football', 'ball', 'games'}
+    ]
+    
+    # Check if both terms belong to the same thematic group
+    for group in related_groups:
+        if term1 in group and term2 in group:
+            return True
+    
+    return False
+
+def extract_subject_from_examples(supplementary_content):
+    """
+    Extract the actual subject matter from examples when main content lacks visual terms.
+    E.g., "about rainforests" -> extract rainforest-related terms
+    """
+    subject_terms = []
+    
+    for item in supplementary_content:
+        if not item:
+            continue
+            
+        item_lower = item.lower()
+        
+        # Look for "about X" or "paragraph about X" patterns
+        about_patterns = [
+            r'about (\w+)',
+            r'paragraph about (\w+)', 
+            r'story about (\w+)',
+            r'book about (\w+)'
+        ]
+        
+        for pattern in about_patterns:
+            matches = re.findall(pattern, item_lower)
+            for match in matches:
+                # Convert the subject to related visual terms
+                subject_visual_terms = get_visual_terms_for_subject(match)
+                subject_terms.extend(subject_visual_terms)
+        
+        # Also extract any strong visual terms directly from examples
+        example_visual_terms = extract_smart_visual_terms(item_lower)
+        
+        # Filter to keep only thematically strong terms (avoid weak terms like "book", "author")
+        strong_terms = []
+        weak_terms = {'book', 'books', 'author', 'movie', 'story', 'paragraph', 'example', 'details'}
+        
+        for term in example_visual_terms:
+            if term not in weak_terms:
+                strong_terms.append(term)
+        
+        subject_terms.extend(strong_terms)
+    
+    return list(set(subject_terms))  # Remove duplicates
+
+def get_visual_terms_for_subject(subject):
+    """
+    Convert a subject name to related visual terms for image search.
+    """
+    subject_mappings = {
+        'rainforest': ['rainforest', 'forest', 'trees', 'jungle', 'nature'],
+        'rainforests': ['rainforest', 'forest', 'trees', 'jungle', 'nature'],
+        'ocean': ['ocean', 'water', 'waves', 'marine', 'fish'],
+        'oceans': ['ocean', 'water', 'waves', 'marine', 'fish'],
+        'space': ['space', 'planets', 'stars', 'galaxy', 'astronomy'],
+        'animals': ['animals', 'wildlife', 'nature', 'creatures'],
+        'plants': ['plants', 'flowers', 'garden', 'nature', 'green'],
+        'weather': ['weather', 'clouds', 'rain', 'storm', 'sky'],
+        'sports': ['sports', 'exercise', 'athletes', 'competition'],
+        'music': ['music', 'instruments', 'musical', 'sound'],
+        'art': ['art', 'painting', 'creative', 'colors'],
+        'science': ['science', 'laboratory', 'research', 'discovery'],
+        'math': ['mathematics', 'numbers', 'calculation', 'problem'],
+        'mathematics': ['mathematics', 'numbers', 'calculation', 'problem'],
+        'history': ['history', 'historical', 'ancient', 'past'],
+        'geography': ['geography', 'maps', 'world', 'countries']
+    }
+    
+    return subject_mappings.get(subject, [subject])
+
 def extract_smart_visual_terms(text):
     """
     Smart extraction of actual visual terms mentioned in content.
@@ -961,8 +1161,8 @@ def extract_smart_visual_terms(text):
     # Extract concrete visual nouns across ALL educational subjects
     visual_nouns = []
     
-    # SCIENCE - Animals, nature, body, experiments, space
-    science_terms = r'\b(animals?|birds?|fish|bears?|lions?|tigers?|elephants?|dogs?|cats?|insects?|butterflies?|frogs?|plants?|trees?|flowers?|leaves?|roots?|seeds?|sun|moon|stars?|planets?|earth|rocks?|minerals?|water|ocean|river|lake|mountains?|volcanoes?|clouds?|rain|snow|weather|skeleton|heart|lungs|muscles?|eyes?|microscope|telescope|beaker|laboratory|magnet|battery)\b'
+    # SCIENCE - Animals, nature, body, experiments, space, ecosystems
+    science_terms = r'\b(animals?|birds?|fish|bears?|lions?|tigers?|elephants?|dogs?|cats?|insects?|butterflies?|frogs?|plants?|trees?|flowers?|leaves?|roots?|seeds?|sun|moon|stars?|planets?|earth|rocks?|minerals?|water|ocean|river|lake|mountains?|volcanoes?|clouds?|rain|snow|weather|skeleton|heart|lungs|muscles?|eyes?|microscope|telescope|beaker|laboratory|magnet|battery|rainforest|rainforests?|ecosystem|ecosystems?|species|oxygen|forest|forests?|jungle|nature|wildlife|habitat|habitats?)\b'
     
     # SOCIAL STUDIES - Geography, community, history, culture  
     social_studies_terms = r'\b(maps?|globe|countries?|continents?|cities?|towns?|neighborhoods?|houses?|buildings?|schools?|libraries?|hospitals?|stores?|farms?|factories?|bridges?|roads?|flags?|monuments?|castles?|pyramids?|museums?|communities?|families?)\b'
