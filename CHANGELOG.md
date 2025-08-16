@@ -2,7 +2,95 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2025-08-16]
+## [2025-08-16] - Major Containerization & Background Jobs Update
+
+### 🚀 Added - Production-Ready Containerization
+- **Docker Containerization**: Complete containerization with separate web and worker services
+  - `Dockerfile.web`: Flask API container with Gunicorn
+  - `Dockerfile.worker`: Celery worker container for background jobs
+  - `docker-compose.yml`: Local development orchestration with all services
+  - Production-ready containers with non-root users and health checks
+
+- **Background Job Processing**: Robust, scalable background job system
+  - Enhanced Celery configuration with Azure Redis SSL support
+  - Real-time job progress tracking and status updates
+  - Email notifications on job completion/failure
+  - Support for multi-resource generation (2-3 minute jobs)
+  - Job cancellation and timeout handling
+
+- **Monitoring & Observability**: 
+  - Flower dashboard for real-time Celery monitoring (http://localhost:5555)
+  - Comprehensive logging throughout job lifecycle
+  - Health check endpoints for all services
+  - Job estimation and progress reporting
+
+- **Infrastructure as Code**:
+  - `deploy/azure-infrastructure.bicep`: Complete Azure resource definitions
+  - `scripts/dev.sh`: One-command development environment startup
+  - `scripts/deploy.sh`: Automated production deployment script
+  - `scripts/verify-production-ssl.sh`: SSL configuration validation
+
+- **Security Enhancements**:
+  - Configurable SSL certificate validation for Redis connections
+  - Environment-based SSL configuration (`REDIS_SSL_CERT_REQS`)
+  - Secure container practices with non-root users
+  - Production SSL validation with `CERT_REQUIRED`
+
+- **Documentation & Developer Experience**:
+  - Comprehensive `DEPLOYMENT.md` with step-by-step instructions
+  - Updated `README.md` with Docker-first approach
+  - Complete environment variable documentation in `.env.example`
+  - Production security configuration guide
+
+### 🔧 Enhanced - Background Job Architecture
+- **Improved Redis Configuration**: 
+  - Azure Redis SSL connection string parsing
+  - Automatic SSL certificate configuration
+  - Support for both development and production SSL modes
+- **Job Management**:
+  - Enhanced job storage with detailed metadata
+  - Progress tracking with percentage and status messages
+  - Job duration estimation based on resource complexity
+  - Automatic cleanup and email notifications
+
+### 🛠️ Fixed - SSL Security Warnings
+- **Redis SSL Configuration**: Eliminated SSL certificate validation warnings
+  - Development: Uses `CERT_NONE` for Azure Redis compatibility
+  - Production: Uses `CERT_REQUIRED` for full SSL security
+  - Configurable via `REDIS_SSL_CERT_REQS` environment variable
+- **Container Security**: Non-root user execution in all containers
+
+### 📁 Files Added/Modified
+- `Dockerfile.web`, `Dockerfile.worker`: New container definitions
+- `docker-compose.yml`: Development orchestration
+- `.dockerignore`: Container build optimization
+- `config/celery_config.py`: Enhanced Redis SSL configuration
+- `tasks/jobs.py`: Comprehensive background job implementation
+- `tasks/worker.py`: Celery worker configuration
+- `scripts/dev.sh`, `scripts/deploy.sh`: Automation scripts
+- `deploy/azure-infrastructure.bicep`: Infrastructure as Code
+- `deploy/azure-production-config.md`: Production security guide
+- `DEPLOYMENT.md`: Complete deployment documentation
+- `.env.example`: Updated with all configuration options
+
+### 🧪 Tested
+- ✅ Complete containerized development environment
+- ✅ Background job processing with Azure Redis
+- ✅ SSL security configuration (development and production modes)
+- ✅ Resource generation in containerized workers
+- ✅ Email notifications and job completion
+- ✅ Flower monitoring dashboard
+- ✅ Health checks and service startup
+
+### 🎯 Architecture Improvements
+- **Microservices Pattern**: Separate web and worker services for independent scaling
+- **Fault Isolation**: Worker failures don't affect web service availability
+- **Horizontal Scaling**: Workers can be scaled independently based on job load
+- **Production Ready**: Industry-standard containerization with proper logging and monitoring
+
+---
+
+## [2025-08-16] - Previous Updates
 ### Added
 - Smarter download filenames:
   - Presentations now use the 2nd slide title for the filename (skips Learning Objectives).

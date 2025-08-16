@@ -45,6 +45,9 @@ CLAUDE.md
 # Documentation with sensitive data
 BACKGROUND_JOBS.md
 
+# Temporary documentation - not tracked
+docs-temp/
+
 # Backup and temporary files
 *backup_*/
 archive_temp/

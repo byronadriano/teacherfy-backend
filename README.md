@@ -1,8 +1,10 @@
 # Teacherfy Backend
 
+A robust, scalable backend API for generating educational resources using AI, built with Flask, Celery, and Docker.
+
 ## Overview
 
-Teacherfy is an AI-powered platform for creating educational content, including presentations, lesson plans, worksheets, and quizzes. This repository contains the backend service built with Flask, PostgreSQL, and a modular agent-based architecture.
+Teacherfy is an AI-powered platform for creating educational content, including presentations, lesson plans, worksheets, and quizzes. This repository contains the backend service built with Flask, PostgreSQL, and a modular agent-based architecture with containerized deployment.
 
 ## ✨ Features
 
@@ -19,10 +21,9 @@ The backend uses a modular, domain-driven architecture with clear separation of 
 
 ```
 teacherfy-backend/
-├── 📋 app.py                    # Main Flask application
-├── 🏃 run_dev.py                # Development server entry point
+├── 📋 app.py                    # Main Flask application  
 ├── 🚀 deploy.sh                 # Azure deployment script
-├── 🛠️ startup.sh                # Development/production startup script
+├── 🛠️ startup.sh                # Legacy startup script
 ├── 📦 requirements.txt          # Python dependencies
 ├── 
 ├── 📁 config/                   # Configuration management
@@ -99,41 +100,81 @@ teacherfy-backend/
 
 ### Prerequisites
 
-- Python 3.8+
-- PostgreSQL
-- Redis (for background jobs)
-- Google Cloud Console project (for OAuth and Slides API)
+- Docker Desktop
+- Git
+- Azure CLI (for production deployment)
 
-### Development Setup
+### Local Development
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd teacherfy-backend
-   ```
+1. **Clone and setup**:
+```bash
+git clone <repository-url>
+cd teacherfy-backend
+cp .env.example .env
+# Edit .env with your configuration
+```
 
-2. **Create virtual environment**
+2. **Start development environment**:
+```bash
+./scripts/dev.sh
+```
+
+3. **Access services**:
+   - **API**: http://localhost:5000
+   - **Flower Dashboard**: http://localhost:5555
+   - **Health Check**: http://localhost:5000/health
+
+### Manual Docker Commands
+
+```bash
+# Build containers
+docker-compose build
+
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+
+# Shell access
+docker-compose exec web bash
+docker-compose exec worker bash
+```
+
+### Production Deployment
+
+Deploy to Azure with automated scripts:
+
+```bash
+# Deploy infrastructure and application
+./scripts/deploy.sh latest
+
+# Or deploy manually to existing infrastructure
+docker build -f Dockerfile.web -t teacherfy-web .
+docker build -f Dockerfile.worker -t teacherfy-worker .
+# Push to Azure Container Registry and deploy
+```
+
+### Alternative: Traditional Python Development
+
+If you need to develop without Docker (not recommended):
+
+1. **Install dependencies**:
    ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
+   source venv/bin/activate
    pip install -r requirements.txt
    ```
 
-4. **Configure environment**
+2. **Start development server**:
    ```bash
-   cp .env.example .env  # Edit with your values
-   ```
-
-5. **Start development server**
-   ```bash
-   python run_dev.py
-   # OR
    ./startup.sh dev
    ```
+
+⚠️ **Note**: Background jobs won't work without Docker/Redis. Use Docker for full functionality.
 
 ## ⚙️ Configuration
 
@@ -206,7 +247,7 @@ The repository includes Azure-specific deployment configuration:
 3. Run database migrations
 4. Start with Gunicorn:
    ```bash
-   gunicorn --bind=0.0.0.0:8000 --workers=4 app:app
+   gunicorn --bind=0.0.0.0:5000 --workers=4 app:app
    ```
 
 ## 🏗️ Development
@@ -241,9 +282,19 @@ The repository includes Azure-specific deployment configuration:
 - `POST /generate/resources` - Generate multiple resources
 - `POST /generate/presentation` - Generate presentation (file or Google Slides)
 
+### Background Jobs (New!)
+- `POST /generate/background` - Start background resource generation
+- `GET /generate/status/{job_id}` - Check job status and progress
+- `POST /generate/cancel/{job_id}` - Cancel running job
+
 ### History & Management
 - `GET /history` - Get generation history
 - `GET /usage` - Check usage limits
+- `GET /health` - Service health check
+
+### Monitoring
+- **Flower Dashboard**: http://localhost:5555 (development)
+- Real-time Celery worker monitoring and task tracking
 
 ## 🤝 Contributing
 

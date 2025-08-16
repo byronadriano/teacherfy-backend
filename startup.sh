@@ -1,9 +1,7 @@
 #!/bin/bash
-# startup.sh - Consolidated startup script for Teacherfy backend
-# This script combines functionality from:
-# - run_dev.py
-# - startup.sh
-# - startup.txt
+# startup.sh - Legacy startup script for Teacherfy backend (without Docker)
+# 
+# ⚠️  DEPRECATED: Use ./scripts/dev.sh for Docker-based development instead
 # 
 # Usage: ./startup.sh [dev|prod]
 
@@ -108,7 +106,9 @@ start_dev_server() {
     # Setup signal handlers for graceful shutdown
     trap 'stop_celery_worker; exit' SIGTERM SIGINT
     
-    python run_dev.py
+    echo -e "${RED}ERROR: run_dev.py removed. Use Docker instead:${NC}"
+    echo -e "${BLUE}  ./scripts/dev.sh${NC}"
+    exit 1
 }
 
 # Start Celery worker
@@ -153,7 +153,7 @@ start_prod_server() {
     start_celery_worker
     
     # Get port from environment or use default
-    PORT=${PORT:-8000}
+    PORT=${PORT:-5000}
     
     # Set number of workers based on CPU cores
     if command_exists nproc; then

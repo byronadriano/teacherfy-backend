@@ -1,6 +1,6 @@
-# run_celery.py
+# tasks/worker.py - Celery worker configuration
 from app import create_app
-from background_tasks import init_celery
+from tasks.jobs import init_celery
 
 def create_celery_app():
     """Create Flask app and initialize Celery for worker"""
@@ -13,6 +13,6 @@ celery_app = create_celery_app()
 
 if __name__ == '__main__':
     # Run the celery worker
-    # Use: python run_celery.py worker --loglevel=info
-    # Or: celery -A run_celery:celery_app worker --loglevel=info
+    # Use: python tasks/worker.py worker --loglevel=info
+    # Or: celery -A tasks.worker:celery_app worker --loglevel=info
     celery_app.start()
