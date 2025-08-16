@@ -74,3 +74,7 @@ src/presentation_routes.py
 src/presentation_routes.py.backup
 *examples/
 *archive/
+
+# --- Allowlist for production assets ---
+# Always include PowerPoint templates in version control/deployments
+!static/templates/*.pptx
