@@ -24,7 +24,7 @@ class PresentationHandler(BaseResourceHandler):
         
         # Import the restored slide processor functions
         from resources.generators.slide_processor import create_clean_presentation_with_images, create_clean_presentation
-        
+
         # Use the correct function based on image preference with explicit logging
         if self.include_images:
             logger.info("📸 USING create_clean_presentation_with_images() - IMAGES ENABLED")
@@ -32,7 +32,13 @@ class PresentationHandler(BaseResourceHandler):
         else:
             logger.info("🚫 USING create_clean_presentation() - NO IMAGES")
             prs = create_clean_presentation(self.structured_content)
-        
+
+        # Optionally log slide size for debugging template issues before saving
+        try:
+            logger.info(f"Presentation size: {getattr(prs, 'slide_width', 'n/a')} x {getattr(prs, 'slide_height', 'n/a')}")
+        except Exception:
+            pass
+
         # Save presentation
         logger.info(f"Saving presentation to {temp_file}")
         prs.save(temp_file)

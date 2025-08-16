@@ -323,10 +323,12 @@ def create_app():
                     file_ext = '.docx'
                 elif response.mimetype == 'application/pdf':
                     file_ext = '.pdf'
-                    
+                # Don't override an existing Content-Disposition (set by send_file)
+                if 'Content-Disposition' not in response.headers:
+                    response.headers['Content-Disposition'] = f'attachment; filename=lesson_resource{file_ext}'
+                # Always expose key headers and set cache controls
                 response.headers.update({
                     'Access-Control-Expose-Headers': 'Content-Disposition, Content-Type, Content-Length',
-                    'Content-Disposition': f'attachment; filename=lesson_resource{file_ext}',
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
                     'Pragma': 'no-cache',
                     'Expires': '0'

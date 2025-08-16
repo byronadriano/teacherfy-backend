@@ -801,8 +801,15 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
         prs = Presentation(template_path)
         logger.info(f"Using template: {template_path}")
     except Exception as e:
-        logger.warning(f"Could not load template: {e}. Creating blank presentation.")
+        logger.warning(f"Could not load template: {e}. Creating blank presentation with widescreen dimensions.")
         prs = Presentation()
+        try:
+            # Force 16:9 widescreen to match template dimensions
+            prs.slide_width = Inches(13.33)
+            prs.slide_height = Inches(7.5)
+            logger.info("Applied fallback widescreen dimensions (13.33in x 7.5in)")
+        except Exception as dim_e:
+            logger.warning(f"Failed to set fallback dimensions: {dim_e}")
     
     # Initialize Unsplash service if images are requested
     unsplash_service = None

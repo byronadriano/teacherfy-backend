@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-08-16]
+### Added
+- Smarter download filenames:
+  - Presentations now use the 2nd slide title for the filename (skips Learning Objectives).
+  - Other resources (lesson plan, quiz, worksheet) use the first section title.
+- Filenames are sanitized, concise (<= 80 chars), and follow the pattern: `{title-slug}-{resource}.{ext}`.
+
+### Fixed
+- Production template usage for presentations:
+  - Allowed committing `static/templates/*.pptx` via `.gitignore` allowlist so the PPTX template deploys with the app.
+  - When a template cannot be found or loaded, presentations now force 16:9 widescreen dimensions (13.33" x 7.5") to match the template footprint.
+  - Added logging to surface whether a template was used and the resulting slide size.
+- Prevented `after_request` from overwriting `Content-Disposition` set by `send_file` so custom filenames are preserved.
+
+### Files touched
+- `resources/routes/resources.py`: build descriptive `download_name` using section titles.
+- `resources/generators/slide_processor.py`: robust template search, widescreen fallback.
+- `resources/handlers/presentation_handler.py`: log final slide size.
+- `app.py`: don’t override Content-Disposition if already set.
+- `.gitignore`: include `static/templates/*.pptx` in deployments.
+
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 

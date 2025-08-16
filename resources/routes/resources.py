@@ -9,6 +9,41 @@ import traceback
 
 resource_blueprint = Blueprint("resource_blueprint", __name__)
 
+def _slugify_filename(text: str) -> str:
+    """Create a safe, readable filename fragment from arbitrary text."""
+    if not text:
+        return "lesson"
+    # Basic cleanup
+    cleaned = ''.join(ch if ch.isalnum() or ch in (' ', '-', '_') else ' ' for ch in text)
+    # Collapse whitespace and dashes, lower-case
+    cleaned = ' '.join(cleaned.split()).strip().lower()
+    # Replace spaces with dashes
+    cleaned = cleaned.replace(' ', '-')
+    # Truncate to a sensible length
+    return cleaned[:80] or "lesson"
+
+def _extract_title_for_filename(structured_content, handler_type: str) -> str:
+    """Pick a good title for the output filename based on resource type.
+    - presentation: prefer title from the 2nd section (index 1) if present
+    - others: use title from the 1st section (index 0)
+    Fallbacks to generic names if missing.
+    """
+    try:
+        if not isinstance(structured_content, list) or not structured_content:
+            return "lesson"
+
+        index = 1 if handler_type == "presentation" and len(structured_content) > 1 else 0
+        section = structured_content[index] or {}
+        title = section.get('title') or section.get('section_title') or ''
+        # As a fallback, try to infer from content
+        if not title:
+            content = section.get('content') or []
+            if isinstance(content, list) and content:
+                title = content[0]
+        return _slugify_filename(str(title))
+    except Exception:
+        return "lesson"
+
 @resource_blueprint.route("/generate/<resource_type>", methods=["POST", "OPTIONS"])
 def generate_resource_endpoint(resource_type):
     """Generate a resource file based on the specified resource type with optional image support."""
@@ -131,10 +166,14 @@ def generate_resource_endpoint(resource_type):
         # Clean resource type for filename
         clean_resource_type = handler_type.replace('_', '-')
         
+        # Build a more descriptive filename using section titles
+        base_title = _extract_title_for_filename(structured_content, handler_type)
+        download_name = f"{base_title}-{clean_resource_type}{file_extension}"
+
         return send_file(
             file_path,
             as_attachment=True,
-            download_name=f"lesson_{clean_resource_type}{file_extension}",
+            download_name=download_name,
             mimetype=mime_type,
             etag=False,
             conditional=False,
