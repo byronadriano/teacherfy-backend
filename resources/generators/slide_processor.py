@@ -480,7 +480,7 @@ def _is_metadata_content(content_text):
 
 def add_image_to_slide(slide, image_bytes, lesson_topic=""):
     """
-    Add an image to a slide with proper positioning based on actual slide dimensions.
+    Add an image to a widescreen slide (13.33" x 7.5") with proper positioning.
     Places image on the right side, centered vertically with text content.
     """
     try:
@@ -491,7 +491,7 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
         with Image.open(image_stream) as img:
             original_width, original_height = img.size
             
-            # Get actual slide dimensions
+          # Get actual slide dimensions
             try:
                 if hasattr(slide, 'parent') and slide.parent:
                     slide_width = slide.parent.slide_width
@@ -552,7 +552,7 @@ def add_image_to_slide(slide, image_bytes, lesson_topic=""):
                 final_height
             )
             
-            # Add subtle styling for professional look
+            # Add subtle styling for professional look            
             try:
                 line = picture.line
                 line.color.rgb = RGBColor(200, 200, 200)  # Light gray border
@@ -726,46 +726,32 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
     # Enhanced content processing for JSON structured data
     processed_content = _enhance_structured_content_for_presentation(structured_content)
     
-    # Use the correct template path in static folder
-    template_path = os.path.join(os.path.dirname(__file__), '..', '..', 'static', 'templates', 'FINAL_base_template_v1.pptx')
+    # Prefer the repo-level static templates location, fall back to module templates
+    template_candidates = [
+        os.path.join('static', 'templates', 'FINAL_base_template_v1.pptx'),
+        os.path.join(os.path.dirname(__file__), 'templates', 'FINAL_base_template_v1.pptx'),
+        os.path.join('templates', 'FINAL_base_template_v1.pptx'),
+        os.path.join('static', 'templates', 'base_template.pptx'),
+        os.path.join(os.path.dirname(__file__), 'templates', 'base_template.pptx'),
+        'base_template.pptx'
+    ]
+
+    template_path = None
+    for candidate in template_candidates:
+        if os.path.exists(candidate):
+            template_path = candidate
+            break
+
+    if not template_path:
+        # Last resort: empty Presentation
+        template_path = None
     
-    # Check if template exists, use fallback if not
-    if not os.path.exists(template_path):
-        fallback_paths = [
-            'static/templates/FINAL_base_template_v1.pptx',
-            '../../static/templates/FINAL_base_template_v1.pptx',
-            'templates/base_template.pptx',
-            '../templates/base_template.pptx', 
-            'base_template.pptx'
-        ]
-        template_found = False
-        for path in fallback_paths:
-            if os.path.exists(path):
-                template_path = path
-                template_found = True
-                break
-        
-        if not template_found:
-            logger.warning("No template found, creating blank presentation")
-    
-    # Create presentation with better error handling and template validation
-    template_loaded = False
+    # Create presentation
     try:
-        if os.path.exists(template_path):
-            # Validate template before using it
-            test_prs = Presentation(template_path)
-            if len(test_prs.slide_layouts) > 0:
-                prs = test_prs
-                template_loaded = True
-                logger.info(f"Successfully loaded template: {template_path}")
-            else:
-                logger.warning(f"Template {template_path} has no layouts, using blank presentation")
-        
-        if not template_loaded:
-            prs = Presentation()
-            logger.warning("Using blank presentation - no valid template found")
+        prs = Presentation(template_path)
+        logger.info(f"Using template: {template_path}")
     except Exception as e:
-        logger.error(f"Could not load template {template_path}: {e}. Creating blank presentation.")
+        logger.warning(f"Could not load template: {e}. Creating blank presentation.")
         prs = Presentation()
     
     # Initialize Unsplash service if images are requested
@@ -773,6 +759,7 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
     
     if include_images:
         try:
+            # Import the global Unsplash service from core.services (project layout)
             from core.services.unsplash_service import unsplash_service as us
             unsplash_service = us
             logger.info("Unsplash service initialized for per-slide image generation")
@@ -792,38 +779,35 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
     # Process each slide with clean structure and improved layout
     for slide_index, slide_data in enumerate(processed_content):
         try:
-            # Select appropriate layout with better validation
-            layout_idx = 1 if len(prs.slide_layouts) > 1 else 0  # Prefer Title+Content if available
+            # Try different layouts in order of preference
+            layout_indices_to_try = [1, 0, 2, 3, 4]  # Title+Content, Title, Section, etc.
+            slide = None
             
-            try:
-                slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
-                logger.debug(f"Successfully used layout {layout_idx} for slide {slide_index + 1}")
-            except Exception as e:
-                logger.warning(f"Failed to use layout {layout_idx}: {e}, trying layout 0")
+            for layout_idx in layout_indices_to_try:
+                if layout_idx < len(prs.slide_layouts):
+                    try:
+                        slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
+                        logger.debug(f"Successfully used layout {layout_idx} for slide {slide_index + 1}")
+                        break
+                    except Exception as e:
+                        logger.debug(f"Failed to use layout {layout_idx}: {e}")
+                        continue
+            
+            if not slide:
+                # Fallback to the first available layout
                 slide = prs.slides.add_slide(prs.slide_layouts[0])
+                logger.warning(f"Using fallback layout 0 for slide {slide_index + 1}")
             
             # Add contextually relevant image to each content slide
             has_image = False
             if include_images and unsplash_service and slide_index > 0:  # Skip learning objectives slide
                 try:
-                    # Create search query from slide title and content
+                    # Create optimized search query from slide title and content
                     slide_title = slide_data.get('title', '')
                     slide_content = slide_data.get('content', [])
                     
-                    # Generate search keywords from this specific slide
-                    search_keywords = []
-                    if slide_title and slide_title != 'Learning Objectives':
-                        search_keywords.append(slide_title.lower())
-                    
-                    # Extract key terms from slide content
-                    for content_item in slide_content[:2]:  # Use first 2 content items
-                        words = content_item.lower().split()
-                        # Extract meaningful words (nouns, specific terms)
-                        meaningful_words = [w for w in words if len(w) > 4 and w not in ['students', 'will', 'able', 'example', 'today']]
-                        search_keywords.extend(meaningful_words[:2])
-                    
-                    # Create focused search query
-                    search_query = ' '.join(search_keywords[:3])  # Use top 3 keywords
+                    # Use enhanced image search logic
+                    search_query = generate_optimized_image_search_query(slide_title, slide_content)
                     
                     if search_query.strip():
                         logger.info(f"Searching for image for slide {slide_index + 1} with query: '{search_query}'")
@@ -836,14 +820,11 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
                             if image_bytes:
                                 has_image = add_image_to_slide(slide, image_bytes, slide_title)
                                 
-                                # Add attribution to this slide with safe positioning
+                                # Add attribution to this slide
                                 try:
-                                    slide_width = slide.parent.slide_width
-                                    slide_height = slide.parent.slide_height
                                     attribution_text = f"Photo: {photo_data['photographer_name']} on Unsplash"
                                     attr_box = slide.shapes.add_textbox(
-                                        slide_width * 0.65, slide_height * 0.9, 
-                                        slide_width * 0.3, slide_height * 0.05
+                                        Inches(9.5), Inches(6.8), Inches(3.5), Inches(0.3)
                                     )
                                     attr_frame = attr_box.text_frame
                                     attr_para = attr_frame.add_paragraph()
@@ -864,13 +845,12 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
                     logger.error(f"Error adding image to slide {slide_index + 1}: {e}")
                     has_image = False
             
-            # Clean and add title safely
+            # Clean and add title
             title_added = False
             raw_title = slide_data.get('title', 'Untitled')
             clean_title = clean_text_for_presentation(raw_title)
             
-            # Try to use existing title placeholder first
-            if hasattr(slide.shapes, 'title') and slide.shapes.title:
+            if slide.shapes.title:
                 try:
                     title_frame = slide.shapes.title.text_frame
                     title_frame.clear()
@@ -886,59 +866,43 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
                 except Exception as e:
                     logger.warning(f"Failed to add title to slide {slide_index + 1}: {e}")
             
-            # Handle content with safer approach
+            # WIDESCREEN CONTENT HANDLING - Fixed for 13.33" x 7.5" template
             raw_content_items = slide_data.get('content', [])
             clean_content_items = clean_content_list_for_presentation(raw_content_items)
             
             if clean_content_items:
-                logger.info(f"Adding content to slide {slide_index + 1} (image: {has_image})")
+                # ALWAYS clear placeholders and use text boxes for consistency
+                logger.info(f"Using text box for slide {slide_index + 1} (image: {has_image})")
                 
-                # Clear placeholders safely (no aggressive XML manipulation)
+                # CRITICAL: Clear ALL placeholders to prevent conflicts
                 clear_all_placeholder_content(slide)
                 
-                # Add our custom text box
+                # Add our custom text box with widescreen sizing
                 add_text_box_to_slide(slide, clean_content_items, has_image)
                 
-                # Handle title as text box if placeholder failed
+                # Handle title if needed
                 if not title_added and clean_title:
-                    try:
-                        slide_width = slide.parent.slide_width
-                        slide_height = slide.parent.slide_height
-                        title_box = slide.shapes.add_textbox(
-                            slide_width * 0.1, slide_height * 0.05, 
-                            slide_width * 0.8, slide_height * 0.15
-                        )
-                        title_frame = title_box.text_frame
-                        title_para = title_frame.add_paragraph()
-                        title_para.text = clean_title
-                        title_para.font.name = STYLE['fonts']['title']
-                        title_para.font.size = STYLE['sizes']['title']
-                        title_para.font.color.rgb = STYLE['colors']['title']
-                        title_para.font.bold = True
-                        title_para.alignment = PP_ALIGN.CENTER
-                        logger.debug(f"Added title as text box to slide {slide_index + 1}")
-                    except Exception as title_e:
-                        logger.warning(f"Failed to add title text box to slide {slide_index + 1}: {title_e}")
+                    # Position title for widescreen
+                    title_box = slide.shapes.add_textbox(Inches(1.5), Inches(0.5), Inches(10), Inches(1))
+                    title_frame = title_box.text_frame
+                    title_para = title_frame.add_paragraph()
+                    title_para.text = clean_title
+                    title_para.font.name = STYLE['fonts']['title']
+                    title_para.font.size = STYLE['sizes']['title']
+                    title_para.font.color.rgb = STYLE['colors']['title']
+                    title_para.font.bold = True
+                    title_para.alignment = PP_ALIGN.CENTER
+                    logger.debug(f"Added widescreen title as text box to slide {slide_index + 1}")
         
         except Exception as e:
             logger.error(f"Error creating slide {slide_index + 1}: {e}")
-            # Create a basic slide with minimal operations to avoid corruption
+            # Create a basic slide with text boxes as last resort
             try:
                 slide = prs.slides.add_slide(prs.slide_layouts[0])
                 
-                # Add title as text box with safe positioning
+                # Add title as text box
                 clean_title = clean_text_for_presentation(slide_data.get('title', f'Slide {slide_index + 1}'))
-                try:
-                    slide_width = slide.parent.slide_width
-                    slide_height = slide.parent.slide_height
-                except:
-                    slide_width = Inches(10)
-                    slide_height = Inches(7.5)
-                
-                title_box = slide.shapes.add_textbox(
-                    slide_width * 0.1, slide_height * 0.05,
-                    slide_width * 0.8, slide_height * 0.15
-                )
+                title_box = slide.shapes.add_textbox(Inches(1), Inches(0.5), Inches(8), Inches(1))
                 title_frame = title_box.text_frame
                 title_para = title_frame.add_paragraph()
                 title_para.text = clean_title
@@ -953,12 +917,533 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
                 if content_items:
                     add_text_box_to_slide(slide, content_items, False)
                 
-                logger.info(f"Created fallback slide {slide_index + 1} with minimal operations")
+                logger.info(f"Created fallback slide {slide_index + 1} with text boxes")
             except Exception as fallback_error:
                 logger.error(f"Failed to create fallback slide {slide_index + 1}: {fallback_error}")
     
+    # Note: Individual image attributions are now added to each slide that contains an image
+    # This provides better context and proper credit for each specific image used
+    
     logger.info(f"Created presentation with {len(processed_content)} slides (images: {'enabled' if include_images else 'disabled'})")
     return prs
+
+def generate_optimized_image_search_query(slide_title, slide_content):
+    """
+    Generate highly optimized search query for a specific slide's image.
+    Uses advanced content analysis, subject detection, and visual relevance scoring.
+    """
+    try:
+        # Combine title and content for analysis
+        title_text = clean_text_for_presentation(slide_title) if slide_title else ''
+        content_text = ' '.join([clean_text_for_presentation(item) for item in slide_content if item])
+        combined_text = f"{title_text} {content_text}".lower().strip()
+        
+        if not combined_text:
+            return "classroom education learning"
+        
+        # Step 1: Analyze content importance - prioritize main content over questions/examples
+        main_content, supplementary_content = separate_main_from_supplementary_content(slide_content, title_text)
+        
+        # Step 2: Extract visual terms with content importance weighting
+        visual_terms = extract_smart_visual_terms_weighted(main_content, supplementary_content, combined_text)
+        
+        # Step 3: Detect subject area for context  
+        subject_area = detect_subject_area(combined_text)
+        
+        # Step 4: Build smart search query using weighted content analysis
+        search_query = build_smart_search_query(visual_terms, subject_area, title_text, combined_text)
+        
+        logger.info(f"Optimized image search for '{title_text}': '{search_query}'")
+        return search_query
+        
+    except Exception as e:
+        logger.error(f"Error generating optimized image search: {e}")
+        return "classroom education learning"
+
+def separate_main_from_supplementary_content(slide_content, title_text):
+    """
+    Intelligently separate main educational content from supplementary content like questions.
+    Main content should drive image selection, not incidental mentions in questions.
+    """
+    main_content = []
+    supplementary_content = []
+    
+    for item in slide_content:
+        if not item:
+            continue
+            
+        item_lower = item.lower().strip()
+        
+        # Identify supplementary content patterns (questions, examples at the end)
+        is_supplementary = (
+            item_lower.startswith(('what is', 'what are', 'how do', 'how does', 'why do', 'why does', 'can you')) or
+            item_lower.startswith(('example:', 'for example', 'try this:', 'practice:', 'question:')) or
+            '?' in item or
+            item_lower.startswith(('discuss', 'think about', 'consider', 'imagine'))
+        )
+        
+        if is_supplementary:
+            supplementary_content.append(item)
+        else:
+            main_content.append(item)
+    
+    # If we don't have main content, treat everything as main content
+    if not main_content:
+        main_content = slide_content
+        supplementary_content = []
+    
+    return main_content, supplementary_content
+
+def extract_smart_visual_terms_weighted(main_content, supplementary_content, full_text):
+    """
+    Extract visual terms with heavy weighting toward main content.
+    Only use supplementary content if it reinforces the main theme.
+    """
+    # Extract terms from main content (high priority)
+    main_content_text = ' '.join(main_content).lower()
+    main_visual_terms = extract_smart_visual_terms(main_content_text)
+    
+    # Extract terms from supplementary content (low priority)
+    supplementary_content_text = ' '.join(supplementary_content).lower()
+    supplementary_visual_terms = extract_smart_visual_terms(supplementary_content_text)
+    
+    # Determine if supplementary terms reinforce main theme
+    reinforcing_terms = []
+    if main_visual_terms and supplementary_visual_terms:
+        # Check if supplementary terms are related to main terms
+        for supp_term in supplementary_visual_terms:
+            # Only include supplementary terms that relate to main content theme
+            if any(are_terms_related(supp_term, main_term) for main_term in main_visual_terms):
+                reinforcing_terms.append(supp_term)
+    
+    # Detect if main content has only weak terms
+    weak_terms = {'author', 'book', 'books', 'story', 'paragraph', 'example', 'details', 'idea', 'point'}
+    main_has_strong_terms = any(term not in weak_terms for term in main_visual_terms)
+    supplementary_has_strong_terms = any(term not in weak_terms for term in supplementary_visual_terms)
+    
+    # Smart prioritization: use supplementary if main is weak but supplementary is strong
+    if not main_has_strong_terms and supplementary_has_strong_terms:
+        logger.info(f"Using supplementary content (main content weak): {supplementary_visual_terms}")
+        final_terms = supplementary_visual_terms.copy()
+        
+        # Also try to extract subject matter from examples
+        example_subject_terms = extract_subject_from_examples(supplementary_content)
+        for term in example_subject_terms:
+            if term not in final_terms:
+                final_terms.append(term)
+    else:
+        # Normal prioritization: main content first
+        final_terms = main_visual_terms.copy()
+        
+        # Add reinforcing terms that aren't already present
+        for term in reinforcing_terms:
+            if term not in final_terms:
+                final_terms.append(term)
+    
+    # If still no strong terms found, try example subject extraction
+    if not final_terms or not any(term not in weak_terms for term in final_terms):
+        example_subject_terms = extract_subject_from_examples(supplementary_content)
+        if example_subject_terms:
+            final_terms = example_subject_terms
+        else:
+            # Final fallback to title-based analysis
+            title_terms = extract_smart_visual_terms(full_text)
+            final_terms = title_terms
+    
+    return final_terms
+
+def are_terms_related(term1, term2):
+    """
+    Check if two terms are thematically related for content analysis.
+    """
+    # Define thematic relationships
+    related_groups = [
+        # Math/food combinations
+        {'pizza', 'fractions', 'slices', 'pie', 'cake', 'food'},
+        {'coins', 'money', 'dollars', 'cents', 'math'},
+        {'clock', 'time', 'hours', 'minutes'},
+        
+        # Science themes
+        {'animals', 'ocean', 'fish', 'marine', 'water'},
+        {'plants', 'flowers', 'trees', 'garden', 'nature'},
+        {'rainforest', 'ecosystem', 'species', 'oxygen', 'trees', 'animals'},
+        {'space', 'planets', 'sun', 'moon', 'stars', 'solar'},
+        
+        # Social studies themes
+        {'maps', 'countries', 'globe', 'geography', 'earth'},
+        {'community', 'buildings', 'cities', 'neighborhoods'},
+        
+        # Arts themes
+        {'music', 'instruments', 'piano', 'guitar', 'songs'},
+        {'art', 'painting', 'colors', 'brushes', 'canvas'},
+        
+        # PE themes
+        {'sports', 'exercise', 'running', 'swimming', 'dancing'},
+        {'soccer', 'basketball', 'football', 'ball', 'games'}
+    ]
+    
+    # Check if both terms belong to the same thematic group
+    for group in related_groups:
+        if term1 in group and term2 in group:
+            return True
+    
+    return False
+
+def extract_subject_from_examples(supplementary_content):
+    """
+    Extract the actual subject matter from examples when main content lacks visual terms.
+    E.g., "about rainforests" -> extract rainforest-related terms
+    """
+    subject_terms = []
+    
+    for item in supplementary_content:
+        if not item:
+            continue
+            
+        item_lower = item.lower()
+        
+        # Look for "about X" or "paragraph about X" patterns
+        about_patterns = [
+            r'about (\w+)',
+            r'paragraph about (\w+)', 
+            r'story about (\w+)',
+            r'book about (\w+)'
+        ]
+        
+        for pattern in about_patterns:
+            matches = re.findall(pattern, item_lower)
+            for match in matches:
+                # Convert the subject to related visual terms
+                subject_visual_terms = get_visual_terms_for_subject(match)
+                subject_terms.extend(subject_visual_terms)
+        
+        # Also extract any strong visual terms directly from examples
+        example_visual_terms = extract_smart_visual_terms(item_lower)
+        
+        # Filter to keep only thematically strong terms (avoid weak terms like "book", "author")
+        strong_terms = []
+        weak_terms = {'book', 'books', 'author', 'movie', 'story', 'paragraph', 'example', 'details'}
+        
+        for term in example_visual_terms:
+            if term not in weak_terms:
+                strong_terms.append(term)
+        
+        subject_terms.extend(strong_terms)
+    
+    return list(set(subject_terms))  # Remove duplicates
+
+def get_visual_terms_for_subject(subject):
+    """
+    Convert a subject name to related visual terms for image search.
+    """
+    subject_mappings = {
+        'rainforest': ['rainforest', 'forest', 'trees', 'jungle', 'nature'],
+        'rainforests': ['rainforest', 'forest', 'trees', 'jungle', 'nature'],
+        'ocean': ['ocean', 'water', 'waves', 'marine', 'fish'],
+        'oceans': ['ocean', 'water', 'waves', 'marine', 'fish'],
+        'space': ['space', 'planets', 'stars', 'galaxy', 'astronomy'],
+        'animals': ['animals', 'wildlife', 'nature', 'creatures'],
+        'plants': ['plants', 'flowers', 'garden', 'nature', 'green'],
+        'weather': ['weather', 'clouds', 'rain', 'storm', 'sky'],
+        'sports': ['sports', 'exercise', 'athletes', 'competition'],
+        'music': ['music', 'instruments', 'musical', 'sound'],
+        'art': ['art', 'painting', 'creative', 'colors'],
+        'science': ['science', 'laboratory', 'research', 'discovery'],
+        'math': ['mathematics', 'numbers', 'calculation', 'problem'],
+        'mathematics': ['mathematics', 'numbers', 'calculation', 'problem'],
+        'history': ['history', 'historical', 'ancient', 'past'],
+        'geography': ['geography', 'maps', 'world', 'countries']
+    }
+    
+    return subject_mappings.get(subject, [subject])
+
+def extract_smart_visual_terms(text):
+    """
+    Smart extraction of actual visual terms mentioned in content.
+    Focuses on concrete nouns and objects that can be photographed.
+    """
+    # Extract concrete visual nouns across ALL educational subjects
+    visual_nouns = []
+    
+    # SCIENCE - Animals, nature, body, experiments, space, ecosystems
+    science_terms = r'\b(animals?|birds?|fish|bears?|lions?|tigers?|elephants?|dogs?|cats?|insects?|butterflies?|frogs?|plants?|trees?|flowers?|leaves?|roots?|seeds?|sun|moon|stars?|planets?|earth|rocks?|minerals?|water|ocean|river|lake|mountains?|volcanoes?|clouds?|rain|snow|weather|skeleton|heart|lungs|muscles?|eyes?|microscope|telescope|beaker|laboratory|magnet|battery|rainforest|rainforests?|ecosystem|ecosystems?|species|oxygen|forest|forests?|jungle|nature|wildlife|habitat|habitats?)\b'
+    
+    # SOCIAL STUDIES - Geography, community, history, culture  
+    social_studies_terms = r'\b(maps?|globe|countries?|continents?|cities?|towns?|neighborhoods?|houses?|buildings?|schools?|libraries?|hospitals?|stores?|farms?|factories?|bridges?|roads?|flags?|monuments?|castles?|pyramids?|museums?|communities?|families?)\b'
+    
+    # PHYSICAL EDUCATION - Sports, exercise, health
+    pe_terms = r'\b(balls?|soccer|basketball|football|baseball|tennis|volleyball|swimming|running|jumping|dancing|gymnastics|bikes?|bicycles?|sports?|games?|playground|gym|exercise|yoga|stretching)\b'
+    
+    # ARTS - Visual arts, music, performance
+    arts_terms = r'\b(painting|drawings?|colors?|brushes?|canvas|crayons?|markers?|art|sculptures?|pottery|music|instruments?|piano|guitar|violin|drums?|singing|dancing|theater|stage|costumes?)\b'
+    
+    # LANGUAGE ARTS - Reading, writing, communication
+    language_terms = r'\b(books?|stories?|poems?|newspapers?|magazines?|letters?|pencils?|pens?|paper|notebooks?|writing|reading|library|authors?|characters?)\b'
+    
+    # MATH - Numbers, shapes, tools (keep math terms but expand)
+    math_terms = r'\b(numbers?|shapes?|circles?|triangles?|squares?|rectangles?|cubes?|spheres?|rulers?|calculators?|clocks?|time|money|coins?|dollars?|pizza|pie|cake|fractions?|graphs?|charts?)\b'
+    
+    # EVERYDAY OBJECTS - Common items that appear in any subject  
+    everyday_terms = r'\b(phones?|doors?|windows?|cars?|trucks?|trains?|airplanes?|boats?|computers?|tablets?|cameras?|toys?|tools?|machines?|wheels?)\b'
+    
+    # FOOD - Very visual and engaging across subjects
+    food_terms = r'\b(food|fruits?|vegetables?|apples?|oranges?|bananas?|carrots?|broccoli|bread|sandwiches?|milk|water|juice|pizza|hamburgers?|salad|soup)\b'
+    
+    # Extract all matches from all subjects
+    all_patterns = [
+        science_terms, social_studies_terms, pe_terms, arts_terms,
+        language_terms, math_terms, everyday_terms, food_terms
+    ]
+    
+    for pattern in all_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        visual_nouns.extend([match.lower() for match in matches])
+    
+    return list(set(visual_nouns))  # Remove duplicates
+
+def detect_subject_area(text):
+    """
+    Detect the primary subject area for educational context.
+    """
+    subject_indicators = {
+        'mathematics': ['math', 'number', 'add', 'subtract', 'multiply', 'divide', 'equation', 'solve', 'calculate'],
+        'science': ['science', 'experiment', 'observe', 'hypothesis', 'data', 'research', 'discovery'],
+        'reading': ['read', 'story', 'book', 'character', 'plot', 'author', 'literature', 'poem'],
+        'writing': ['write', 'essay', 'paragraph', 'sentence', 'grammar', 'spelling', 'vocabulary'],
+        'social_studies': ['community', 'history', 'geography', 'culture', 'government', 'citizen'],
+        'art': ['create', 'draw', 'paint', 'design', 'artistic', 'creative', 'imagination'],
+        'physical_education': ['exercise', 'movement', 'sport', 'healthy', 'fitness', 'active'],
+        'health': ['healthy', 'nutrition', 'safety', 'hygiene', 'wellness', 'medical']
+    }
+    
+    subject_scores = {}
+    for subject, indicators in subject_indicators.items():
+        score = sum(1 for indicator in indicators if re.search(r'\b' + re.escape(indicator) + r'\b', text, re.IGNORECASE))
+        if score > 0:
+            subject_scores[subject] = score
+    
+    if subject_scores:
+        return max(subject_scores, key=subject_scores.get)
+    return 'general'
+
+def extract_educational_terms(text):
+    """
+    Extract specific educational terms that provide context for image selection.
+    """
+    # Educational grade level indicators
+    grade_terms = re.findall(r'\b(?:elementary|primary|kindergarten|grade|student|children|kids)\b', text, re.IGNORECASE)
+    
+    # Activity type indicators
+    activity_terms = re.findall(r'\b(?:hands-on|interactive|group|individual|practice|activity|exercise|game)\b', text, re.IGNORECASE)
+    
+    # Learning objective terms
+    learning_terms = re.findall(r'\b(?:learn|understand|identify|compare|analyze|create|explain|demonstrate)\b', text, re.IGNORECASE)
+    
+    return {
+        'grade_level': list(set(grade_terms)),
+        'activity_type': list(set(activity_terms)),
+        'learning_objectives': list(set(learning_terms))
+    }
+
+def build_smart_search_query(visual_terms, subject_area, title_text, content_text):
+    """
+    Build search query using actual content terms for maximum relevance.
+    Prioritizes concrete visual objects mentioned in the content.
+    """
+    query_parts = []
+    
+    # Priority 1: Use actual visual terms from content (most important!)
+    if visual_terms:
+        # Special combinations that work well together across all subjects
+        special_combinations = {
+            # MATH combinations
+            ('pizza', 'fractions'): 'pizza slices fractions pie chart',
+            ('pizza', 'slice'): 'pizza slices fractions pie chart', 
+            ('pizza', 'slices'): 'pizza slices fractions pie chart',
+            ('sandwich', 'fractions'): 'sandwich half fractions food',
+            ('cake', 'fractions'): 'cake slices fractions pie chart',
+            ('coin', 'money'): 'coins money counting mathematics',
+            ('coins', 'money'): 'coins money counting mathematics',
+            ('clock', 'time'): 'clock time telling education',
+            
+            # SCIENCE combinations
+            ('animals', 'ocean'): 'ocean animals fish marine life',
+            ('fish', 'ocean'): 'ocean fish marine life underwater',
+            ('birds', 'trees'): 'birds trees forest nature wildlife',
+            ('plants', 'flowers'): 'flowers plants garden nature blooming',
+            ('sun', 'weather'): 'sun weather sky sunshine nature',
+            ('clouds', 'rain'): 'clouds rain weather sky storm',
+            ('microscope', 'laboratory'): 'microscope laboratory science research',
+            ('skeleton', 'bones'): 'skeleton bones human body anatomy',
+            ('planets', 'space'): 'planets space solar system astronomy',
+            
+            # SOCIAL STUDIES combinations
+            ('maps', 'countries'): 'world maps countries geography atlas',
+            ('globe', 'earth'): 'globe earth world geography planet',
+            ('flags', 'countries'): 'flags countries nations patriotic symbols',
+            ('buildings', 'cities'): 'buildings cities urban architecture skyline',
+            ('farms', 'food'): 'farms agriculture food crops farming',
+            ('monuments', 'history'): 'monuments historical landmarks architecture',
+            
+            # PHYSICAL EDUCATION combinations  
+            ('soccer', 'ball'): 'soccer ball sports field football',
+            ('basketball', 'gym'): 'basketball gym sports court indoor',
+            ('swimming', 'water'): 'swimming pool water sports exercise',
+            ('running', 'exercise'): 'running exercise fitness outdoor sports',
+            ('dancing', 'music'): 'dancing music performance arts movement',
+            
+            # ARTS combinations
+            ('painting', 'colors'): 'painting colors art brushes canvas colorful',
+            ('music', 'instruments'): 'musical instruments music orchestra band',
+            ('piano', 'music'): 'piano music keyboard musical instrument',
+            ('guitar', 'music'): 'guitar music strings musical instrument',
+            ('art', 'brushes'): 'art brushes painting creative supplies',
+            
+            # LANGUAGE ARTS combinations
+            ('books', 'reading'): 'books reading library literature education',
+            ('stories', 'books'): 'storybooks reading children literature',
+            ('writing', 'pencils'): 'writing pencils paper education school',
+            ('library', 'books'): 'library books reading shelves education'
+        }
+        
+        # Check for special combinations first
+        combination_found = False
+        for combo, query in special_combinations.items():
+            if all(term in visual_terms for term in combo):
+                query_parts.append(query)
+                combination_found = True
+                break
+        
+        # If no special combination, use the most relevant visual terms
+        if not combination_found:
+            # Check if title gives us context for prioritization
+            title_lower = title_text.lower() if title_text else ''
+            
+            # Context-based priorities
+            geometry_context = any(word in title_lower for word in ['geometry', 'shape', 'shapes'])
+            time_context = any(word in title_lower for word in ['time', 'telling', 'clock'])
+            
+            priority_terms = []
+            
+            # Prioritize based on title context
+            if geometry_context:
+                geometry_terms = ['phone', 'door', 'notebook', 'book', 'wheel', 'clock']
+                for term in visual_terms:
+                    if term in geometry_terms:
+                        priority_terms.append(term)
+                        if len(priority_terms) >= 2:
+                            break
+                # Add geometric context
+                if priority_terms:
+                    query_parts.append(' '.join(priority_terms) + ' geometric shapes')
+                    combination_found = True
+                    
+            elif time_context:
+                time_terms = ['clock']
+                for term in visual_terms:
+                    if term in time_terms:
+                        priority_terms.append(term)
+                        break
+                if priority_terms:
+                    query_parts.append(' '.join(priority_terms) + ' time telling')
+                    combination_found = True
+            
+            # Subject-aware prioritization based on detected terms
+            if not combination_found:
+                # Categorize visual terms by subject for smart prioritization
+                science_terms = ['animals', 'birds', 'fish', 'plants', 'trees', 'flowers', 'sun', 'moon', 'stars', 'planets', 'ocean', 'mountains', 'microscope', 'telescope']
+                pe_terms = ['soccer', 'basketball', 'football', 'tennis', 'swimming', 'running', 'dancing', 'exercise', 'sports', 'gym']
+                arts_terms = ['painting', 'music', 'piano', 'guitar', 'violin', 'art', 'colors', 'brushes', 'canvas', 'instruments']
+                social_terms = ['maps', 'globe', 'countries', 'cities', 'buildings', 'farms', 'flags', 'monuments', 'communities']
+                math_terms = ['numbers', 'shapes', 'circles', 'triangles', 'calculator', 'money', 'coins', 'clocks', 'charts']
+                language_terms = ['books', 'stories', 'reading', 'writing', 'pencils', 'library', 'newspapers']
+                food_terms = ['pizza', 'cake', 'sandwich', 'apple', 'fruits', 'vegetables', 'food']
+                
+                # Find the dominant subject based on visual terms present
+                subject_scores = {
+                    'science': sum(1 for term in visual_terms if term in science_terms),
+                    'pe': sum(1 for term in visual_terms if term in pe_terms),  
+                    'arts': sum(1 for term in visual_terms if term in arts_terms),
+                    'social': sum(1 for term in visual_terms if term in social_terms),
+                    'math': sum(1 for term in visual_terms if term in math_terms),
+                    'language': sum(1 for term in visual_terms if term in language_terms),
+                    'food': sum(1 for term in visual_terms if term in food_terms)
+                }
+                
+                dominant_subject = max(subject_scores, key=subject_scores.get) if max(subject_scores.values()) > 0 else 'general'
+                
+                # Prioritize terms based on dominant subject
+                if dominant_subject == 'science':
+                    priority_order = [science_terms, food_terms, math_terms]
+                elif dominant_subject == 'pe':
+                    priority_order = [pe_terms, food_terms, science_terms]
+                elif dominant_subject == 'arts':
+                    priority_order = [arts_terms, food_terms, science_terms] 
+                elif dominant_subject == 'social':
+                    priority_order = [social_terms, food_terms, science_terms]
+                elif dominant_subject == 'math':
+                    priority_order = [math_terms, food_terms, science_terms]
+                elif dominant_subject == 'language':
+                    priority_order = [language_terms, food_terms, science_terms]
+                else:
+                    # General prioritization - food first (most visual), then others
+                    priority_order = [food_terms, science_terms, arts_terms, pe_terms]
+                
+                # Select terms based on priority order
+                for term_group in priority_order:
+                    for term in visual_terms:
+                        if term in term_group and term not in priority_terms:
+                            priority_terms.append(term)
+                            if len(priority_terms) >= 2:  # Limit to 2 main terms
+                                break
+                    if len(priority_terms) >= 2:
+                        break
+                
+                # Add any remaining visual terms if we don't have enough
+                for term in visual_terms:
+                    if term not in priority_terms:
+                        priority_terms.append(term)
+                        if len(priority_terms) >= 3:
+                            break
+                
+                if priority_terms:
+                    query_parts.append(' '.join(priority_terms))
+    
+    # Priority 2: Add subject context if no specific visual terms
+    if not query_parts:
+        subject_contexts = {
+            'mathematics': 'mathematics classroom education',
+            'science': 'science nature education',
+            'reading': 'books reading education', 
+            'art': 'art creativity education',
+            'general': 'classroom education learning'
+        }
+        context = subject_contexts.get(subject_area, subject_contexts['general'])
+        query_parts.append(context)
+    
+    # Priority 3: Add educational context
+    if not any('education' in part for part in query_parts):
+        query_parts.append('education')
+    
+    # Build final query
+    final_query = ' '.join(query_parts)
+    
+    # Clean up and deduplicate
+    words = final_query.split()
+    unique_words = []
+    seen = set()
+    for word in words:
+        if word not in seen:
+            seen.add(word)
+            unique_words.append(word)
+    
+    result = ' '.join(unique_words[:5])  # Limit to 5 most relevant words
+    
+    # Ensure minimum quality
+    if len(result.strip()) < 5:
+        result = 'classroom education learning'
+    
+    return result
 
 def generate_search_query_from_content(structured_content, fallback="elementary classroom educational"):
     """
