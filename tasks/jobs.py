@@ -1,4 +1,4 @@
-# background_tasks.py
+# tasks/jobs.py - Background job processing
 import os
 import time
 import json
@@ -77,6 +77,20 @@ def register_tasks(celery_instance):
             # Step 2: Generate content (this is where you'd call your existing generation logic)
             result = perform_actual_generation(job_data, self)
 
+            # Step 2.5: Validate generation results before proceeding
+            if not result or not isinstance(result, dict):
+                raise Exception("Resource generation failed - no valid results returned")
+            
+            # Validate that all requested resources were actually generated
+            for resource_type in resource_types:
+                if resource_type not in result:
+                    raise Exception(f"Failed to generate {resource_type}")
+                
+                resource_info = result[resource_type]
+                file_path = resource_info.get('file_path')
+                if not file_path or not os.path.exists(file_path):
+                    raise Exception(f"Generated file missing for {resource_type}: {file_path}")
+
             # Step 3: Finalize and prepare download
             self.update_state(
                 state='PROCESSING',
@@ -90,21 +104,11 @@ def register_tasks(celery_instance):
 
             time.sleep(1)
 
-            # Step 4: Complete and send notification
+            # Step 4: Complete and prepare final response
             download_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/download/{job_id}"
 
-            # Send success email
-            if notification_email:
-                email_service.send_job_completion_email(
-                    to_email=notification_email,
-                    job_id=job_id,
-                    resource_types=resource_types,
-                    download_url=download_url
-                )
-
-            logger.info(f"Background job {job_id} completed successfully")
-
-            return {
+            # Prepare success response first
+            final_result = {
                 'job_id': job_id,
                 'status': 'completed',
                 'progress': 100,
@@ -113,6 +117,25 @@ def register_tasks(celery_instance):
                 'result': result,
                 'completed_at': time.time()
             }
+
+            logger.info(f"Background job {job_id} completed successfully - all files validated")
+
+            # CRITICAL: Send email ONLY after confirming the job will complete successfully
+            # AND after validating that all resource files actually exist
+            if notification_email:
+                try:
+                    email_service.send_job_completion_email(
+                        to_email=notification_email,
+                        job_id=job_id,
+                        resource_types=resource_types,
+                        download_url=download_url
+                    )
+                    logger.info(f"Success email sent to {notification_email} for job {job_id}")
+                except Exception as email_error:
+                    # Don't fail the job if email fails, just log it
+                    logger.error(f"Failed to send success email to {notification_email}: {email_error}")
+
+            return final_result
 
         except Exception as e:
             error_message = str(e)
