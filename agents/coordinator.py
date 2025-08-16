@@ -173,8 +173,34 @@ class AgentCoordinator:
                     custom_requirements, content_strategy, requested_resources
                 )
                 
-                # Add shared research context if available
-                if using_shared_research:
+                # Special handling for standalone lesson plans - they need research content
+                if agent_key == "lesson_plan" and not using_shared_research:
+                    # Check if lesson plan is the only resource being generated
+                    is_standalone_lesson_plan = (
+                        not requested_resources or 
+                        len(requested_resources) == 1 and "lesson" in str(requested_resources[0]).lower()
+                    )
+                    
+                    if is_standalone_lesson_plan:
+                        logger.info("🔍 Generating research content for standalone lesson plan...")
+                        research_data = self.research_agent.research_topic(
+                            lesson_topic=lesson_topic,
+                            subject_focus=subject_focus,
+                            grade_level=grade_level,
+                            language=language,
+                            standards=standards,
+                            custom_requirements=custom_requirements
+                        )
+                        
+                        if research_data:
+                            research_context = self._format_research_for_agents(research_data)
+                            enhanced_requirements = f"{enhanced_requirements}\n\nRESEARCH FOUNDATION:\n{research_context}"
+                            logger.info("✅ Research content added to standalone lesson plan generation")
+                        else:
+                            logger.warning("❌ Failed to generate research content for standalone lesson plan")
+                
+                # Add shared research context if available (for multi-resource generation)
+                elif using_shared_research:
                     research_context = self._format_research_for_agents(shared_research_data)
                     enhanced_requirements = f"{enhanced_requirements}\n\nSHARED RESEARCH FOUNDATION:\n{research_context}"
                 
