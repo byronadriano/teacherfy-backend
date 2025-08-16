@@ -67,8 +67,20 @@ class OptimizedLessonPlanAgent:
     def _get_optimized_system_prompt(self, language: str, grade_level: str, subject_focus: str, requested_resources: List[str] = None) -> str:
         """Optimized system prompt with structured JSON output and resource integration"""
         
-        resource_context = ""
-        if requested_resources:
+        # Determine if this is a standalone lesson plan or multi-resource
+        is_standalone = (
+            not requested_resources or 
+            len(requested_resources) == 1 and "lesson" in str(requested_resources[0]).lower()
+        )
+        
+        if is_standalone:
+            resource_context = """
+STANDALONE LESSON PLAN: This is a complete, self-contained lesson plan
+- Use only standard classroom materials (whiteboard, markers, paper, etc.)
+- DO NOT reference slides, presentations, or other supplementary materials
+- Focus on direct instruction, hands-on activities, and real-world examples
+- Include rich content details since no other resources are available"""
+        else:
             resource_context = f"""
 RESOURCE INTEGRATION: This lesson plan will be used alongside these resources: {', '.join(requested_resources)}
 - Design activities that complement and reference these resources
@@ -127,13 +139,15 @@ LESSON PLAN COMPONENTS:
 - Formative assessment throughout
 - Meaningful closure and reflection
 
-CONTENT REQUIREMENTS:
-- Mix activity types for balanced instruction
-- Include specific timing for each component
-- Provide clear, actionable teacher instructions
-- Use grade-appropriate language and activities
-- Address diverse learning needs
-- Include materials and preparation notes
+CONTENT REQUIREMENTS - MUST BE SPECIFIC AND ACTIONABLE:
+- Include ACTUAL content: specific questions, examples, problems, vocabulary words
+- Provide exact teacher scripts and talking points where helpful
+- Include specific numbers, examples, and scenarios relevant to the topic
+- Give precise instructional sequences with detailed steps
+- Provide actual assessment questions and expected student responses
+- Include specific vocabulary with definitions and usage examples
+- Mix activity types for balanced instruction with detailed implementation
+- Use grade-appropriate language with specific examples for that age group
 
 TEACHER SUPPORT:
 - Each section includes specific teacher actions
@@ -142,13 +156,11 @@ TEACHER SUPPORT:
 - Focus on practical implementation guidance
 - Address common instructional challenges
 
-RESOURCE INTEGRATION PRINCIPLES:
-- Reference when to use supplementary materials
-- Create smooth transitions between activities
-- Align lesson activities with resource content
-- Maximize educational impact of all resources
-- Use accurate slide numbers (e.g., slides 1-6 if presentation has 6 slides)
-- Only reference materials that actually exist in the resources
+MATERIAL GUIDELINES:
+- For standalone lessons: Use only basic classroom materials (whiteboard, markers, paper, manipulatives, real objects)
+- For multi-resource lessons: Reference actual supplementary materials and align activities
+- Always specify realistic, accessible materials for the grade level
+- Focus on pedagogically sound teaching strategies over fancy materials
 
 CLEAN JSON STRUCTURE EXAMPLE:
 {{
@@ -161,14 +173,14 @@ CLEAN JSON STRUCTURE EXAMPLE:
           "type": "opening",
           "duration": "5 minutes",
           "materials": ["Whiteboard", "Previous day's work"],
-          "instructions": "Ask students to share one thing they remember about fractions from yesterday"
+          "instructions": "Ask: 'Yesterday we learned about fractions. Can someone tell me what 1/2 means? What about 3/4?' Write student responses on board. Show pizza example: 'If I have a pizza cut into 4 pieces and eat 1 piece, what fraction did I eat?' Expected answer: 1/4. Clarify: 'The bottom number tells us how many equal pieces, the top tells us how many we have.'"
         }},
         {{
-          "activity": "Present today's learning objectives using presentation slides",
+          "activity": "Present today's learning objectives using whiteboard",
           "type": "instruction",
           "duration": "5 minutes",
-          "materials": ["Presentation slides 1-2", "Learning objectives"],
-          "instructions": "Display presentation objectives slides and read aloud together, showing real examples"
+          "materials": ["Whiteboard", "Markers", "Printed objectives"],
+          "instructions": "Write on board: 'Today we will: 1) Find equivalent fractions like 1/2 = 2/4, 2) Use pictures to prove fractions are equivalent, 3) Create our own equivalent fraction examples.' Read aloud. Ask: 'Who can guess what equivalent means?' Guide to: 'Equal or the same amount.' Show concrete example: Hold up 1/2 of a paper circle and 2/4 of an identical circle. 'These look different but show the same amount - they're equivalent!'"
         }}
       ],
       "teacher_actions": ["Circulate to engage all students", "Use wait time for responses"],
@@ -178,11 +190,24 @@ CLEAN JSON STRUCTURE EXAMPLE:
   ]
 }}
 
+CRITICAL: INSTRUCTIONS MUST INCLUDE SPECIFIC CONTENT
+Each "instructions" field must contain:
+- Exact questions to ask students (in quotes)
+- Specific examples with actual numbers/scenarios
+- Expected student responses where relevant
+- Precise vocabulary words with definitions
+- Step-by-step procedures with specific details
+- Actual problems or scenarios to work through
+- Direct quotes for teacher to use when helpful
+
+EXAMPLE OF GOOD INSTRUCTIONS:
+"Say: 'Today we're learning about multiplication. Look at this array of dots.' Draw 3 rows of 4 dots on board. Ask: 'How many dots do you see? How could we count them quickly?' Guide students to see: '3 groups of 4, or 3 × 4 = 12.' Practice with 2 × 5: Have students draw 2 rows of 5 circles. Check: 'What's 2 × 5?' Expected: '10.' Vocabulary: 'Array means objects arranged in rows and columns.'"
+
 OPTIMIZATION FOCUS:
-- Direct, actionable lesson planning guidance
-- Complete activities with full implementation details
-- Ready-to-use format for lesson plan handlers
-- Comprehensive coverage of lesson phases
+- Direct, actionable lesson planning guidance with specific content
+- Complete activities with full implementation details and actual questions/examples
+- Ready-to-use format requiring no additional research by teachers
+- Comprehensive coverage of lesson phases with substantial content
 - Resource-integrated instruction when applicable"""
 
     def _build_optimized_user_prompt(self, lesson_topic: str, subject_focus: str, grade_level: str,
@@ -204,14 +229,23 @@ LANGUAGE: {language}
 {resource_text}
 {f"REQUIREMENTS: {custom_requirements}" if custom_requirements else ""}
 
-Generate {num_sections} lesson phases covering:
-1. Opening/Hook (engage students)
-2. Learning Objectives (clear goals)
-3. Direct Instruction (teaching and modeling)
-4. Guided Practice (supported application)
-5. Independent Practice/Closure (assessment and reflection)
+CRITICAL: Include SPECIFIC, ACTIONABLE CONTENT:
+- Actual questions to ask (e.g., "What is 2 + 3?")
+- Specific examples with numbers/scenarios (e.g., "If Sarah has 5 apples and gives away 2...")
+- Exact vocabulary words with definitions
+- Step-by-step procedures with precise details
+- Real problems to solve, not just "practice problems"
+- Expected student responses where helpful
+- Direct teacher scripts for complex concepts
 
-Each section should include specific activities, teacher actions, differentiation tips, and assessment strategies.
+Generate {num_sections} lesson phases covering:
+1. Opening/Hook (engage students with specific content)
+2. Learning Objectives (clear goals with examples)
+3. Direct Instruction (teaching with actual content/examples)
+4. Guided Practice (specific problems to work through)
+5. Independent Practice/Closure (actual assessment questions)
+
+Each section must include detailed activities that teachers can implement immediately without additional research.
 {f"Integrate references to these resources: {', '.join(requested_resources)}" if requested_resources else ""}
 
 Respond with valid JSON only."""
