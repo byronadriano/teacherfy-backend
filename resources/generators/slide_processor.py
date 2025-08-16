@@ -722,32 +722,49 @@ def create_clean_presentation_with_images(structured_content, include_images=Fal
     # Enhanced content processing for JSON structured data
     processed_content = _enhance_structured_content_for_presentation(structured_content)
     
+    # Get the project root directory (where app.py is located)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    
     # Prefer the repo-level static templates location, fall back to module templates
     template_candidates = [
+        # First try absolute path from project root
+        os.path.join(project_root, 'static', 'templates', 'FINAL_base_template_v1.pptx'),
+        # Then try relative paths
         os.path.join('static', 'templates', 'FINAL_base_template_v1.pptx'),
         os.path.join(os.path.dirname(__file__), 'templates', 'FINAL_base_template_v1.pptx'),
         os.path.join('templates', 'FINAL_base_template_v1.pptx'),
+        os.path.join(project_root, 'static', 'templates', 'base_template.pptx'),
         os.path.join('static', 'templates', 'base_template.pptx'),
         os.path.join(os.path.dirname(__file__), 'templates', 'base_template.pptx'),
         'base_template.pptx'
     ]
 
     template_path = None
-    for candidate in template_candidates:
+    logger.info(f"Searching for PowerPoint template in the following locations:")
+    for i, candidate in enumerate(template_candidates):
+        logger.info(f"  {i+1}. {candidate}")
         if os.path.exists(candidate):
             template_path = candidate
+            logger.info(f"✅ Found template at: {template_path}")
             break
+        else:
+            logger.debug(f"❌ Not found: {candidate}")
 
     if not template_path:
         # Last resort: empty Presentation
+        logger.warning("⚠️ No PowerPoint template found, creating blank presentation")
         template_path = None
     
     # Create presentation
     try:
-        prs = Presentation(template_path)
-        logger.info(f"Using template: {template_path}")
+        if template_path:
+            prs = Presentation(template_path)
+            logger.info(f"✅ Successfully created presentation using template: {template_path}")
+        else:
+            prs = Presentation()
+            logger.warning("⚠️ Created blank presentation (no template found)")
     except Exception as e:
-        logger.warning(f"Could not load template: {e}. Creating blank presentation.")
+        logger.error(f"❌ Could not load template {template_path}: {e}. Creating blank presentation.")
         prs = Presentation()
     
     # Initialize Unsplash service if images are requested
