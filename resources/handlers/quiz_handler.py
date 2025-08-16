@@ -1,4 +1,4 @@
-# src/resource_handlers/quiz_handler.py - CLEANED VERSION
+# resources/handlers/quiz_handler.py - CLEANED VERSION
 import os
 import logging
 import docx

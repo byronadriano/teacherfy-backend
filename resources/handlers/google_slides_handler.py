@@ -1,4 +1,4 @@
-# src/resource_handlers/google_slides_handler.py
+# resources/handlers/google_slides_handler.py
 import logging
 from typing import Dict, Any, List, Tuple
 from google.oauth2.credentials import Credentials

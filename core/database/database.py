@@ -1,4 +1,4 @@
-# src/db/database.py - FIXED VERSION with better error handling
+# core/database/database.py - FIXED VERSION with better error handling
 import os
 import sys
 import json

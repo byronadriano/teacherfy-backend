@@ -1,4 +1,4 @@
-# src/db/__init__.py
+# core/database/__init__.py
 from .database import (
     get_db_connection,
     get_db_cursor,

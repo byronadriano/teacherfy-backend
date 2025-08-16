@@ -1,4 +1,4 @@
-# src/utils/decorators.py - IMPROVED with clear user vs IP separation
+# core/auth/decorators.py - IMPROVED with clear user vs IP separation
 from functools import wraps
 from flask import request, jsonify, session
 from core.database.usage_v2 import UsageTracker

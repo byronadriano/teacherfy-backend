@@ -1,4 +1,4 @@
-# src/utils/__init__.py - CLEANED VERSION
+# utils/__init__.py - CLEANED VERSION
 """Utility modules for the Teacherfy application."""
 
 # Only import decorators functions, not constants to avoid circular imports

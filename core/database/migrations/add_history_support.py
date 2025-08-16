@@ -1,4 +1,4 @@
-# src/db/migrations/add_history_support.py
+# core/database/migrations/add_history_support.py
 import psycopg2
 import os
 import sys

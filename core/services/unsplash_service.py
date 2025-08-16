@@ -1,4 +1,4 @@
-# src/services/unsplash_service.py
+# core/services/unsplash_service.py
 import os
 import requests
 import logging

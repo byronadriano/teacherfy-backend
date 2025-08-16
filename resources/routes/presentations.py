@@ -1,4 +1,4 @@
-# src/slides_routes.py
+# resources/routes/presentations.py
 from functools import wraps
 from flask import Blueprint, request, jsonify, session, redirect, url_for
 from google.oauth2.credentials import Credentials

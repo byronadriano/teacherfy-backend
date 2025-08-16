@@ -1,4 +1,4 @@
-# src/slide_processor.py - Smart, Language-Agnostic, Multi-Subject Enhanced Version
+# resources/generators/slide_processor.py - Smart, Language-Agnostic, Multi-Subject Enhanced Version
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN, MSO_VERTICAL_ANCHOR

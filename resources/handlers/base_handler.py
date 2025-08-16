@@ -1,4 +1,4 @@
-# src/resource_handlers/base_handler.py - UNIFIED VERSION
+# resources/handlers/base_handler.py - UNIFIED VERSION
 import os
 import tempfile
 import time

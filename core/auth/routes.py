@@ -1,4 +1,4 @@
-# src/auth_routes.py - OAuth endpoints with new login initiation flow
+# core/auth/routes.py - OAuth endpoints with new login initiation flow
 import os
 from flask import Blueprint, request, jsonify, redirect, url_for, session
 from google.oauth2 import id_token

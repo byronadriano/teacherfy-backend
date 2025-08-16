@@ -1,4 +1,4 @@
-# src/db/migrations/fix_monthly_limits.py
+# core/database/migrations/fix_monthly_limits.py
 import psycopg2
 import os
 import sys

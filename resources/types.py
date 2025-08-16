@@ -1,4 +1,4 @@
-# src/resource_types.py - Updated with image support
+# resources/types.py - Updated with image support
 from enum import Enum, auto
 import logging
 

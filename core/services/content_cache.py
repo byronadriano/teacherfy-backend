@@ -1,4 +1,4 @@
-# src/services/content_cache.py
+# core/services/content_cache.py
 import hashlib
 import json
 import logging

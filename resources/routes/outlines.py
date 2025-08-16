@@ -1,4 +1,4 @@
-# src/outline_routes.py - Updated with DeepSeek API support and Agent integration
+# resources/routes/outlines.py - Updated with DeepSeek API support and Agent integration
 import os
 import re
 from flask import Blueprint, request, jsonify, session

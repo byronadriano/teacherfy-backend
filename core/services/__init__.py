@@ -1,4 +1,4 @@
-# src/services/__init__.py
+# core/services/__init__.py
 """Services module for external API integrations"""
 
 try:

@@ -1,4 +1,4 @@
-# src/config.py - CLEANED VERSION
+# config/settings.py - CLEANED VERSION
 import os
 import logging
 from typing import Dict, Any, List

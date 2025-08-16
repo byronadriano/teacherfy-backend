@@ -1,4 +1,4 @@
-# src/resource_handlers/lesson_plan_handler.py - CLEANED VERSION
+# resources/handlers/lesson_plan_handler.py - CLEANED VERSION
 import os
 import logging
 import docx

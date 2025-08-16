@@ -1,4 +1,4 @@
-# src/resource_routes.py - Updated with image support and multi-resource generation
+# resources/routes/resources.py - Updated with image support and multi-resource generation
 from flask import Blueprint, request, jsonify, send_file, session
 from config.settings import logger, SCOPES
 from resources.types import ResourceType, get_resource_handler

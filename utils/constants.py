@@ -1,4 +1,4 @@
-# src/utils/constants.py
+# utils/constants.py
 """Application constants."""
 
 import os
